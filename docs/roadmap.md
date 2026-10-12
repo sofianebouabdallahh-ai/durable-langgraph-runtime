@@ -7,7 +7,8 @@ The delivery plan for **Durable, Distributed Runtime for LangGraph Agents**: wha
 - [CR-001 — Chat sessions](requirements/CR-001-chat-sessions.md): accepted. Adds §12 (R12.x), fixes F1–F3, AC18–AC21.
 - [CR-002 — Per-run sandboxes](requirements/CR-002-run-sandboxes.md): accepted. Adds §13 (R13.x), AC22–AC25.
 - [CR-003 — Harness guardrails](requirements/CR-003-harness-guardrails.md): accepted. Adds §14 (R14.x): budgets, loop detection, least privilege, untrusted content, kill switch; AC26–AC32.
-- [CR-004 — Agent definitions & hooks](requirements/CR-004-agent-definitions-and-hooks.md): accepted. Adds §15 (R15.x): one `.agent.md` file per agent (name, max turns, prompt, tools, limits, hooks); `session_start` / `turn_*` / `pre_tool` / `post_tool` / `session_end` hooks; AC33–AC36.
+- [CR-004 — Agent definitions & hooks](requirements/CR-004-agent-definitions-and-hooks.md): accepted. Adds §15 (R15.x): one Markdown definition per agent (name, max turns, prompt, tools, limits, hooks; folder layout per CR-005); `session_start` / `turn_*` / `pre_tool` / `post_tool` / `session_end` hooks; AC33–AC36.
+- [CR-005 — Sub-agents](requirements/CR-005-subagents.md): accepted. Adds §16 (R16.x): agents are folders (`agents/<name>/agent.md`), sub-agents are leaf sub-folders, run in-process by an orchestrator with status/progress/return tools, each checkpointed; AC37–AC42.
 - [ADR-0001 — Repository layout](adr/0001-repository-layout.md): where every component lives, including how the spec's paths (`examples/`, `deploy/helm/`, `ops/grafana/`) map to this repo.
 
 When this roadmap and a requirement disagree, the requirement wins and this file gets fixed.
@@ -64,7 +65,7 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 | 2 | Distributed workers | — |
 | 3 | Streaming across replicas | — |
 | 4 | Tools & human-in-the-loop | — |
-| 5 | Sub-runs & backpressure | — |
+| 5 | Sub-runs, sub-agents & backpressure | — |
 | 6 | Chat sessions + chat agent | — |
 | 7 | Sandboxes | — |
 | 8 | Research agent | — |
@@ -80,7 +81,7 @@ Legend: ⏳ next · 🚧 in progress · ✅ done · ⏸ blocked
 
 ## Phases
 
-Estimates are focused hours and only rough guesses; we'll correct them as we go. The total is **~165–220 h**: the base spec's 100–130 h, plus about 15–20 h for CR-001, 20–25 h for CR-002, 14–18 h for CR-003 and 10–14 h for CR-004.
+Estimates are focused hours and only rough guesses; we'll correct them as we go. The total is **~180–235 h**: the base spec's 100–130 h, plus about 15–20 h for CR-001, 20–25 h for CR-002, 14–18 h for CR-003, 10–14 h for CR-004 and 10–14 h for CR-005.
 
 ### Phase 0 — Foundations · ~4–6 h
 **Goal:** an empty but real project. Running `make up` brings up Postgres and Redis, `make test` runs, and CI is green.
@@ -100,7 +101,7 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 - Postgres checkpointer with `thread_id` (R1.2); **prototype the epoch-aware checkpointer first (F1 / R2.10)**
 - Persisted events with a per-run `seq` (R1.5)
 - First API endpoints: `POST /runs`, `GET /runs/{id}`, `GET /runs/{id}/events`, `/healthz`
-- Agent definition loader (`backend/agents/*.agent.md`), strict schema, `runtime agents validate` in CI, per-run snapshots in `agent_definitions` (R15.1–R15.4)
+- Agent definition loader (`backend/agents/<name>/agent.md`, sub-agents as leaf sub-folders), strict schema, `runtime agents validate` in CI, per-run snapshots in `agent_definitions` (R15.1–R15.4, R16.1, R16.2; AC38)
 - `ScriptedModelProvider` for deterministic tests (R14.20); budget accounting and the ceiling → graph profile → options hierarchy, where options can only tighten limits (R14.1, R14.3)
 
 **Learn:** LangGraph state, supersteps, checkpointers, threads; transactional state transitions.
@@ -138,15 +139,16 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 **Learn:** idempotency keys, the outbox-style "record, then act" pattern, durable pauses.
 **Done when:** **AC4** (approval survives restart) passes.
 
-### Phase 5 — Sub-runs & backpressure · ~6–8 h
-**Goal:** fan-out spreads across workers.
+### Phase 5 — Sub-runs, sub-agents & backpressure · ~10–14 h
+**Goal:** the research fan-out spreads across workers (child runs), and a main agent can orchestrate its sub-agents in-process (CR-005).
 - Parent/child protocol, `waiting_children`, atomic `child_done`, fan-in and `partial` (R2.8)
 - `max_children`, queue-depth metric, `429` with `Retry-After` (R2.9)
 - Sub-run depth and descendant limits; child usage rolls up to its ancestors (R14.6)
+- Sub-agent orchestrator: spawn/status/wait/cancel tools for the main agent, `report_progress`/`return_result` for sub-agents, per-sub-agent checkpoints and crash resume, limits, budget roll-up (R16.3–R16.9)
 - `docs/design.md`: the trade-off of sub-runs vs. `Send`
 
 **Learn:** distributed fan-out/fan-in, atomic counters, backpressure.
-**Done when:** **AC6** passes: children run on more than one worker.
+**Done when:** **AC6** (children run on more than one worker), **AC40** (status, return, cancel, timeout), **AC41** (crash resume) and **AC42** (budget roll-up) pass.
 
 ### Phase 6 — Chat sessions + chat agent · ~12–16 h
 **Goal:** chat with an agent across many sessions, with a durable transcript.
@@ -155,10 +157,12 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 - `ModelProvider` with OpenAI + Ollama + `embed()` (R3.1, F3); `backend/src/agents/chat` agent with `search`, `retrieve`, `save_note` (R12.9)
 
 **Learn:** LangGraph threads and `add_messages`; conversation state vs. transcript.
-- `agents/chat.agent.md`; `session_start` / `turn_start` / `turn_end` / `session_end` hooks, idle-session archiving, `/agents` API (R15.6, R15.11)
+- `agents/chat/agent.md`; `session_start` / `turn_start` / `turn_end` / `session_end` hooks, idle-session archiving, `/agents` API (R15.6, R15.11)
 - Model-call budget, soft→hard wrap-up, loop detection, retries with backoff, admission control (R14.2, R14.4, R14.7, R14.8)
 
-**Done when:** **AC18**, **AC19**, **AC26–AC28** (runaway agent, loop, ceilings) and **AC33–AC35** (definitions, tool hooks, session hooks) pass.
+- `chat/researcher` and `chat/data-analyst` sub-agents; `make demo-subagents`
+
+**Done when:** **AC18**, **AC19**, **AC26–AC28** (runaway agent, loop, ceilings), **AC33–AC35** (definitions, tool hooks, session hooks) and **AC37**, **AC39** (parallel sub-agents, isolation) pass.
 
 ### Phase 7 — Sandboxes · ~10–12 h
 **Goal:** risky tools run in a disposable, locked-down container per run.
@@ -173,7 +177,7 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 ### Phase 8 — Research agent · ~12–16 h
 **Goal:** the full Planner → Approval → Researcher×N → Critic → Synthesizer example.
 - `SearchTool` fixtures (R3.3); ingest and retrieval with pgvector (R4.5)
-- Four agent files (`planner`, `researcher`, `critic`, `synthesizer`.agent.md) composed by `backend/src/workflows/research` (R15.10)
+- Four agent folders (`agents/planner`, `researcher`, `critic`, `synthesizer`) composed by `backend/src/workflows/research` (R15.10)
 - Planner, Researchers as child runs, Critic routing as a pure function, Synthesizer with the citation validator (R4.1–R4.4)
 - ≥ 3 fixture sets, one deliberately thin (R4.6)
 
