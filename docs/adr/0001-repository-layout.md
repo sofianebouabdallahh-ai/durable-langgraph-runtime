@@ -5,6 +5,7 @@
 | **Status** | Accepted |
 | **Date** | 2026-10-11 |
 | **Supersedes** | The flat layout used during phase 0 (`runtime/`, `tests/` and `docker-compose.yml` at the root) |
+| **Amended by** | [ADR-0003](0003-agents-as-definition-files.md): agents become `backend/agents/*.agent.md`, plus `src/runtime/hooks/` and `src/workflows/` |
 
 ## Context
 
