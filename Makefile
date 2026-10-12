@@ -22,7 +22,7 @@ BACKEND     := cd backend && uv run --frozen
 BACKEND_ENV := cd backend && uv run --frozen --env-file $(ENV_FILE)
 
 .DEFAULT_GOAL := help
-.PHONY: help env hooks up down nuke ps logs migrate migration lint fmt typecheck test test-unit test-integration check
+.PHONY: help env hooks up down nuke ps logs migrate migration lint fmt typecheck agents-validate test test-unit test-integration check
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -70,6 +70,9 @@ fmt: ## Auto-format and fix lint
 typecheck: ## mypy --strict
 	$(BACKEND) mypy
 
+agents-validate: ## Validate every agent definition in backend/agents (no services needed)
+	$(BACKEND) runtime agents validate
+
 # -------------------------------------------------------------- backend: tests
 test-unit: ## Unit tests (no services, no .env: proves they need neither)
 	$(BACKEND) pytest tests/unit
@@ -81,4 +84,4 @@ test-integration: env ## Integration tests (needs `make up`)
 test: env ## All tests (needs `make up`)
 	cd backend && REQUIRE_SERVICES=1 uv run --frozen --env-file $(ENV_FILE) pytest
 
-check: lint typecheck test ## Everything CI runs
+check: lint typecheck agents-validate test ## Everything CI runs

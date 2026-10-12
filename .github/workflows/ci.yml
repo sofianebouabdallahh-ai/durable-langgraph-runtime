@@ -52,6 +52,8 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy
+      - name: Validate agent definitions (R15.2)
+        run: uv run runtime agents validate
       - run: uv run pytest -m "not integration"
 
   integration:

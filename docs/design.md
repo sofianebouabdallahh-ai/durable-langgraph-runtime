@@ -19,6 +19,11 @@ Every non-trivial component names the pattern it applies. If no pattern fits, th
 | **Fail-fast configuration** | [`config.py`](../backend/src/agent_runtime/config.py) | Invalid or missing settings stop the process at startup, with the field named, rather than failing later in the middle of a run. |
 | **Fencing token** | [`checkpointing.py`](../backend/src/agent_runtime/checkpointing.py) `Fence`, `check_fence` (events, transcript and tool writes join in phase 2) | Every write carries the lease epoch, and the database rejects writes from a stale epoch, so a paused "zombie" worker can't corrupt a run it no longer owns (R2.3, R2.10). |
 | **Protection Proxy** | `FencedCheckpointer` | Same interface as LangGraph's `AsyncPostgresSaver`; reads pass through, and every write runs inside our transaction after the fence check. It uses only LangGraph's public API, so an upgrade can't silently bypass the guard. |
+| **Registry** | [`agents/loader.py`](../backend/src/agent_runtime/agents/loader.py) `AgentRegistry` | The single lookup point for validated agent definitions. Nothing else reads agent files. |
+| **Parse, don't validate** | [`agents/schema.py`](../backend/src/agent_runtime/agents/schema.py) | Frontmatter becomes strict, frozen pydantic objects at load time (`extra="forbid"`), so the rest of the code never handles raw YAML. Sub-agents get a *restricted* schema, so leaf-only rules hold by construction. |
+| **Dependency inversion** | `Catalog` passed to `load_agents` | The loader validates against an injected catalogue of known tools, hooks, schemas and models instead of importing registries. Later phases add tools without touching the loader. |
+| **Interface segregation** | [`config.py`](../backend/src/agent_runtime/config.py) `AgentSettings` ⊂ `Settings` | Commands that only read agent files depend on the small interface, so they need no database credentials (CI, laptops). |
+| **Command** | [`cli.py`](../backend/src/agent_runtime/cli.py) | Each subcommand is a handler bound to its own parser; `main` only parses and dispatches. |
 | **Idempotency key** | *Phase 4* | Tool calls keyed by `sha256(run · node · call_index · tool · args)`. A retry after reclaim returns the stored result instead of executing again (R2.6). |
 
 ## Spike: fencing LangGraph checkpoints (phase 1, task 1.4)
@@ -39,7 +44,7 @@ Every non-trivial component names the pattern it applies. If no pattern fits, th
 1. **Fencing works on the public API.** Only `aput`, `aput_writes` and `adelete_thread` write; the other write hooks aren't implemented by the Postgres saver.
 2. **`durability="sync"` is mandatory** for every run. With async durability a zombie executes extra steps (extra side effects) before learning it's fenced, and more progress is lost.
 3. **Fencing bounds what a zombie can *persist*, not what it can *do*:** `b` executed twice. External side effects therefore also need idempotency keys (R2.6, phase 4).
-4. **Cost:** one extra `SELECT … FOR SHARE` per checkpoint write, on the same connection and in the same round trip budget.
+4. **Cost:** one extra round trip (`SELECT … FOR SHARE`) per checkpoint write, plus a short shared row lock held until that write commits.
 5. **Ownership:** LangGraph creates and migrates its own tables (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`) through `setup()`; Alembic manages ours. The migrate step will run both (phase 1, task 1.7).
 
 Tests: [`test_fenced_checkpointer.py`](../backend/tests/integration/test_fenced_checkpointer.py), including a control test proving that the unfenced zombie really does corrupt the run.
