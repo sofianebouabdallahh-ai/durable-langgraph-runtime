@@ -6,7 +6,7 @@
 | **Date** | 2026-10-11 |
 | **Base document** | [`Project_4_Detailed_Requirements_K8s.pdf`](Project_4_Detailed_Requirements_K8s.pdf) (v1.0 + Kubernetes) |
 | **Depends on** | CR-001 (sessions), CR-002 (sandboxes), CR-003 (guardrails) |
-| **Amended by** | [CR-005](CR-005-subagents.md): adds `subagents` to the frontmatter; delegation moves into scope |
+| **Amended by** | [CR-005](CR-005-subagents.md): agents become folders (`agents/<name>/agent.md`) with sub-agents as leaf sub-folders; delegation moves into scope |
 | **Scope** | New §15 Agent definitions and hooks; amendments to §4, R12.9, R14.x, §5, §9; layout change in [ADR-0003](../adr/0003-agents-as-definition-files.md) |
 
 ## 1. Motivation

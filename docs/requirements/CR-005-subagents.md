@@ -1,112 +1,185 @@
-# CR-005 — Sub-agents: any agent can delegate to other agents
+# CR-005 — Sub-agents: leaf agents orchestrated in-process by their main agent
 
 | | |
 |---|---|
 | **Status** | Proposed |
 | **Date** | 2026-10-11 |
 | **Base document** | [`Project_4_Detailed_Requirements_K8s.pdf`](Project_4_Detailed_Requirements_K8s.pdf) (v1.0 + Kubernetes) |
-| **Depends on** | R2.8 (sub-runs), CR-001 (sessions), CR-003 (guardrails), CR-004 (agent definitions) |
-| **Scope** | New §16 Sub-agents; amendments to R2.8, R14.6, R15.1, CR-004 §6, §5, §6 (UI), §9, §11 |
+| **Depends on** | CR-001 (sessions), CR-002 (sandboxes), CR-003 (guardrails), CR-004 (agent definitions) |
+| **Amends** | CR-004 R15.1 (file layout), R15.10, §6; ADR-0003 (agent folder layout); CR-003 R14.6 |
+| **Scope** | New §16 Sub-agents; amendments listed in §3 |
 
 ## 1. Motivation
 
-R2.8 lets a run spawn **child runs** that execute in parallel on any worker, but only the hard-coded research workflow uses them, and CR-004 §6 put "agents delegating to other agents" out of scope. We want this to be general: **any agent may declare sub-agents in its `.agent.md` file and delegate tasks to them**, including several at once, in parallel.
+A main agent should be able to hand focused tasks to **sub-agents**: specialised agents with their own system prompt and tools, which work in parallel and report back. Sub-agents are:
 
-### How others do it, and what we do differently
-- **Claude Code subagents** and the **LangChain `deepagents` library** (`SubAgentMiddleware`, a `task` tool) give the main agent a tool that runs another agent with its own prompt, its own tools and a **fresh context**, and returns only its final answer. That is the pattern we adopt.
-- They run the sub-agent **in the same process**. We run each delegation as a **child run** (R2.8), so sub-agents spread across worker pods and each gets its own checkpoint, lease, fencing and reclaim. This is the same design decision the spec makes for research (sub-runs instead of LangGraph `Send`), now applied to every agent.
+- **Defined next to their main agent,** as sub-folders of its folder. The harness discovers them.
+- **Leaf agents.** A sub-agent can't have sub-agents of its own.
+- **Run in the same worker process as their main agent,** managed by an **orchestrator** in the harness.
+- **In communication with the main agent:** a sub-agent reports its **status/progress** while working and **returns** a result when done. The main agent can check status, wait or cancel.
+
+### Two fan-out mechanisms, on purpose
+
+| | **Sub-agents (this CR)** | **Child runs (spec R2.8)** |
+|---|---|---|
+| Used for | An agent delegating focused tasks it decides on at runtime | The research **workflow**'s fixed researcher fan-out |
+| Where they run | **Same worker, same container** as the main agent (concurrent asyncio tasks) | **Any worker pod** (each child is a queued run) |
+| Lease / fencing | Share the main run's lease and epoch | Own lease, own epoch |
+| Latency | Low: no queue hop | Higher: enqueue → claim |
+| Scale limit | One pod's CPU/memory per run | The whole worker pool |
+| Failure blast radius | A worker crash interrupts the run and all its sub-agents; all **resume from their own checkpoints** on reclaim | Each child fails and recovers independently |
+| Communication | Rich: live status, progress, explicit return | Result only, at the end |
+
+Claude Code subagents and LangChain `deepagents` (`SubAgentMiddleware`, a `task` tool) also run sub-agents in-process with a fresh context. We add durability: every sub-agent is checkpointed, so a crash doesn't throw away its work.
 
 ## 2. New section — §16 Sub-agents
 
-### R16.1 Declaring sub-agents — MUST
-An agent's frontmatter (CR-004 R15.1) lists the agents it may delegate to:
+### R16.1 Folder layout and discovery — MUST
+Each **main agent is a folder**, and each **sub-agent is a sub-folder** of it:
 
-```yaml
-subagents:
-  - researcher                       # by name; must be another .agent.md
-  - name: data-analyst
-    max_parallel: 2                  # optional: tighter than max_children
-    description: "Analyses CSV data with Python. Give it the data and the question."
+```
+backend/agents/
+├── chat/                         main agent "chat"
+│   ├── agent.md                  main definition (CR-004 R15.1 format)
+│   ├── researcher/
+│   │   └── agent.md              sub-agent "researcher" (leaf)
+│   └── data-analyst/
+│       └── agent.md              sub-agent "data-analyst" (leaf)
+└── planner/
+    └── agent.md                  main agent with no sub-agents
 ```
 
-- Only listed agents can be delegated to (**deny by default**, like tools, R14.9).
-- Validation (R15.2) rejects: unknown names, self-reference, and **cycles** (A → B → A), since delegation forms a graph that must be acyclic. It also rejects chains deeper than the depth limit (R16.6).
-- The `description` (or, by default, the sub-agent's own `description`) tells the parent model when to use that sub-agent.
+- **Discovery:** the harness treats every immediate sub-folder of a main agent's folder that contains an `agent.md` as one of its sub-agents. There is nothing to list in the main agent's frontmatter; the folder *is* the declaration.
+- **Names:** the folder name is the agent name (kebab-case). The frontmatter `name` must match it. A sub-agent's full id is `<main>/<sub>` (e.g. `chat/researcher`).
+- **Scope:** a sub-agent belongs to its main agent only. If two main agents need the same specialist, each has its own copy. Copying is the price of keeping each agent self-contained and reviewable in one folder.
+- **Fail fast** (R15.2): a sub-agent folder without `agent.md`, a name mismatch or a duplicate name stops the loader with an error naming the path.
 
-### R16.2 Delegation is a tool — MUST
-For each declared sub-agent the harness exposes a tool `delegate_to_<name>(task: str, context?: str)`. Like any tool call, it goes through the full order in CR-004 R15.7: schema validation, grant, `pre_tool` hooks, policy, budget, idempotency.
-- **Several delegations in one model response run in parallel.** Each one becomes a child run on `runs:work`, so they land on any available worker.
-- The child's **final answer is returned as the tool result** (truncated per R14.5, with the full output in `run_results`). With an `output_schema`, the result is structured.
+### R16.2 Sub-agents are leaf agents — MUST
+Enforced in two places:
+- **Structure:** a sub-agent folder may not contain further agent folders. A nested `agent.md` is a validation error ("sub-agents are leaf agents").
+- **Schema:** the sub-agent schema is a restricted form of the main schema (below). Keys outside it, such as `subagents` or session hooks, are rejected as unknown.
 
-### R16.3 Context isolation — MUST
-A sub-agent starts with a **fresh context**: its own system prompt, plus a single user message containing `task` (and `context` if given). It does **not** see the parent's conversation, tool results or memory. The parent decides exactly what to pass.
-This keeps child context small and cheap, and it stops data from the parent's session leaking into another agent's context.
+```markdown
+---
+name: researcher
+description: Finds and cites evidence for one focused question. Give it the question and what counts as done.
+version: 1
+model: researcher
+max_turns: 8
+limits: { max_tool_calls: 8, max_cost_usd: 0.20, timeout_s: 180 }
+tools: [search, retrieve]
+output_schema: null              # or a registered schema for a structured result
+hooks:
+  pre_tool:  [block_private_urls]
+  post_tool: [redact_secrets_in_result]
+---
+You research exactly one question. Cite every claim with at least two sources.
+Report progress with `report_progress` after each source you read.
+Finish by calling `return_result`.
+```
 
-### R16.4 Least privilege — MUST
-A sub-agent gets **only its own tools** (from its own file), never the parent's, and it cannot raise any limit. Its budget is the **smaller** of its own limits and what remains of the parent's budget (R16.5).
+Allowed hook points for sub-agents: `pre_tool`, `post_tool`, `pre_model`, `post_model`. Session and turn hooks belong to the main agent.
 
-### R16.5 Waiting costs no worker — MUST
-While its children run, the parent is `waiting_children`. It **releases its lease and acks its message** (R2.8), so it occupies no worker slot.
-This prevents a classic distributed deadlock: if waiting parents held their slots, a pool full of parents waiting for children that can't get a slot would stop forever. When the last child finishes, the parent is re-enqueued and resumes from its checkpoint with the tool results filled in.
+### R16.3 The orchestrator — MUST
+A harness component, the **sub-agent orchestrator**, owns the sub-agents of each run:
 
-### R16.6 Limits — MUST
-- **Depth:** at most 2 levels below the root (root → sub-agent → sub-sub-agent; CR-003 R14.6).
-- **Fan-out:** `max_children` per parent (default 6), `max_parallel` per sub-agent, and at most 20 descendants per root run.
-- **Budget roll-up:** child usage (model calls, tool calls, tokens, cost) counts toward every ancestor. A parent can't escape its budget by delegating.
-- Exceeding any of these is a **tool error the parent sees** (e.g. `subagent_limit: max_children`), not a crash, so the model can adapt.
+| Responsibility | Detail |
+|---|---|
+| Spawn | Starts each sub-agent as a concurrent task in the worker running the main agent, with a fresh context (R16.6) |
+| Track | Keeps each sub-agent's status, progress, result and usage in `subagent_invocations` (durable) |
+| Limit | Max **4 running in parallel** and **10 in total** per run (configurable down only, R14.3), a timeout per sub-agent, budgets (R16.8) |
+| Persist | Each sub-agent is a LangGraph graph with **its own checkpoint thread** (`thread_id = <run_id>/sub/<handle>`), written through the epoch-aware checkpointer (R2.10) under the main run's epoch |
+| Recover | On reclaim (R2.4) or graceful release (R10.7), the new owner resumes the main agent **and** every non-terminal sub-agent from its own checkpoint. Completed sub-agents are never re-run |
+| Cancel | Cancels sub-agents on request, on main-run cancel (R1.6), on timeout, or at the main run's hard budget limit |
+| Report | Emits `subagent.spawned`, `subagent.progress`, `subagent.completed` events (persisted, R1.5) |
 
-### R16.7 Failure, cancellation and approval propagate — MUST
-- **Child fails** (error, budget, timeout, loop): the parent gets a tool error with the reason and decides what to do (retry differently, continue, give up). If some children succeed and others fail, the parent continues with the successful results (`partial=true`, R2.8).
-- **Parent cancelled** (R1.6): cancellation **cascades** to all non-terminal descendants.
-- **Approval inside a child** (R1.4 interrupt, `ask` from a hook, R15.5): it bubbles up to the root's session as an `interrupt` message naming the child agent. Approving or rejecting it resolves the child. The parent stays `waiting_children` meanwhile.
-- **Crash:** a child is a normal run, so reclaim (R2.4) applies. The parent is unaffected, because it was waiting without a lease. A reclaimed parent never re-spawns children whose delegation already completed: the delegation call is idempotent by key (R2.6).
+A run's sub-agents run inside that run's worker slot. Worker `--concurrency` still counts runs; per-run parallelism is bounded by the limit above. Worker CPU and memory requests (R10.8) are sized for it.
 
-### R16.8 Visibility — MUST
-- **Events:** the parent emits `subagent.started {child_run_id, agent, task_summary}` and `subagent.completed {child_run_id, status, usage}`. Child runs keep their own event streams.
-- **Session stream:** a chat session (CR-001 R12.5) shows delegations as nested, collapsible cards with the sub-agent's live status, the worker pod running it, its tool calls and its final answer. The UI subscribes to child streams on demand.
-- **Tracing:** child runs continue the parent's trace (R2.7), so Jaeger shows the whole delegation tree.
-- **API:** `GET /runs/{id}` includes the child tree (agent, status, usage, owner pod).
+### R16.4 Tools the main agent gets — MUST
+When a main agent has sub-agents, the harness adds these tools automatically. They go through the full tool order (R15.7) like any tool:
 
-### R16.9 Example — MUST
-- `agents/chat.agent.md` declares `subagents: [researcher, data-analyst]`.
-- `agents/data-analyst.agent.md` is a new agent with `run_python` only.
-- A demo (`make demo-subagents`) asks a question that makes the chat agent delegate to **two sub-agents in parallel** and shows the children running on different workers.
+| Tool | Blocking? | Does |
+|---|---|---|
+| `spawn_subagent(agent, task, context?)` → `{handle}` | No | Starts a sub-agent. `agent` must be one of this main agent's sub-agents (anything else is denied). Idempotent by tool-call id, so replay after a reclaim never spawns twice |
+| `subagent_status(handles?)` → `[{handle, agent, status, progress, elapsed_s, usage}]` | No | Live status of some or all sub-agents |
+| `wait_subagents(handles, timeout_s)` → `{completed: [...results], pending: [...status]}` | Yes, up to `timeout_s` (≤ 120 s) | Waits for the given sub-agents and returns the results of those that finished |
+| `cancel_subagent(handle, reason)` | No | Cooperative cancel (checked between the sub-agent's steps and before its tool calls) |
+
+Parallel delegation therefore looks like: spawn several, then wait for them. The main agent may keep working (or check status) in between.
+
+### R16.5 Tools the sub-agent gets — MUST
+Added automatically to every sub-agent:
+
+| Tool | Does |
+|---|---|
+| `report_progress(message, percent?)` | Non-blocking status update. It is stored on the invocation, visible through `subagent_status`, and streamed as `subagent.progress`. Rate-limited to 1 per 2 s and 50 per sub-agent; extra updates are dropped with a note to the model |
+| `return_result(summary, result?, status = success \| partial \| failed)` | Ends the sub-agent with an explicit result. `result` is validated against `output_schema` if one is set |
+
+If a sub-agent stops without calling `return_result`, its last assistant message becomes the result with `status=success`. If it hits a limit, the result is `status=failed` (or `partial` if it reported progress) with the reason.
+
+**Communication is upward only** in v1.0: status and result go up, and the task goes down. A sub-agent asking the main agent a question mid-task is on the roadmap (§6).
+
+### R16.6 Context isolation — MUST
+A sub-agent starts with its own system prompt and a single user message containing `task` (and `context` if given). It never sees the main agent's conversation, tool results or session memory. The main agent decides exactly what to pass.
+
+### R16.7 Least privilege — MUST
+- A sub-agent has **only the tools in its own file**, never the main agent's. It cannot spawn sub-agents (it has no spawn tools).
+- **No approval-gated actions in sub-agents:** tools with risk class `external_side_effect` (R14.10) and hooks returning `ask` are rejected for sub-agents at validation (for tools) and at runtime (for `ask` → treated as `deny`). Human approval goes through the main agent, which a person is talking to.
+- **Sandboxed tools** (`run_python`, CR-002) get a **separate sandbox per sub-agent invocation**, so sub-agents can't see each other's files.
+
+### R16.8 Budgets — MUST
+- Each sub-agent has its own limits (from its file, tightened by the orchestrator).
+- All sub-agent usage counts toward the **main run's budget** (R14.1).
+- At the main run's soft limit (R14.2), running sub-agents are asked to wrap up (`return_result` with what they have). At the hard limit they are cancelled.
+
+### R16.9 A turn can't end with sub-agents still running — MUST
+If the main agent produces its final answer while sub-agents are still running, the orchestrator first waits for them (bounded by the run's remaining time), then gives the main agent one more model call with their results. A sub-agent spawned in one turn never outlives that turn's run.
+
+### R16.10 Visibility — MUST
+- **Session stream** (CR-001 R12.5): sub-agents appear as nested cards under the main agent's message, with live progress messages, their tool calls and their returned result.
+- **Tracing** (R2.7): spans `subagent:{name}` sit under the main agent's span.
+- **API:** `GET /runs/{id}` lists the run's sub-agent invocations (agent, status, progress, usage).
+- **Metrics** (R7.2): sub-agents spawned, running, by outcome; duration; cost by sub-agent.
 
 ## 3. Amendments
 
 | Req | Change |
 |---|---|
-| **R2.8** | Sub-runs become the general delegation mechanism (R16.2). The research workflow's researcher fan-out is now one use of it. |
-| **CR-003 R14.6** | Applies to all delegations; adds per-sub-agent `max_parallel`. |
-| **CR-004 R15.1, R15.2** | Frontmatter adds `subagents`; validation adds the cycle and depth checks. |
-| **CR-004 §6** | "Agents delegating to other agents as tools" moves **into scope**. Free-form hand-off (transferring the conversation to another agent permanently) stays out of scope. |
-| **§5 API** | `GET /runs/{id}` includes the child tree; the session stream carries `subagent.*` events. |
-| **§6 / R12.11 UI** | Nested sub-agent cards in the chat view; child chips in the run view (R6.1) now apply to any agent. |
-| **§9 Storage** | `runs` adds `delegated_by_tool_call_id` (links a child to the tool call that spawned it). |
+| **CR-004 R15.1 / ADR-0003** | Agents move from flat files `agents/<name>.agent.md` to **folders** `agents/<name>/agent.md`; sub-agents are sub-folders (R16.1). |
+| **CR-004 R15.10** | The research workflow's agents become `agents/planner/`, `agents/researcher/`, `agents/critic/`, `agents/synthesizer/` (main agents used by workflow nodes). The researcher fan-out remains **child runs** (R2.8) to keep the cross-pod fan-out and AC6. |
+| **CR-004 §6** | "Agents delegating to other agents" moves into scope as sub-agents. Hand-off (transferring the conversation permanently) stays out of scope. |
+| **CR-003 R14.6** | Depth is fixed by design: a main agent and its leaf sub-agents. Adds the per-run sub-agent limits (R16.3). |
+| **§5 API** | `GET /runs/{id}` includes sub-agent invocations; the session stream carries `subagent.*` events. |
+| **§9 Storage** | New table `subagent_invocations (handle PK, run_id, agent, task, status, progress jsonb, result jsonb, usage jsonb, epoch, spawned_by_tool_call_id UNIQUE, created_at, finished_at)`. |
 
 ## 4. Acceptance criteria (§11)
 
-- **AC37 · Parallel delegation.** With 2 workers, the chat agent delegates to two sub-agents in one turn. Both children run concurrently on **different workers**, the parent holds no lease while waiting, and the answer uses both results.
-- **AC38 · No deadlock.** With 1 worker at `--concurrency 1`, a parent that delegates to 3 children still completes, because waiting parents free their slot.
-- **AC39 · Isolation & privilege.** A child's first model call contains only its own system prompt and the task. A child that tries to call a tool its parent has but it doesn't is denied.
-- **AC40 · Failure & cancel.** One child forced to fail → the parent gets the tool error and completes with the other result (`partial`). Cancelling the parent → every descendant ends `cancelled`.
-- **AC41 · Crash.** SIGKILL the worker running a child mid-task → the child is reclaimed elsewhere, completes once, and the parent receives exactly one result for that delegation.
-- **AC42 · Validation.** A definition cycle (A → B → A) or an over-deep chain fails `runtime agents validate`.
+- **AC37 · Parallel sub-agents.** The chat agent spawns `researcher` and `data-analyst` in one turn. Both run concurrently in the **same worker** (same pod name in events). Progress updates arrive on the session stream while they run, and the final answer uses both results.
+- **AC38 · Leaf & layout.** `runtime agents validate` fails for:
+  - a nested agent folder inside a sub-agent
+  - a `subagents` key or a session hook in a sub-agent file
+  - an `external_side_effect` tool in a sub-agent
+  - a folder/name mismatch
+- **AC39 · Isolation & privilege.** A sub-agent's first model call contains only its own system prompt and the task. A sub-agent calling a tool its main agent has but it doesn't is denied. Two sub-agents using `run_python` get different sandboxes.
+- **AC40 · Status, return, cancel, timeout.** `subagent_status` shows `report_progress` messages. `return_result(status=partial)` reaches the main agent as partial. `cancel_subagent` stops a sub-agent between steps. A sub-agent past its timeout returns `failed: timeout`. The main agent can't finish while a sub-agent runs (R16.9).
+- **AC41 · Crash resume.** SIGKILL the worker while two sub-agents are mid-task. The reclaiming worker resumes the main agent and both sub-agents from their checkpoints: no completed sub-agent step is re-executed, no sub-agent is spawned twice, and `subagent_invocations` ends with exactly one result per handle.
+- **AC42 · Budget roll-up.** Sub-agent usage appears in the main run's totals. A sub-agent burning tokens drives the main run to its soft limit (sub-agents asked to wrap up), then the hard limit (sub-agents cancelled).
 
 ## 5. Impact on the phase plan
 
 | # | Phase | Adds |
 |---|---|---|
-| 1 | Durable single run | Definition schema includes `subagents` and the cycle/depth validation (AC42) |
-| 5 | Sub-runs & backpressure | Built as the **general** delegation mechanism: `delegate_to_*` tools, context isolation, budget roll-up, propagation of failure/cancel/approval (R16.2–R16.7). AC38, AC40, AC41 |
-| 6 | Chat | `chat` + `data-analyst` agents with sub-agents; `make demo-subagents`. AC37, AC39 |
-| 8 | Research | The researcher fan-out uses the same mechanism |
-| 9 | Observability | Delegation tree in traces and metrics |
-| 11 | UI | Nested sub-agent cards (R16.8) |
+| 1 | Durable single run | Folder-based loader with sub-agent discovery and the leaf/schema checks (R16.1, R16.2; AC38) |
+| 5 | Sub-runs, sub-agents & backpressure | Workflow child runs (R2.8) **and** the sub-agent orchestrator, tools, persistence and recovery (R16.3–R16.9). AC40–AC42 |
+| 6 | Chat | `chat` with `researcher` and `data-analyst` sub-agents; `make demo-subagents`. AC37, AC39 |
+| 7 | Sandboxes | One sandbox per sub-agent invocation (R16.7) |
+| 9 | Observability | Sub-agent spans and metrics |
+| 11 | UI | Nested sub-agent cards with live progress |
 
-Estimated additional effort: **~8–12 focused hours**. Most of the machinery (child runs) was already planned for Phase 5; this makes it general.
+Estimated additional effort: **~10–14 focused hours.**
 
 ## 6. Out of scope / roadmap
-- **Hand-off:** permanently transferring the conversation to another agent (rather than delegating a task and getting a result back).
-- **Sub-agents calling back to the parent mid-task,** or messaging each other: only the task goes down and only the result comes up.
-- **Dynamic sub-agents created by the model at runtime:** only declared agents can be delegated to.
+- **A sub-agent asking its main agent a question mid-task** (`ask_parent`): bidirectional messaging, with the sub-agent paused until answered.
+- **Sharing a sub-agent across main agents** (a shared library folder referenced by name).
+- **Running sub-agents on other pods:** a per-sub-agent `placement: remote` option using child runs (R2.8) for heavy sub-agents.
+- **Hand-off** (permanently transferring the conversation to another agent).

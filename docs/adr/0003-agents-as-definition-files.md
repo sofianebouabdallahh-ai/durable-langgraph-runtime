@@ -5,6 +5,7 @@
 | **Status** | Accepted (2026-10-11, with CR-004) |
 | **Date** | 2026-10-11 |
 | **Amends** | [ADR-0001](0001-repository-layout.md): the `backend/src/agents/` entry |
+| **Amended by** | [CR-005](../requirements/CR-005-subagents.md): one folder per agent (`agents/<name>/agent.md`); sub-agents are leaf sub-folders |
 
 ## Context
 
