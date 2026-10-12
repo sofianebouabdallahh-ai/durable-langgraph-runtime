@@ -18,6 +18,23 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - CR-004 + ADR-0003 (accepted): agents defined as `backend/agents/*.agent.md` (name, max turns, prompt, tools, limits, hooks); hooks for session start/end, turn start/end and pre/post tool, built on LangChain middleware plus harness-owned session hooks.
 - CR-003 (accepted): harness guardrails. Run budgets with a soft→hard wrap-up, loop detection, ceilings that callers can only tighten, deny-by-default tool grants, least-privilege DB roles, untrusted-content handling, audit trail, kill switch.
 
+### Phase 1 — Durable single run
+#### Added
+- Epoch-fenced LangGraph checkpointer (Protection Proxy over `AsyncPostgresSaver`); spike findings in `docs/design.md`.
+- Run state machine, UUIDv7 ids, `RunRepository` (atomic transitions + events, gap-free `seq`, leases, heartbeat, results).
+- `RunExecutor`: lease + heartbeat, `durability="sync"`, node events committed with each step's checkpoint (Transactional Outbox), `max_steps` and wall-clock limits, reclaim with `max_reclaims`.
+- Limits where options can only tighten server ceilings (`422` names the field and maximum).
+- Agent definitions: `backend/agents/<main>/agent.md` with leaf sub-agent folders; strict loader; content-addressed snapshots; `runtime agents validate|show`.
+- API: `POST /runs`, `GET /runs/{id}`, `/events`, `/result`, `/graphs`, `/healthz`, `/readyz`; RFC 9457 problem details.
+- CLI: `runtime db upgrade`, `api`, `run`, `execute`/`resume`. Makefile: `api`, `run-toy`, `agents-validate`.
+- Migration `0002` (agent snapshots, usage counters, limits, kill switch, sub-agent invocations).
+- Tests: 108 (unit + integration), including a real-process SIGKILL crash-and-resume test.
+
+#### Changed
+- Package renamed `runtime` → `agent_runtime` (the CLI is still `runtime`).
+- Supply-chain cooldown: `[tool.uv] exclude-newer`.
+- Integration tests fail (not skip) on missing services under `make test` and in CI.
+
 ### Phase 0 — Foundations
 #### Added
 - Requirements: CR-001 (chat sessions) and CR-002 (per-run sandboxes) on top of the v1.0 + Kubernetes spec; `docs/roadmap.md`.
