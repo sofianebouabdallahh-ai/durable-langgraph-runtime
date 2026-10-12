@@ -6,6 +6,7 @@ The delivery plan for **Durable, Distributed Runtime for LangGraph Agents**: wha
 - Base spec: [`Project_4_Detailed_Requirements_K8s.pdf`](requirements/Project_4_Detailed_Requirements_K8s.pdf). Requirements are `R<section>.<n>` and acceptance criteria are `AC<n>`.
 - [CR-001 — Chat sessions](requirements/CR-001-chat-sessions.md): accepted. Adds §12 (R12.x), fixes F1–F3, AC18–AC21.
 - [CR-002 — Per-run sandboxes](requirements/CR-002-run-sandboxes.md): accepted. Adds §13 (R13.x), AC22–AC25.
+- [CR-003 — Harness guardrails](requirements/CR-003-harness-guardrails.md): proposed. Adds §14 (R14.x): budgets, loop detection, least privilege, untrusted content, kill switch; AC26–AC32.
 - [ADR-0001 — Repository layout](adr/0001-repository-layout.md): where every component lives, including how the spec's paths (`examples/`, `deploy/helm/`, `ops/grafana/`) map to this repo.
 
 When this roadmap and a requirement disagree, the requirement wins and this file gets fixed.
@@ -78,7 +79,7 @@ Legend: ⏳ next · 🚧 in progress · ✅ done · ⏸ blocked
 
 ## Phases
 
-Estimates are focused hours and only rough guesses; we'll correct them as we go. The total is **~140–185 h**: the base spec's 100–130 h, plus about 15–20 h for CR-001 and about 20–25 h for CR-002.
+Estimates are focused hours and only rough guesses; we'll correct them as we go. The total is **~155–205 h**: the base spec's 100–130 h, plus about 15–20 h for CR-001, 20–25 h for CR-002 and 14–18 h for CR-003.
 
 ### Phase 0 — Foundations · ~4–6 h
 **Goal:** an empty but real project. Running `make up` brings up Postgres and Redis, `make test` runs, and CI is green.
@@ -98,6 +99,7 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 - Postgres checkpointer with `thread_id` (R1.2); **prototype the epoch-aware checkpointer first (F1 / R2.10)**
 - Persisted events with a per-run `seq` (R1.5)
 - First API endpoints: `POST /runs`, `GET /runs/{id}`, `GET /runs/{id}/events`, `/healthz`
+- `ScriptedModelProvider` for deterministic tests (R14.20); budget accounting and the ceiling → graph profile → options hierarchy, where options can only tighten limits (R14.1, R14.3)
 
 **Learn:** LangGraph state, supersteps, checkpointers, threads; transactional state transitions.
 **Done when:** killing the process mid-run and calling resume finishes the run without re-running completed nodes.
@@ -109,6 +111,7 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 - Leases, fencing tokens and heartbeats (R2.3); reaper and reclaim (R2.4); the reclaim race (F2)
 - Resume (R1.3), cooperative cancel (R1.6)
 - Worker graceful shutdown on SIGTERM, release with `run.released` (the runtime part of R10.7)
+- Least-privilege Postgres roles per component (R14.13); kill switch (R14.18); budgets survive reclaim
 
 **Learn:** at-least-once delivery, leases, fencing tokens, zombies, the reasons for idempotency.
 **Done when:** **AC2** (crash-and-resume) and **AC5** (zombie safety) pass via `make demo-crash`.
@@ -127,6 +130,7 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 - Tool registry with `side_effect`, `cache` and `isolation` (R3.4, R13.1)
 - `ToolPolicy` (R3.2); idempotency wrapper and `tool_invocations` (R2.6)
 - `interrupt()`, the approve endpoint, re-enqueue on approval (R1.4)
+- Deny-by-default grants per graph/node, risk classes, strict argument validation, audit events, result truncation (R14.9–R14.11, R14.17, R14.5)
 
 **Learn:** idempotency keys, the outbox-style "record, then act" pattern, durable pauses.
 **Done when:** **AC4** (approval survives restart) passes.
@@ -135,6 +139,7 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 **Goal:** fan-out spreads across workers.
 - Parent/child protocol, `waiting_children`, atomic `child_done`, fan-in and `partial` (R2.8)
 - `max_children`, queue-depth metric, `429` with `Retry-After` (R2.9)
+- Sub-run depth and descendant limits; child usage rolls up to its ancestors (R14.6)
 - `docs/design.md`: the trade-off of sub-runs vs. `Send`
 
 **Learn:** distributed fan-out/fan-in, atomic counters, backpressure.
@@ -147,7 +152,9 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 - `ModelProvider` with OpenAI + Ollama + `embed()` (R3.1, F3); `backend/src/agents/chat` agent with `search`, `retrieve`, `save_note` (R12.9)
 
 **Learn:** LangGraph threads and `add_messages`; conversation state vs. transcript.
-**Done when:** **AC18** (multi-session) and **AC19** (crash mid-turn) pass.
+- Model-call budget, soft→hard wrap-up, loop detection, retries with backoff, admission control (R14.2, R14.4, R14.7, R14.8)
+
+**Done when:** **AC18**, **AC19** and **AC26–AC28** (runaway agent, loop, ceilings) pass.
 
 ### Phase 7 — Sandboxes · ~10–12 h
 **Goal:** risky tools run in a disposable, locked-down container per run.
@@ -172,6 +179,7 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 - OpenTelemetry → Collector → Jaeger, one trace across API → worker → children (R2.7, R7.1); JSON logs
 - Prometheus metrics and Grafana dashboard (R7.2), including the session and sandbox metrics
 - Compose `observability` profile
+- Guardrail metrics, content-free logging, reproducible model-call attributes (R14.16, R14.19)
 
 **Learn:** distributed tracing and context propagation, RED/USE metrics.
 **Done when:** **AC8** passes: one trace spans every hop.
@@ -179,6 +187,7 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 ### Phase 10 — Evals & CI quality gate · ~6–8 h
 - ≥ 20 research cases + ≥ 5 multi-turn chat cases; scorers; `make eval` (R7.3)
 - CI gate against `evals/baseline.json`, `make eval-accept` (R7.4)
+- ≥ 10 prompt-injection cases; the gate requires 0 policy violations (R14.15, AC30)
 - Integration tests in CI with Compose (§8)
 
 **Learn:** LLM evaluation, LLM-as-judge, regression gates.
