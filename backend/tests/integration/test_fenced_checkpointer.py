@@ -37,12 +37,6 @@ class Node(Protocol):
     def __call__(self, state: State) -> Awaitable[State]: ...
 
 
-@pytest.fixture(scope="module")
-async def checkpoint_tables(pool: Pool) -> None:
-    """LangGraph creates and migrates its own tables (idempotent)."""
-    await AsyncPostgresSaver(pool).setup()
-
-
 async def _run_with_epoch(pool: Pool, epoch: int) -> uuid.UUID:
     async with pool.connection() as conn:
         run = await RunRepository(conn).create(graph_name="toy", input={})

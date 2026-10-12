@@ -17,6 +17,7 @@ import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg import sql
 
 from agent_runtime.config import Settings, get_settings
@@ -94,3 +95,9 @@ async def pool(alembic_cfg: Config, test_settings: Settings) -> AsyncIterator[Po
     command.upgrade(alembic_cfg, "head")
     async with create_pool(test_settings, max_size=20) as p:
         yield p
+
+
+@pytest.fixture(scope="session")
+async def checkpoint_tables(pool: Pool) -> None:
+    """LangGraph creates and migrates its own tables (idempotent)."""
+    await AsyncPostgresSaver(pool).setup()

@@ -28,10 +28,8 @@ silently bypass the fence.
 
 from __future__ import annotations
 
-import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
@@ -40,38 +38,13 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.checkpoint.serde.base import SerializerProtocol
 
 from agent_runtime.db import Conn, Pool
+from agent_runtime.fencing import Fence, FencedError, check_fence
 
+__all__ = ["Fence", "FencedCheckpointer", "FencedError", "OnCommit", "check_fence"]
 
-@dataclass(frozen=True, slots=True)
-class Fence:
-    """The identity a writer claims: this run, at this lease epoch."""
-
-    run_id: uuid.UUID
-    epoch: int
-
-
-class FencedError(Exception):
-    """A write was attempted with an epoch that no longer owns the run."""
-
-    def __init__(self, fence: Fence, current_epoch: int | None) -> None:
-        owner = "run not found" if current_epoch is None else f"current epoch {current_epoch}"
-        super().__init__(
-            f"run {fence.run_id}: write fenced off (writer epoch {fence.epoch}, {owner})"
-        )
-        self.fence = fence
-        self.current_epoch = current_epoch
-
-
-async def check_fence(conn: Conn, fence: Fence) -> None:
-    """Lock the run row (shared) and verify `fence` still owns it.
-
-    Must run inside a transaction; the shared lock is held until it ends.
-    """
-    cur = await conn.execute("SELECT epoch FROM runs WHERE id = %s FOR SHARE", (fence.run_id,))
-    row = await cur.fetchone()
-    current = None if row is None else int(row["epoch"])
-    if current != fence.epoch:
-        raise FencedError(fence, current)
+# Called inside the checkpoint's transaction, after LangGraph's write: whatever it
+# writes commits atomically with the checkpoint (Transactional Outbox, R1.5).
+OnCommit = Callable[[Conn, CheckpointMetadata], Awaitable[None]]
 
 
 class FencedCheckpointer(AsyncPostgresSaver):
@@ -81,19 +54,25 @@ class FencedCheckpointer(AsyncPostgresSaver):
     """
 
     def __init__(
-        self, pool: Pool, fence: Fence, *, serde: SerializerProtocol | None = None
+        self,
+        pool: Pool,
+        fence: Fence,
+        *,
+        on_commit: OnCommit | None = None,
+        serde: SerializerProtocol | None = None,
     ) -> None:
         super().__init__(pool, serde=serde)
         self._pool = pool
+        self._on_commit = on_commit
         self.fence = fence
 
     @asynccontextmanager
-    async def _fenced(self) -> AsyncIterator[AsyncPostgresSaver]:
+    async def _fenced(self) -> AsyncIterator[tuple[Conn, AsyncPostgresSaver]]:
         async with self._pool.connection() as conn, conn.transaction():
             await check_fence(conn, self.fence)
             # Bound to the transaction's connection, so LangGraph's own writes
             # commit or roll back together with the fence check.
-            yield AsyncPostgresSaver(conn, serde=self.serde)
+            yield conn, AsyncPostgresSaver(conn, serde=self.serde)
 
     async def aput(
         self,
@@ -102,8 +81,11 @@ class FencedCheckpointer(AsyncPostgresSaver):
         metadata: CheckpointMetadata,
         new_versions: ChannelVersions,
     ) -> RunnableConfig:
-        async with self._fenced() as inner:
-            return await inner.aput(config, checkpoint, metadata, new_versions)
+        async with self._fenced() as (conn, inner):
+            next_config = await inner.aput(config, checkpoint, metadata, new_versions)
+            if self._on_commit is not None:
+                await self._on_commit(conn, metadata)
+            return next_config
 
     async def aput_writes(
         self,
@@ -112,9 +94,9 @@ class FencedCheckpointer(AsyncPostgresSaver):
         task_id: str,
         task_path: str = "",
     ) -> None:
-        async with self._fenced() as inner:
+        async with self._fenced() as (_, inner):
             await inner.aput_writes(config, writes, task_id, task_path)
 
     async def adelete_thread(self, thread_id: str) -> None:
-        async with self._fenced() as inner:
+        async with self._fenced() as (_, inner):
             await inner.adelete_thread(thread_id)

@@ -32,6 +32,7 @@ from psycopg.pq import TransactionStatus
 from psycopg.types.json import Jsonb
 
 from agent_runtime.db import Conn
+from agent_runtime.fencing import Fence, check_fence
 from agent_runtime.ids import new_id
 from agent_runtime.runs.events import EventType
 from agent_runtime.runs.state import InvalidTransition, RunStatus, sources_of
@@ -86,6 +87,15 @@ class Run:
             started_at=row["started_at"],
             finished_at=row["finished_at"],
         )
+
+
+@dataclass(frozen=True, slots=True)
+class Lease:
+    """Ownership of a run at one epoch. `fence` must accompany every write."""
+
+    fence: Fence
+    reclaimed: bool  # the run was `running` under a dead owner (R2.4)
+    reclaims: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,7 +211,7 @@ class RunRepository:
         target: RunStatus,
         *,
         event: EventType,
-        epoch: int,
+        fence: Fence | None = None,
         reason: str | None = None,
         payload: dict[str, Any] | None = None,
     ) -> Run:
@@ -211,8 +221,14 @@ class RunRepository:
         concurrency): when two processes race to change the same run, exactly
         one succeeds; the other sees zero rows and gets `InvalidTransition`
         naming the run's real current status.
+
+        `fence`: a worker's transitions are fenced (R2.3); a stale epoch raises
+        `FencedError` and nothing is written. API-side transitions pass None.
+        Leaving `running` releases the lease (owner and expiry cleared).
         """
         async with self._conn.transaction():
+            if fence is not None:
+                await check_fence(self._conn, fence)
             cur = await self._conn.execute(
                 f"""
                 UPDATE runs SET
@@ -220,7 +236,9 @@ class RunRepository:
                     reason      = %(reason)s,
                     started_at  = CASE WHEN %(target)s = 'running'
                                        THEN coalesce(started_at, now()) ELSE started_at END,
-                    finished_at = CASE WHEN %(terminal)s THEN now() ELSE NULL END
+                    finished_at = CASE WHEN %(terminal)s THEN now() ELSE NULL END,
+                    owner            = CASE WHEN %(target)s = 'running' THEN owner END,
+                    lease_expires_at = CASE WHEN %(target)s = 'running' THEN lease_expires_at END
                 WHERE id = %(id)s AND status = ANY(%(sources)s)
                 RETURNING {_RUN_COLUMNS}
                 """,
@@ -236,8 +254,79 @@ class RunRepository:
             if row is None:
                 current = await self.get(run_id)  # raises RunNotFound
                 raise InvalidTransition(current.status, target)
-            await self.append_event(run_id, epoch=epoch, type=event, payload=payload or {})
+            await self.append_event(run_id, epoch=row["epoch"], type=event, payload=payload or {})
         return Run.from_row(row)
+
+    # ------------------------------------------------------------- ownership
+
+    async def acquire_lease(self, run_id: uuid.UUID, owner: str, ttl_s: float) -> Lease | None:
+        """Take ownership of a runnable run (R2.3); None if someone else holds it.
+
+        Succeeds for a `queued` run, or a `running` run whose lease expired (its
+        worker died or froze): that is a *reclaim* (R2.4) and is counted. The
+        epoch bump is what fences off the previous owner.
+        """
+        cur = await self._conn.execute(
+            """
+            UPDATE runs SET
+                owner            = %(owner)s,
+                epoch            = epoch + 1,
+                lease_expires_at = now() + make_interval(secs => %(ttl)s),
+                reclaims         = reclaims + CASE WHEN status = 'running' THEN 1 ELSE 0 END
+            WHERE id = %(id)s
+              AND status IN ('queued', 'running')
+              AND (owner IS NULL OR lease_expires_at < now())
+            RETURNING epoch, status, reclaims
+            """,
+            {"id": run_id, "owner": owner, "ttl": ttl_s},
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return None
+        return Lease(
+            fence=Fence(run_id, row["epoch"]),
+            reclaimed=row["status"] == RunStatus.RUNNING,
+            reclaims=row["reclaims"],
+        )
+
+    async def renew_lease(self, fence: Fence, owner: str, ttl_s: float) -> bool:
+        """Heartbeat (R2.3). False means ownership is gone: stop working."""
+        cur = await self._conn.execute(
+            """
+            UPDATE runs SET lease_expires_at = now() + make_interval(secs => %(ttl)s)
+            WHERE id = %(id)s AND epoch = %(epoch)s AND owner = %(owner)s
+              AND status = 'running'
+            RETURNING 1
+            """,
+            {"id": fence.run_id, "epoch": fence.epoch, "owner": owner, "ttl": ttl_s},
+        )
+        return await cur.fetchone() is not None
+
+    # --------------------------------------------------------- usage & output
+
+    async def add_steps(self, run_id: uuid.UUID, n: int) -> int:
+        """Count committed supersteps (R1.7). Call inside the fenced transaction."""
+        cur = await self._conn.execute(
+            "UPDATE runs SET steps = steps + %s WHERE id = %s RETURNING steps", (n, run_id)
+        )
+        row = await cur.fetchone()
+        if row is None:
+            raise RunNotFound(run_id)
+        return int(row["steps"])
+
+    async def save_result(
+        self, run_id: uuid.UUID, output: dict[str, Any], *, partial: bool = False
+    ) -> None:
+        await self._conn.execute(
+            "INSERT INTO run_results (run_id, output, partial) VALUES (%s, %s, %s)",
+            (run_id, Jsonb(output), partial),
+        )
+
+    async def get_result(self, run_id: uuid.UUID) -> dict[str, Any] | None:
+        cur = await self._conn.execute(
+            "SELECT output, partial FROM run_results WHERE run_id = %s", (run_id,)
+        )
+        return await cur.fetchone()
 
     async def get(self, run_id: uuid.UUID) -> Run:
         cur = await self._conn.execute(f"SELECT {_RUN_COLUMNS} FROM runs WHERE id = %s", (run_id,))

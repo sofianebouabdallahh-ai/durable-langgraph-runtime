@@ -6,6 +6,7 @@ import uuid
 import pytest
 
 from agent_runtime.db import Pool
+from agent_runtime.fencing import FencedError
 from agent_runtime.ids import new_id
 from agent_runtime.runs.events import EventType
 from agent_runtime.runs.state import FailureReason, InvalidTransition, RunStatus
@@ -50,8 +51,8 @@ async def test_transition_updates_status_and_appends_event_atomically(pool: Pool
     run_id = await _new_run(pool)
     async with pool.connection() as conn:
         repo = RunRepository(conn)
-        running = await repo.transition(run_id, S.RUNNING, event=E.RUN_STARTED, epoch=1)
-        done = await repo.transition(run_id, S.COMPLETED, event=E.RUN_COMPLETED, epoch=1)
+        running = await repo.transition(run_id, S.RUNNING, event=E.RUN_STARTED)
+        done = await repo.transition(run_id, S.COMPLETED, event=E.RUN_COMPLETED)
         events = await repo.list_events(run_id)
     assert running.started_at is not None and running.finished_at is None
     assert done.status is S.COMPLETED and done.finished_at is not None
@@ -62,9 +63,9 @@ async def test_failed_run_records_reason(pool: Pool) -> None:
     run_id = await _new_run(pool)
     async with pool.connection() as conn:
         repo = RunRepository(conn)
-        await repo.transition(run_id, S.RUNNING, event=E.RUN_STARTED, epoch=1)
+        await repo.transition(run_id, S.RUNNING, event=E.RUN_STARTED)
         run = await repo.transition(
-            run_id, S.FAILED, event=E.RUN_FAILED, epoch=1, reason=FailureReason.STEP_LIMIT
+            run_id, S.FAILED, event=E.RUN_FAILED, reason=FailureReason.STEP_LIMIT
         )
     assert (run.status, run.reason) == (S.FAILED, "step_limit")
 
@@ -74,7 +75,7 @@ async def test_illegal_transition_changes_nothing(pool: Pool) -> None:
     async with pool.connection() as conn:
         repo = RunRepository(conn)
         with pytest.raises(InvalidTransition, match="from queued to completed"):
-            await repo.transition(run_id, S.COMPLETED, event=E.RUN_COMPLETED, epoch=1)
+            await repo.transition(run_id, S.COMPLETED, event=E.RUN_COMPLETED)
         run = await repo.get(run_id)
         events = await repo.list_events(run_id)
     assert run.status is S.QUEUED
@@ -85,12 +86,12 @@ async def test_racing_transitions_exactly_one_wins(pool: Pool) -> None:
     """Two processes try to end the same run at once: one wins, one is told why."""
     run_id = await _new_run(pool)
     async with pool.connection() as conn:
-        await RunRepository(conn).transition(run_id, S.RUNNING, event=E.RUN_STARTED, epoch=1)
+        await RunRepository(conn).transition(run_id, S.RUNNING, event=E.RUN_STARTED)
 
     async def end(target: RunStatus, event: EventType) -> RunStatus | InvalidTransition:
         async with pool.connection() as conn:
             try:
-                run = await RunRepository(conn).transition(run_id, target, event=event, epoch=1)
+                run = await RunRepository(conn).transition(run_id, target, event=event)
                 return run.status
             except InvalidTransition as exc:
                 return exc
@@ -154,3 +155,67 @@ async def test_unknown_run(pool: Pool) -> None:
     async with pool.connection() as conn:
         with pytest.raises(RunNotFound):
             await RunRepository(conn).get(uuid.uuid4())
+
+
+# ------------------------------------------------------------- leases (R2.3)
+
+
+async def test_acquire_lease_bumps_epoch_and_blocks_a_second_owner(pool: Pool) -> None:
+    run_id = await _new_run(pool)
+    async with pool.connection() as conn:
+        repo = RunRepository(conn)
+        lease = await repo.acquire_lease(run_id, "w1:1", ttl_s=30)
+        assert lease is not None and lease.fence.epoch == 1 and not lease.reclaimed
+        assert await repo.acquire_lease(run_id, "w2:2", ttl_s=30) is None  # still held
+        assert (await repo.get(run_id)).owner == "w1:1"
+
+
+async def test_expired_lease_of_a_running_run_is_a_reclaim(pool: Pool) -> None:
+    run_id = await _new_run(pool)
+    async with pool.connection() as conn:
+        repo = RunRepository(conn)
+        first = await repo.acquire_lease(run_id, "w1:1", ttl_s=30)
+        assert first is not None
+        await repo.transition(run_id, S.RUNNING, event=E.RUN_STARTED, fence=first.fence)
+        await conn.execute(
+            "UPDATE runs SET lease_expires_at = now() - interval '1 second' WHERE id = %s",
+            (run_id,),
+        )
+        second = await repo.acquire_lease(run_id, "w2:2", ttl_s=30)
+    assert second is not None
+    assert (second.fence.epoch, second.reclaimed, second.reclaims) == (2, True, 1)
+
+
+async def test_renew_lease_fails_after_takeover(pool: Pool) -> None:
+    run_id = await _new_run(pool)
+    async with pool.connection() as conn:
+        repo = RunRepository(conn)
+        lease = await repo.acquire_lease(run_id, "w1:1", ttl_s=30)
+        assert lease is not None
+        await repo.transition(run_id, S.RUNNING, event=E.RUN_STARTED, fence=lease.fence)
+        assert await repo.renew_lease(lease.fence, "w1:1", ttl_s=30)
+        await conn.execute("UPDATE runs SET epoch = epoch + 1 WHERE id = %s", (run_id,))
+        assert not await repo.renew_lease(lease.fence, "w1:1", ttl_s=30)
+
+
+async def test_fenced_transition_rejects_stale_epoch(pool: Pool) -> None:
+    run_id = await _new_run(pool)
+    async with pool.connection() as conn:
+        repo = RunRepository(conn)
+        lease = await repo.acquire_lease(run_id, "w1:1", ttl_s=30)
+        assert lease is not None
+        await conn.execute("UPDATE runs SET epoch = epoch + 1 WHERE id = %s", (run_id,))
+        with pytest.raises(FencedError):
+            await repo.transition(run_id, S.RUNNING, event=E.RUN_STARTED, fence=lease.fence)
+        assert (await repo.get(run_id)).status is S.QUEUED
+
+
+async def test_leaving_running_releases_the_lease(pool: Pool) -> None:
+    run_id = await _new_run(pool)
+    async with pool.connection() as conn:
+        repo = RunRepository(conn)
+        lease = await repo.acquire_lease(run_id, "w1:1", ttl_s=30)
+        assert lease is not None
+        await repo.transition(run_id, S.RUNNING, event=E.RUN_STARTED, fence=lease.fence)
+        done = await repo.transition(run_id, S.COMPLETED, event=E.RUN_COMPLETED, fence=lease.fence)
+    assert (done.owner, done.lease_expires_at) == (None, None)
