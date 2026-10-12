@@ -1,0 +1,42 @@
+# Local inner loop (R9.2). Phase 0 has only the stateful services; api, worker
+# and ui join in later phases, and the `observability` profile in phase 9.
+#
+# Ports bind to 127.0.0.1 so the databases are never exposed on the LAN.
+
+name: agent-runtime
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.0-pg16 # Postgres 16 + pgvector (R4.5)
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7.4-alpine
+    # AOF on: the work stream and its pending entries survive a Redis restart.
+    # Redis is still rebuildable from Postgres; AOF just avoids needless recovery.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  postgres-data:
+  redis-data:
