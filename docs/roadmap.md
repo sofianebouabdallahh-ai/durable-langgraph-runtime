@@ -53,8 +53,8 @@ Work happens on `main` with small conventional commits (`feat:`, `fix:`, `test:`
 
 | # | Phase | Status |
 |---|---|---|
-| 0 | Foundations | ⏳ Next |
-| 1 | Durable single run | — |
+| 0 | Foundations | ✅ Done — [summary](progress/phase-00.md) |
+| 1 | Durable single run | ⏳ Next |
 | 2 | Distributed workers | — |
 | 3 | Streaming across replicas | — |
 | 4 | Tools & human-in-the-loop | — |
