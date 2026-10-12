@@ -17,9 +17,31 @@ defaults:
     working-directory: backend
 
 jobs:
+  secrets:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # scan the full history, not just the last commit
+      - name: gitleaks over all commits
+        shell: bash
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/repo \
+            -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 \
+            git --redact --no-banner -v /repo 2>&1 | tee gitleaks.log
+          # gitleaks exits 0 when git refuses the repo and it scans nothing; don't trust that.
+          grep -Eq "[1-9][0-9]* commits scanned" gitleaks.log || { echo "::error::gitleaks scanned 0 commits"; exit 1; }
+
   quality:
     name: lint · typecheck · unit
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
@@ -35,6 +57,7 @@ jobs:
   integration:
     name: migrations · integration
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       postgres:
         image: pgvector/pgvector:0.8.0-pg16
@@ -46,6 +69,8 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U agent -d agent_runtime"
           --health-interval 2s --health-timeout 3s --health-retries 30
+    # Throw-away credentials for an ephemeral service container: not secrets, so
+    # plain env is fine. Real secrets would come from GitHub Environment secrets.
     env:
       POSTGRES_HOST: localhost
       POSTGRES_DB: agent_runtime

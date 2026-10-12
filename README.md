@@ -43,7 +43,17 @@ A monorepo with one folder per deliverable ([ADR-0001](docs/adr/0001-repository-
 
 ## Configuration
 
-All settings come from environment variables ([backend/src/runtime/config.py](backend/src/runtime/config.py)). For local development, copy [.env.example](.env.example) to `.env`; `make` exports it automatically. Never commit `.env`.
+All settings come from environment variables, validated at startup by [backend/src/runtime/config.py](backend/src/runtime/config.py). How they get there depends on the environment:
+
+| Environment | Configuration | Secrets |
+|---|---|---|
+| Laptop | `.env` (from [.env.example](.env.example)), passed by `make` to `uv` and Compose | same `.env`, git-ignored |
+| CI | workflow `env:` | GitHub Environment secrets; OIDC for cloud access |
+| Kubernetes | ConfigMap from Helm values | K8s Secret (kind: `make k8s-secrets`; cloud: External Secrets) |
+
+The same image runs everywhere; only the injected environment differs. Details and rules are in [ADR-0002](docs/adr/0002-configuration-and-secrets.md).
+
+Run `make hooks` once after cloning: the pre-commit hooks block secrets from being committed.
 
 ## Security posture
 
