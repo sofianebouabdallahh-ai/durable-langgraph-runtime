@@ -7,7 +7,7 @@ SQLAlchemy model metadata to compare against.
 from alembic import context
 from sqlalchemy import create_engine, pool
 
-from runtime.config import get_settings
+from agent_runtime.config import get_settings
 
 
 def run_migrations() -> None:

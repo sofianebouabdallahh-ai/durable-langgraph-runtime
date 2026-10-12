@@ -35,7 +35,7 @@ A monorepo with one folder per deliverable ([ADR-0001](docs/adr/0001-repository-
 
 | Path | What |
 |---|---|
-| [`backend/`](backend/) | Python service: `src/runtime` package, Alembic `migrations/`, `tests/{unit,integration}` |
+| [`backend/`](backend/) | Python service: `src/agent_runtime` package, Alembic `migrations/`, `tests/{unit,integration}` |
 | [`frontend/`](frontend/) | React + TypeScript UI (phase 11) |
 | [`infra/`](infra/) | How it runs: `compose/` now; sandbox image, observability, kind, k8s and Helm later |
 | [`docs/`](docs/) | `requirements/` (spec + change requests), `adr/`, `progress/` (phase summaries), `roadmap.md` |
@@ -43,7 +43,7 @@ A monorepo with one folder per deliverable ([ADR-0001](docs/adr/0001-repository-
 
 ## Configuration
 
-All settings come from environment variables, validated at startup by [backend/src/runtime/config.py](backend/src/runtime/config.py). How they get there depends on the environment:
+All settings come from environment variables, validated at startup by [backend/src/agent_runtime/config.py](backend/src/agent_runtime/config.py). How they get there depends on the environment:
 
 | Environment | Configuration | Secrets |
 |---|---|---|

@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from runtime.config import Settings
+from agent_runtime.config import Settings
 
 
 @pytest.fixture(autouse=True)

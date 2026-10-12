@@ -13,7 +13,7 @@ from alembic import command
 from alembic.config import Config
 from psycopg import sql
 
-from runtime.config import Settings, get_settings
+from agent_runtime.config import Settings, get_settings
 
 ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"  # backend/alembic.ini
 

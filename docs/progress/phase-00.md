@@ -6,9 +6,9 @@
 
 ## What we built
 
-**Project tooling** ([pyproject.toml](../../backend/pyproject.toml), [uv.lock](../../backend/uv.lock)). A Python 3.12 package called `runtime`, managed by `uv`. `uv.lock` records the exact version of every dependency, including indirect ones, so every machine and CI installs identical packages (R9.3). `ruff` checks style and common bugs, `mypy --strict` requires full type annotations, and `pytest` runs the tests. So far the only dependencies are what this phase uses (pydantic-settings, SQLAlchemy, Alembic, psycopg). LangGraph, FastAPI and Redis arrive in the phase that first uses them.
+**Project tooling** ([pyproject.toml](../../backend/pyproject.toml), [uv.lock](../../backend/uv.lock)). A Python 3.12 package, `runtime` at the time (renamed `agent_runtime` in phase 1), managed by `uv`. `uv.lock` records the exact version of every dependency, including indirect ones, so every machine and CI installs identical packages (R9.3). `ruff` checks style and common bugs, `mypy --strict` requires full type annotations, and `pytest` runs the tests. So far the only dependencies are what this phase uses (pydantic-settings, SQLAlchemy, Alembic, psycopg). LangGraph, FastAPI and Redis arrive in the phase that first uses them.
 
-**Configuration** ([backend/src/runtime/config.py](../../backend/src/runtime/config.py), [.env.example](../../.env.example)). One `Settings` class reads every setting from environment variables, and only from there (R9.1). Compose, Kubernetes and the Makefile each deliver those variables in their own way, and the code never knows which one did. The Postgres password is a `SecretStr` with no default, so it never appears in logs and is never baked into code or images. The class enforces one rule from the spec: the heartbeat interval must be at most a third of the lease TTL (R2.3).
+**Configuration** ([backend/src/agent_runtime/config.py](../../backend/src/agent_runtime/config.py), [.env.example](../../.env.example)). One `Settings` class reads every setting from environment variables, and only from there (R9.1). Compose, Kubernetes and the Makefile each deliver those variables in their own way, and the code never knows which one did. The Postgres password is a `SecretStr` with no default, so it never appears in logs and is never baked into code or images. The class enforces one rule from the spec: the heartbeat interval must be at most a third of the lease TTL (R2.3).
 
 **Local services** ([infra/compose/docker-compose.yml](../../infra/compose/docker-compose.yml)). Postgres 16 with the pgvector extension, and Redis 7 with its append-only file (AOF) turned on. Both have healthchecks, so `make up` waits until they're actually ready. Both bind to `127.0.0.1` only, so they aren't reachable from your network.
 
@@ -38,7 +38,7 @@
  your shell ── make ──► uv run (pytest, alembic, mypy, ruff)
                  │            │ reads env (.env exported by make)
                  ▼            ▼
-         docker compose   runtime.config.Settings ──► database_url()
+         docker compose   agent_runtime.config.Settings ──► database_url()
             ├── postgres:5432  ◄── alembic upgrade head (schema 0001)
             └── redis:6379        (unused until phase 2)
 ```
