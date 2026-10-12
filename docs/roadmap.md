@@ -8,6 +8,7 @@ The delivery plan for **Durable, Distributed Runtime for LangGraph Agents**: wha
 - [CR-002 — Per-run sandboxes](requirements/CR-002-run-sandboxes.md): accepted. Adds §13 (R13.x), AC22–AC25.
 - [CR-003 — Harness guardrails](requirements/CR-003-harness-guardrails.md): accepted. Adds §14 (R14.x): budgets, loop detection, least privilege, untrusted content, kill switch; AC26–AC32.
 - [CR-004 — Agent definitions & hooks](requirements/CR-004-agent-definitions-and-hooks.md): accepted. Adds §15 (R15.x): one `.agent.md` file per agent (name, max turns, prompt, tools, limits, hooks); `session_start` / `turn_*` / `pre_tool` / `post_tool` / `session_end` hooks; AC33–AC36.
+- [CR-005 — Sub-agents](requirements/CR-005-subagents.md): proposed. Adds §16 (R16.x): any agent can declare sub-agents and delegate tasks to them, in parallel, as child runs across workers; AC37–AC42.
 - [ADR-0001 — Repository layout](adr/0001-repository-layout.md): where every component lives, including how the spec's paths (`examples/`, `deploy/helm/`, `ops/grafana/`) map to this repo.
 
 When this roadmap and a requirement disagree, the requirement wins and this file gets fixed.
@@ -64,7 +65,7 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 | 2 | Distributed workers | — |
 | 3 | Streaming across replicas | — |
 | 4 | Tools & human-in-the-loop | — |
-| 5 | Sub-runs & backpressure | — |
+| 5 | Sub-runs, sub-agents & backpressure | — |
 | 6 | Chat sessions + chat agent | — |
 | 7 | Sandboxes | — |
 | 8 | Research agent | — |
@@ -80,7 +81,7 @@ Legend: ⏳ next · 🚧 in progress · ✅ done · ⏸ blocked
 
 ## Phases
 
-Estimates are focused hours and only rough guesses; we'll correct them as we go. The total is **~165–220 h**: the base spec's 100–130 h, plus about 15–20 h for CR-001, 20–25 h for CR-002, 14–18 h for CR-003 and 10–14 h for CR-004.
+Estimates are focused hours and only rough guesses; we'll correct them as we go. The total is **~175–230 h**: the base spec's 100–130 h, plus about 15–20 h for CR-001, 20–25 h for CR-002, 14–18 h for CR-003, 10–14 h for CR-004 and 8–12 h for CR-005.
 
 ### Phase 0 — Foundations · ~4–6 h
 **Goal:** an empty but real project. Running `make up` brings up Postgres and Redis, `make test` runs, and CI is green.
@@ -138,15 +139,16 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 **Learn:** idempotency keys, the outbox-style "record, then act" pattern, durable pauses.
 **Done when:** **AC4** (approval survives restart) passes.
 
-### Phase 5 — Sub-runs & backpressure · ~6–8 h
-**Goal:** fan-out spreads across workers.
+### Phase 5 — Sub-runs, sub-agents & backpressure · ~10–14 h
+**Goal:** fan-out spreads across workers, and any agent can delegate to its declared sub-agents (CR-005).
 - Parent/child protocol, `waiting_children`, atomic `child_done`, fan-in and `partial` (R2.8)
 - `max_children`, queue-depth metric, `429` with `Retry-After` (R2.9)
 - Sub-run depth and descendant limits; child usage rolls up to its ancestors (R14.6)
+- General delegation: `delegate_to_<agent>` tools, parallel children, context isolation, own-tools-only, failure/cancel/approval propagation (R16.1–R16.7)
 - `docs/design.md`: the trade-off of sub-runs vs. `Send`
 
 **Learn:** distributed fan-out/fan-in, atomic counters, backpressure.
-**Done when:** **AC6** passes: children run on more than one worker.
+**Done when:** **AC6** (children run on more than one worker), **AC38** (no deadlock), **AC40** (failure & cancel) and **AC41** (child crash) pass.
 
 ### Phase 6 — Chat sessions + chat agent · ~12–16 h
 **Goal:** chat with an agent across many sessions, with a durable transcript.
@@ -158,7 +160,9 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 - `agents/chat.agent.md`; `session_start` / `turn_start` / `turn_end` / `session_end` hooks, idle-session archiving, `/agents` API (R15.6, R15.11)
 - Model-call budget, soft→hard wrap-up, loop detection, retries with backoff, admission control (R14.2, R14.4, R14.7, R14.8)
 
-**Done when:** **AC18**, **AC19**, **AC26–AC28** (runaway agent, loop, ceilings) and **AC33–AC35** (definitions, tool hooks, session hooks) pass.
+- `data-analyst` agent; chat delegates to sub-agents; `make demo-subagents` (R16.9)
+
+**Done when:** **AC18**, **AC19**, **AC26–AC28** (runaway agent, loop, ceilings), **AC33–AC35** (definitions, tool hooks, session hooks) and **AC37**, **AC39** (parallel delegation, isolation) pass.
 
 ### Phase 7 — Sandboxes · ~10–12 h
 **Goal:** risky tools run in a disposable, locked-down container per run.

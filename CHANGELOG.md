@@ -13,6 +13,7 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - Pre-commit hooks (`make hooks`): gitleaks, ruff (locked version), file hygiene, no commits to `main`.
 - CI `secrets` job: gitleaks over the full git history, failing if it scans zero commits; per-job timeouts.
 - `docs/adr/` index.
+- CR-005 (proposed): sub-agents. Any agent declares `subagents` in its `.agent.md` and delegates tasks via `delegate_to_<name>` tools; children run in parallel as child runs across workers, with fresh context, their own tools only, budget roll-up, and cascading failure/cancel/approval.
 - CR-004 + ADR-0003 (accepted): agents defined as `backend/agents/*.agent.md` (name, max turns, prompt, tools, limits, hooks); hooks for session start/end, turn start/end and pre/post tool, built on LangChain middleware plus harness-owned session hooks.
 - CR-003 (accepted): harness guardrails. Run budgets with a soft→hard wrap-up, loop detection, ceilings that callers can only tighten, deny-by-default tool grants, least-privilege DB roles, untrusted-content handling, audit trail, kill switch.
 
