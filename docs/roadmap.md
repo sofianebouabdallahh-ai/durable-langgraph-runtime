@@ -8,7 +8,7 @@ The delivery plan for **Durable, Distributed Runtime for LangGraph Agents**: wha
 - [CR-002 — Per-run sandboxes](requirements/CR-002-run-sandboxes.md): accepted. Adds §13 (R13.x), AC22–AC25.
 - [CR-003 — Harness guardrails](requirements/CR-003-harness-guardrails.md): accepted. Adds §14 (R14.x): budgets, loop detection, least privilege, untrusted content, kill switch; AC26–AC32.
 - [CR-004 — Agent definitions & hooks](requirements/CR-004-agent-definitions-and-hooks.md): accepted. Adds §15 (R15.x): one Markdown definition per agent (name, max turns, prompt, tools, limits, hooks; folder layout per CR-005); `session_start` / `turn_*` / `pre_tool` / `post_tool` / `session_end` hooks; AC33–AC36.
-- [CR-005 — Sub-agents](requirements/CR-005-subagents.md): proposed. Adds §16 (R16.x): agents are folders (`agents/<name>/agent.md`), sub-agents are leaf sub-folders, run in-process by an orchestrator with status/progress/return tools, each checkpointed; AC37–AC42.
+- [CR-005 — Sub-agents](requirements/CR-005-subagents.md): accepted. Adds §16 (R16.x): agents are folders (`agents/<name>/agent.md`), sub-agents are leaf sub-folders, run in-process by an orchestrator with status/progress/return tools, each checkpointed; AC37–AC42.
 - [ADR-0001 — Repository layout](adr/0001-repository-layout.md): where every component lives, including how the spec's paths (`examples/`, `deploy/helm/`, `ops/grafana/`) map to this repo.
 
 When this roadmap and a requirement disagree, the requirement wins and this file gets fixed.

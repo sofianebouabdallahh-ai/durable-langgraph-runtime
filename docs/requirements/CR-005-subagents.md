@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted (2026-10-11) |
 | **Date** | 2026-10-11 |
 | **Base document** | [`Project_4_Detailed_Requirements_K8s.pdf`](Project_4_Detailed_Requirements_K8s.pdf) (v1.0 + Kubernetes) |
 | **Depends on** | CR-001 (sessions), CR-002 (sandboxes), CR-003 (guardrails), CR-004 (agent definitions) |
