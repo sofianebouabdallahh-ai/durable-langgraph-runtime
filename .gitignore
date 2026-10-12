@@ -1,0 +1,35 @@
+# Secrets — never commit (R9.1, R10.4). Only .env.example is committed.
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Node / UI
+node_modules/
+ui/dist/
+*.tsbuildinfo
+
+# Eval outputs (baseline.json is committed; per-SHA results are not)
+evals/results/
+
+# Kubernetes / Helm local artifacts
+deploy/helm/**/charts/*.tgz
+kubeconfig*
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
