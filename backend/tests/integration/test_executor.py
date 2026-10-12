@@ -1,9 +1,6 @@
 """RunExecutor end to end on Postgres with the `toy` graph."""
 
 import asyncio
-import uuid
-from collections.abc import Awaitable, Callable
-from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -16,7 +13,8 @@ from agent_runtime.runs.executor import RunExecutor, RunNotRunnable
 from agent_runtime.runs.limits import LimitAboveCeiling
 from agent_runtime.runs.service import RunService
 from agent_runtime.runs.state import RunStatus as S
-from agent_runtime.runs.store import Event, RunRepository
+from agent_runtime.runs.store import RunRepository
+from tests.integration.support import events, node_completed, summary, wait_until
 
 pytestmark = pytest.mark.integration
 
@@ -36,34 +34,6 @@ def service(pool: Pool, settings_fast: Settings, checkpoint_tables: None) -> Run
 
 def executor(pool: Pool, settings: Settings, owner: str = "worker-a:1") -> RunExecutor:
     return RunExecutor(pool, settings, GRAPHS, owner=owner)
-
-
-async def events(pool: Pool, run_id: uuid.UUID) -> list[Event]:
-    async with pool.connection() as conn:
-        return await RunRepository(conn).list_events(run_id, limit=1000)
-
-
-def summary(evts: list[Event]) -> list[tuple[str, Any]]:
-    return [(e.type, e.payload.get("node") or e.payload.get("reason")) for e in evts]
-
-
-async def wait_until(
-    predicate: Callable[[], Awaitable[bool]], *, timeout_s: float = 10, interval_s: float = 0.05
-) -> None:
-    """Poll external state (the database) until `predicate` holds, or fail.
-
-    An asyncio.Event can't observe another process's writes, so polling is the
-    right tool here; the deadline guarantees a broken test fails, never hangs.
-    """
-    deadline = asyncio.get_running_loop().time() + timeout_s
-    while not await predicate():
-        if asyncio.get_running_loop().time() > deadline:
-            raise TimeoutError(f"condition not met within {timeout_s}s")
-        await asyncio.sleep(interval_s)
-
-
-async def node_completed(pool: Pool, run_id: uuid.UUID, node: str) -> bool:
-    return (E.NODE_COMPLETED, node) in summary(await events(pool, run_id))
 
 
 async def test_run_completes_with_events_steps_and_result(

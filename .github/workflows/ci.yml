@@ -86,7 +86,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: backend/uv.lock
       - run: uv sync --locked
-      - name: Apply migrations to the main database
-        run: uv run alembic upgrade head
+      - name: Migrate (our schema + LangGraph's tables), as the deploy will
+        run: uv run runtime db upgrade
       - name: Integration tests
         run: uv run pytest -m integration
