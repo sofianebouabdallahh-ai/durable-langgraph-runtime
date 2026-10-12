@@ -74,10 +74,11 @@ typecheck: ## mypy --strict
 test-unit: ## Unit tests (no services, no .env: proves they need neither)
 	$(BACKEND) pytest tests/unit
 
+# REQUIRE_SERVICES=1: a missing database fails the run instead of skipping it.
 test-integration: env ## Integration tests (needs `make up`)
-	$(BACKEND_ENV) pytest -m integration
+	cd backend && REQUIRE_SERVICES=1 uv run --frozen --env-file $(ENV_FILE) pytest -m integration
 
 test: env ## All tests (needs `make up`)
-	$(BACKEND_ENV) pytest
+	cd backend && REQUIRE_SERVICES=1 uv run --frozen --env-file $(ENV_FILE) pytest
 
 check: lint typecheck test ## Everything CI runs

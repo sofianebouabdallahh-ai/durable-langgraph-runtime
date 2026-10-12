@@ -74,3 +74,8 @@ markers = [
     "integration: needs Postgres/Redis running (make up)",
 ]
 addopts = "-ra --strict-markers"
+asyncio_mode = "auto"
+# One event loop for the whole session, so a session-scoped connection pool
+# can be shared by every async test.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"

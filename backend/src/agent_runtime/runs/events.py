@@ -1,0 +1,22 @@
+"""Run event types (R1.5). Persisted to `run_events` before any publish."""
+
+from enum import StrEnum
+
+
+class EventType(StrEnum):
+    RUN_CREATED = "run.created"
+    RUN_STARTED = "run.started"
+    RUN_COMPLETED = "run.completed"
+    RUN_FAILED = "run.failed"
+    RUN_CANCELLED = "run.cancelled"
+    RUN_RECLAIMED = "run.reclaimed"
+    RUN_RELEASED = "run.released"
+    NODE_STARTED = "node.started"
+    NODE_COMPLETED = "node.completed"
+    NODE_FAILED = "node.failed"
+    TOOL_CALLED = "tool.called"
+    TOOL_COMPLETED = "tool.completed"
+    INTERRUPT_RAISED = "interrupt.raised"
+    CHILD_STARTED = "child.started"
+    CHILD_COMPLETED = "child.completed"
+    # `token` is deliberately absent: it is pub/sub only and never persisted.

@@ -76,6 +76,7 @@ jobs:
       POSTGRES_DB: agent_runtime
       POSTGRES_USER: agent
       POSTGRES_PASSWORD: ci-only
+      REQUIRE_SERVICES: "1" # missing services fail the tests instead of skipping them
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
@@ -85,8 +86,5 @@ jobs:
       - run: uv sync --locked
       - name: Apply migrations to the main database
         run: uv run alembic upgrade head
-      - name: Integration tests (fail if anything is skipped)
-        shell: bash # explicit bash adds -o pipefail, so a pytest failure isn't hidden by tee
-        run: |
-          uv run pytest -m integration -rs | tee pytest.log
-          ! grep -q "SKIPPED" pytest.log
+      - name: Integration tests
+        run: uv run pytest -m integration
