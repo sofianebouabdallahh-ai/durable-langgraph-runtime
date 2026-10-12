@@ -4,7 +4,7 @@
 |---|---|
 | **Status** | Accepted (2026-10-11) |
 | **Date** | 2026-10-11 |
-| **Base document** | `Project_4_Detailed_Requirements_K8s.pdf` (v1.0 + Kubernetes) |
+| **Base document** | [`Project_4_Detailed_Requirements_K8s.pdf`](Project_4_Detailed_Requirements_K8s.pdf) (v1.0 + Kubernetes) |
 | **Scope** | New §12 Sessions; amendments to §1, §2, §3, §5, §6, §8, §9, §11; three spec fixes |
 
 ## 1. Motivation
@@ -124,7 +124,7 @@ When a turn's graph calls `interrupt()`, R1.4 applies unchanged. In addition, an
 ### R12.8 Context window — SHOULD
 When the thread's messages exceed a configurable token budget (`SESSION_CONTEXT_TOKENS`), older messages are summarised into a `system` message in state before the model call. The transcript is not changed; only the agent's context is.
 
-### R12.9 Chat agent — `examples/chat` — MUST
+### R12.9 Chat agent — `backend/src/agents/chat` — MUST
 A `create_agent` graph with the tools `search`, `retrieve` and `save_note`. `save_note` is the side-effecting tool, used to exercise R2.6 in a chat. Tools go through the registry (R3.4), so they get policy, idempotency, tracing and transcript writes automatically. Uses `MODEL_CHAT`.
 **SHOULD:** a `deep_research(question)` tool that starts the research graph (§4) as a **child run** (R2.8). The chat turn waits in `waiting_children`, and the research plan approval appears in the chat as an `interrupt` message.
 

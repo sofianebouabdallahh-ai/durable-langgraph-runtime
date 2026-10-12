@@ -15,7 +15,7 @@ A runtime that runs LangGraph agents across a pool of workers and makes them sur
 - **Chat sessions.** A session is a LangGraph thread, and each user message is a durable run on that thread.
 - **Per-run sandboxes.** Tools that execute model-generated input run in a disposable container with no network and no secrets.
 
-The full design is in the spec (`Project_4_Detailed_Requirements_K8s.pdf`) and the change requests in [docs/requirements/](docs/requirements/).
+The full design is in the [spec](docs/requirements/Project_4_Detailed_Requirements_K8s.pdf) and the change requests in [docs/requirements/](docs/requirements/).
 
 ## Quickstart (Phase 0)
 
@@ -31,18 +31,19 @@ make help    # every target
 
 ## Repository layout
 
+A monorepo with one folder per deliverable ([ADR-0001](docs/adr/0001-repository-layout.md) explains why).
+
 | Path | What |
 |---|---|
-| `runtime/` | The runtime package (`runtime` CLI) |
-| `migrations/` | Alembic migrations, written as explicit SQL |
-| `tests/` | Unit tests; `tests/integration/` needs `make up` |
-| `docs/roadmap.md` | Phase plan and status |
-| `docs/requirements/` | Accepted change requests on top of the spec |
-| `docs/progress/` | One summary per completed phase |
+| [`backend/`](backend/) | Python service: `src/runtime` package, Alembic `migrations/`, `tests/{unit,integration}` |
+| [`frontend/`](frontend/) | React + TypeScript UI (phase 11) |
+| [`infra/`](infra/) | How it runs: `compose/` now; sandbox image, observability, kind, k8s and Helm later |
+| [`docs/`](docs/) | `requirements/` (spec + change requests), `adr/`, `progress/` (phase summaries), `roadmap.md` |
+| `Makefile` | The single entry point. Run `make` from the root |
 
 ## Configuration
 
-All settings come from environment variables ([runtime/config.py](runtime/config.py)). For local development, copy [.env.example](.env.example) to `.env`; `make` exports it automatically. Never commit `.env`.
+All settings come from environment variables ([backend/src/runtime/config.py](backend/src/runtime/config.py)). For local development, copy [.env.example](.env.example) to `.env`; `make` exports it automatically. Never commit `.env`.
 
 ## Security posture
 

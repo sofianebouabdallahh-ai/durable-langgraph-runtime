@@ -4,6 +4,7 @@
 |---|---|
 | **Status** | Accepted (2026-10-11) — option B |
 | **Date** | 2026-10-11 |
+| **Base document** | [`Project_4_Detailed_Requirements_K8s.pdf`](Project_4_Detailed_Requirements_K8s.pdf) (v1.0 + Kubernetes) |
 | **Depends on** | CR-001 (chat sessions) |
 | **Scope** | New §13 Sandboxing; amendments to R3.4, R9.4, §10 (R10.1, R10.3, R10.11), §8, §11 |
 

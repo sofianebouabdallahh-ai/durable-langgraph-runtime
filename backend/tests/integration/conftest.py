@@ -5,6 +5,7 @@ Tests never touch the development database: each session creates a throwaway
 """
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import psycopg
 import pytest
@@ -14,9 +15,11 @@ from psycopg import sql
 
 from runtime.config import Settings, get_settings
 
+ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"  # backend/alembic.ini
+
 
 def _alembic_config(database_url: str) -> Config:
-    cfg = Config("alembic.ini")
+    cfg = Config(str(ALEMBIC_INI))
     cfg.attributes["database_url"] = database_url
     return cfg
 

@@ -12,6 +12,10 @@ concurrency:
 permissions:
   contents: read
 
+defaults:
+  run:
+    working-directory: backend
+
 jobs:
   quality:
     name: lint · typecheck · unit
@@ -21,6 +25,7 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
+          cache-dependency-glob: backend/uv.lock
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .
@@ -51,6 +56,7 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
+          cache-dependency-glob: backend/uv.lock
       - run: uv sync --locked
       - name: Apply migrations to the main database
         run: uv run alembic upgrade head

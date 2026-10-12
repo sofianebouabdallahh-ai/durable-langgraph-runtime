@@ -1,6 +1,9 @@
 # Local inner loop (R9.2). Phase 0 has only the stateful services; api, worker
 # and ui join in later phases, and the `observability` profile in phase 9.
 #
+# Run it through the root Makefile (`make up`), which passes the root .env:
+#   docker compose --file infra/compose/docker-compose.yml --env-file .env ...
+#
 # Ports bind to 127.0.0.1 so the databases are never exposed on the LAN.
 
 name: agent-runtime

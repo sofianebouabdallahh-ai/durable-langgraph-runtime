@@ -2,17 +2,19 @@
 
 **Completed:** 2026-10-11 · **Tag:** `phase-00` · **Commits:** `97960bf` … `8ffb6f5`
 
+> Links below point to the current paths. After the phase, the repo was reorganised into `backend/`, `frontend/` and `infra/` ([ADR-0001](../adr/0001-repository-layout.md)). The tag `phase-00` still shows the original flat layout.
+
 ## What we built
 
-**Project tooling** ([pyproject.toml](../../pyproject.toml), [uv.lock](../../uv.lock)). A Python 3.12 package called `runtime`, managed by `uv`. `uv.lock` records the exact version of every dependency, including indirect ones, so every machine and CI installs identical packages (R9.3). `ruff` checks style and common bugs, `mypy --strict` requires full type annotations, and `pytest` runs the tests. So far the only dependencies are what this phase uses (pydantic-settings, SQLAlchemy, Alembic, psycopg). LangGraph, FastAPI and Redis arrive in the phase that first uses them.
+**Project tooling** ([pyproject.toml](../../backend/pyproject.toml), [uv.lock](../../backend/uv.lock)). A Python 3.12 package called `runtime`, managed by `uv`. `uv.lock` records the exact version of every dependency, including indirect ones, so every machine and CI installs identical packages (R9.3). `ruff` checks style and common bugs, `mypy --strict` requires full type annotations, and `pytest` runs the tests. So far the only dependencies are what this phase uses (pydantic-settings, SQLAlchemy, Alembic, psycopg). LangGraph, FastAPI and Redis arrive in the phase that first uses them.
 
-**Configuration** ([runtime/config.py](../../runtime/config.py), [.env.example](../../.env.example)). One `Settings` class reads every setting from environment variables, and only from there (R9.1). Compose, Kubernetes and the Makefile each deliver those variables in their own way, and the code never knows which one did. The Postgres password is a `SecretStr` with no default, so it never appears in logs and is never baked into code or images. The class enforces one rule from the spec: the heartbeat interval must be at most a third of the lease TTL (R2.3).
+**Configuration** ([backend/src/runtime/config.py](../../backend/src/runtime/config.py), [.env.example](../../.env.example)). One `Settings` class reads every setting from environment variables, and only from there (R9.1). Compose, Kubernetes and the Makefile each deliver those variables in their own way, and the code never knows which one did. The Postgres password is a `SecretStr` with no default, so it never appears in logs and is never baked into code or images. The class enforces one rule from the spec: the heartbeat interval must be at most a third of the lease TTL (R2.3).
 
-**Local services** ([docker-compose.yml](../../docker-compose.yml)). Postgres 16 with the pgvector extension, and Redis 7 with its append-only file (AOF) turned on. Both have healthchecks, so `make up` waits until they're actually ready. Both bind to `127.0.0.1` only, so they aren't reachable from your network.
+**Local services** ([infra/compose/docker-compose.yml](../../infra/compose/docker-compose.yml)). Postgres 16 with the pgvector extension, and Redis 7 with its append-only file (AOF) turned on. Both have healthchecks, so `make up` waits until they're actually ready. Both bind to `127.0.0.1` only, so they aren't reachable from your network.
 
 **Makefile** ([Makefile](../../Makefile)). One entry point for everything: `make up`, `down`, `nuke`, `migrate`, `migration`, `lint`, `fmt`, `typecheck`, `test`, `check`, and `make help` to list them. It exports `.env` to every command, so `uv run …` sees the same settings Compose does.
 
-**Database schema** ([migrations/versions/0001_initial_schema.py](../../migrations/versions/0001_initial_schema.py)). Alembic migration `0001` creates every table from spec §9 and CR-001, written as explicit SQL:
+**Database schema** ([backend/migrations/versions/0001_initial_schema.py](../../backend/migrations/versions/0001_initial_schema.py)). Alembic migration `0001` creates every table from spec §9 and CR-001, written as explicit SQL:
 
 | Table | Role |
 |---|---|
@@ -24,7 +26,7 @@
 | `documents` · `chunks` | Retrieval corpus; `chunks.embedding` is a `vector(768)` with an HNSW index |
 | `sessions` · `session_messages` | Chat sessions and their transcript, with a deterministic `message_id` |
 
-**Integration tests** ([tests/integration/](../../tests/integration/)). They create a throwaway `agent_runtime_test` database, so they never touch your dev data. They check that the migration chain applies, reverses and re-applies, and they exercise the constraints that later phases depend on.
+**Integration tests** ([backend/tests/integration/](../../backend/tests/integration/)). They create a throwaway `agent_runtime_test` database, so they never touch your dev data. They check that the migration chain applies, reverses and re-applies, and they exercise the constraints that later phases depend on.
 
 **CI** ([.github/workflows/ci.yml](../../.github/workflows/ci.yml)). Two jobs. `quality` runs lint, type-check and unit tests. `integration` runs migrations and the integration tests against a pgvector service container. The integration job **fails if any test is skipped**, so a missing database can't produce a false pass.
 

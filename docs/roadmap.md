@@ -3,9 +3,10 @@
 The delivery plan for **Durable, Distributed Runtime for LangGraph Agents**: what we build, in what order, and how we know each part is done.
 
 **Sources of truth for scope**
-- Base spec: `Project_4_Detailed_Requirements_K8s.pdf`. Requirements are `R<section>.<n>` and acceptance criteria are `AC<n>`.
+- Base spec: [`Project_4_Detailed_Requirements_K8s.pdf`](requirements/Project_4_Detailed_Requirements_K8s.pdf). Requirements are `R<section>.<n>` and acceptance criteria are `AC<n>`.
 - [CR-001 — Chat sessions](requirements/CR-001-chat-sessions.md): accepted. Adds §12 (R12.x), fixes F1–F3, AC18–AC21.
 - [CR-002 — Per-run sandboxes](requirements/CR-002-run-sandboxes.md): accepted. Adds §13 (R13.x), AC22–AC25.
+- [ADR-0001 — Repository layout](adr/0001-repository-layout.md): where every component lives, including how the spec's paths (`examples/`, `deploy/helm/`, `ops/grafana/`) map to this repo.
 
 When this roadmap and a requirement disagree, the requirement wins and this file gets fixed.
 
@@ -78,7 +79,7 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 
 ### Phase 0 — Foundations · ~4–6 h
 **Goal:** an empty but real project. Running `make up` brings up Postgres and Redis, `make test` runs, and CI is green.
-- Repo layout (`runtime/`, `examples/`, `ui/`, `deploy/`, `evals/`, `fixtures/`, `docs/`), `uv`, Python 3.12, pinned dependencies, `ruff`, `mypy --strict`, pytest
+- Repo layout: a monorepo with `backend/`, `frontend/`, `infra/` and `docs/` ([ADR-0001](adr/0001-repository-layout.md)); `uv`, Python 3.12, pinned dependencies, `ruff`, `mypy --strict`, pytest
 - `pydantic-settings` config and `.env.example` (R9.1)
 - Docker Compose with Postgres 16 + pgvector and Redis 7 (part of R9.2)
 - Alembic and the first migration with every table from §9 + CR-001 §6 (`runs`, `run_events`, `run_results`, `tool_invocations`, `findings`, `documents`, `chunks`, `sessions`, `session_messages`)
@@ -140,7 +141,7 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 **Goal:** chat with an agent across many sessions, with a durable transcript.
 - Sessions, turns, the one-active-turn rule (R12.1, R12.2); transcript with deterministic ids and fencing (R12.3, R12.4)
 - Session SSE stream (R12.5); HITL and cancel in chat (R12.6, R12.7); session API (R12.10)
-- `ModelProvider` with OpenAI + Ollama + `embed()` (R3.1, F3); `examples/chat` agent with `search`, `retrieve`, `save_note` (R12.9)
+- `ModelProvider` with OpenAI + Ollama + `embed()` (R3.1, F3); `backend/src/agents/chat` agent with `search`, `retrieve`, `save_note` (R12.9)
 
 **Learn:** LangGraph threads and `add_messages`; conversation state vs. transcript.
 **Done when:** **AC18** (multi-session) and **AC19** (crash mid-turn) pass.
