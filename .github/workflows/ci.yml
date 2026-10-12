@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: lint · typecheck · unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+      - run: uv run pytest -m "not integration"
+
+  integration:
+    name: migrations · integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.0-pg16
+        env:
+          POSTGRES_DB: agent_runtime
+          POSTGRES_USER: agent
+          POSTGRES_PASSWORD: ci-only
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U agent -d agent_runtime"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_DB: agent_runtime
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: ci-only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Apply migrations to the main database
+        run: uv run alembic upgrade head
+      - name: Integration tests (fail if anything is skipped)
+        shell: bash # explicit bash adds -o pipefail, so a pytest failure isn't hidden by tee
+        run: |
+          uv run pytest -m integration -rs | tee pytest.log
+          ! grep -q "SKIPPED" pytest.log
