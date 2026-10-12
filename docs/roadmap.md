@@ -61,7 +61,7 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 | # | Phase | Status |
 |---|---|---|
 | 0 | Foundations | ✅ Done — [summary](progress/phase-00.md) |
-| 1 | Durable single run | ⏳ Next |
+| 1 | Durable single run | 🚧 In progress (`feat/phase-01-durable-run`) |
 | 2 | Distributed workers | — |
 | 3 | Streaming across replicas | — |
 | 4 | Tools & human-in-the-loop | — |

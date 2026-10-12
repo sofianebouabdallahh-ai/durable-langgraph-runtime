@@ -25,12 +25,17 @@ TABLES = {
 }
 
 
+# Owned by LangGraph's checkpointer (created by its own `setup()`), not by Alembic.
+LANGGRAPH_TABLES = {"checkpoints", "checkpoint_blobs", "checkpoint_writes", "checkpoint_migrations"}
+
+
 def _tables(conn: psycopg.Connection) -> set[str]:
+    """Tables managed by our migrations (excludes Alembic's and LangGraph's own)."""
     rows = conn.execute(
         "SELECT tablename FROM pg_tables "
         "WHERE schemaname = 'public' AND tablename != 'alembic_version'"
     ).fetchall()
-    return {r[0] for r in rows}
+    return {r[0] for r in rows} - LANGGRAPH_TABLES
 
 
 def test_upgrade_downgrade_upgrade(alembic_cfg: Config, test_db_url: str) -> None:

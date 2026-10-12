@@ -17,8 +17,32 @@ Every non-trivial component names the pattern it applies. If no pattern fits, th
 | **Content-addressed snapshot** | `agent_definitions.hash` (migration 0002) | A run references the exact definition it started with, by hash. Identical definitions dedupe, and a changed file never alters an in-flight run (R15.4). |
 | **Expand / contract migrations** | `backend/migrations/` | Schema changes are additive first (new columns are nullable or defaulted), so old and new code can run side by side during a rolling upgrade (R10.6, AC15). |
 | **Fail-fast configuration** | [`config.py`](../backend/src/agent_runtime/config.py) | Invalid or missing settings stop the process at startup, with the field named, rather than failing later in the middle of a run. |
-| **Fencing token** | *Phase 1 spike → phase 2* | Every write carries the lease epoch, and the database rejects writes from a stale epoch, so a paused "zombie" worker can't corrupt a run it no longer owns (R2.3, R2.10). |
+| **Fencing token** | [`checkpointing.py`](../backend/src/agent_runtime/checkpointing.py) `Fence`, `check_fence` (events, transcript and tool writes join in phase 2) | Every write carries the lease epoch, and the database rejects writes from a stale epoch, so a paused "zombie" worker can't corrupt a run it no longer owns (R2.3, R2.10). |
+| **Protection Proxy** | `FencedCheckpointer` | Same interface as LangGraph's `AsyncPostgresSaver`; reads pass through, and every write runs inside our transaction after the fence check. It uses only LangGraph's public API, so an upgrade can't silently bypass the guard. |
 | **Idempotency key** | *Phase 4* | Tool calls keyed by `sha256(run · node · call_index · tool · args)`. A retry after reclaim returns the stored result instead of executing again (R2.6). |
+
+## Spike: fencing LangGraph checkpoints (phase 1, task 1.4)
+
+**Question:** can we stop a zombie worker's checkpoint writes without forking LangGraph?
+
+**Approach:** wrap each checkpoint write in our own transaction. `SELECT epoch FROM runs … FOR SHARE` runs first; if the epoch isn't ours, raise `FencedError` and roll back. Otherwise LangGraph writes on that same connection. `FOR SHARE` conflicts with the takeover's `UPDATE … epoch = epoch + 1`, so the check and the write are atomic with respect to a takeover.
+
+**Results** (3-node graph; node `b` triggers a takeover mid-run):
+
+| Scenario | Zombie behaviour | Persisted |
+|---|---|---|
+| No fence (plain LangGraph) | Executed `b` and `c` and finished | `[a, b, c]`: the zombie's work won |
+| Fence, `durability="sync"` | Stopped right after `b` | `[a]`: the new owner resumes from here; `a` is not re-run |
+| Fence, `durability="async"` (LangGraph default) | Stopped, but only **after executing `c`** | nothing: even `a` was lost |
+
+**Conclusions**
+1. **Fencing works on the public API.** Only `aput`, `aput_writes` and `adelete_thread` write; the other write hooks aren't implemented by the Postgres saver.
+2. **`durability="sync"` is mandatory** for every run. With async durability a zombie executes extra steps (extra side effects) before learning it's fenced, and more progress is lost.
+3. **Fencing bounds what a zombie can *persist*, not what it can *do*:** `b` executed twice. External side effects therefore also need idempotency keys (R2.6, phase 4).
+4. **Cost:** one extra `SELECT … FOR SHARE` per checkpoint write, on the same connection and in the same round trip budget.
+5. **Ownership:** LangGraph creates and migrates its own tables (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`) through `setup()`; Alembic manages ours. The migrate step will run both (phase 1, task 1.7).
+
+Tests: [`test_fenced_checkpointer.py`](../backend/tests/integration/test_fenced_checkpointer.py), including a control test proving that the unfenced zombie really does corrupt the run.
 
 ## Key design decisions
 
