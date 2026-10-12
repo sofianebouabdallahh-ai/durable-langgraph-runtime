@@ -77,7 +77,7 @@ Everything after this phase builds on two contracts set here: **all configuratio
 
 ## Known issues & follow-ups
 
-- **CI has never run on GitHub.** The repo has no remote yet. I linted the workflow with `actionlint` and reproduced the integration job locally (it passed), but its first real run happens when we push.
+- ~~CI has never run on GitHub~~ **Resolved:** pushed to the private repo [`durable-langgraph-runtime`](https://github.com/sofianebouabdallahh-ai/durable-langgraph-runtime). Both CI jobs pass. The first run warned that `actions/checkout@v4` and `setup-uv@v6` use the deprecated Node 20 runtime, so the workflow now uses `checkout@v7` and `setup-uv@v10.2.0` (Node 24).
 - **`docker` isn't on your shell's `PATH`.** Docker Desktop put the CLI in `~/.docker/bin`. `make` finds it on its own, but to run `docker` by hand, add this to `~/.zshrc`: `export PATH="$HOME/.docker/bin:$PATH"`.
 - **Running `uv run pytest` without `make` skips the integration tests,** because the database settings come from `.env`, which only `make` exports. CI sets the variables directly. This is by design (R9.1), but it can surprise you.
 - **Redis isn't used yet.** It's in Compose now so `make up` already matches the shape later phases need.

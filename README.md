@@ -1,5 +1,7 @@
 # Durable, Distributed Runtime for LangGraph Agents
 
+[![ci](https://github.com/sofianebouabdallahh-ai/durable-langgraph-runtime/actions/workflows/ci.yml/badge.svg)](https://github.com/sofianebouabdallahh-ai/durable-langgraph-runtime/actions/workflows/ci.yml)
+
 A runtime that runs LangGraph agents across a pool of workers and makes them survive what distributed systems throw at them: crashed workers, paused "zombie" workers, restarts, human approvals that take hours, node drains and rolling upgrades. It survives all of these without losing or duplicating work.
 
 > **Status: Phase 0 (foundations).** The tooling, local services, schema and CI are in place. Nothing runs agents yet. See the [roadmap](docs/roadmap.md).
