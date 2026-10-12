@@ -1,0 +1,43 @@
+# Checks that run on `git commit` (install once with `make hooks`).
+# CI runs the same checks, so the hooks are a fast local guard, not the only one.
+# Versions are pinned; ruff runs the version locked in backend/uv.lock so the hook
+# and CI can never disagree.
+
+repos:
+  # Block secrets before they enter git history (ADR-0002 rule 7).
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  # Basic file hygiene.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: check-merge-conflict
+      - id: check-yaml
+        args: ["--allow-multiple-documents"] # Kubernetes manifests (phase 12)
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: detect-private-key
+      - id: no-commit-to-branch # nothing lands on main without a branch + PR
+        args: ["--branch", "main"]
+
+  # Python lint + format, using the locked ruff from backend/.
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check (backend)
+        entry: bash -c 'cd backend && uv run --frozen ruff check --fix .'
+        language: system
+        files: ^backend/.*\.py$
+        pass_filenames: false
+      - id: ruff-format
+        name: ruff format (backend)
+        entry: bash -c 'cd backend && uv run --frozen ruff format .'
+        language: system
+        files: ^backend/.*\.py$
+        pass_filenames: false

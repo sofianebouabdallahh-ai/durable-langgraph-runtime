@@ -5,7 +5,14 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 ## [Unreleased]
 
 ### Changed
+- Configuration and secrets follow [ADR-0002](docs/adr/0002-configuration-and-secrets.md): `make` passes `.env` to `uv run --env-file` and `compose --env-file` instead of `include`-ing it; unit tests run without `.env`.
+- Workflow: all changes go through a branch and pull request; commits to `main` are blocked by a hook.
 - Repository reorganised into a monorepo ([ADR-0001](docs/adr/0001-repository-layout.md)): `backend/` (Python service, `src/` layout, `tests/unit` + `tests/integration`), `frontend/`, `infra/compose/`, and `docs/requirements/` for the spec. `make` targets are unchanged.
+
+### Added
+- Pre-commit hooks (`make hooks`): gitleaks, ruff (locked version), file hygiene, no commits to `main`.
+- CI `secrets` job: gitleaks over the full git history, failing if it scans zero commits; per-job timeouts.
+- `docs/adr/` index.
 
 ### Phase 0 — Foundations
 #### Added

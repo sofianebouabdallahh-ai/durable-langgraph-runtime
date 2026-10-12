@@ -46,7 +46,10 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 ```
 
 ### Branching & commits
-Work happens on `main` with small conventional commits (`feat:`, `fix:`, `test:`, `docs:`, `chore:`). Each phase ends with a tag. We can switch to a branch and PR per phase once CI exists (phase 0), if PR-style review is wanted.
+- **Nothing is committed directly to `main`.** Every change goes on a branch named `<type>/<topic>` (e.g. `feat/phase-01-durable-run`, `chore/config-and-secrets`). A pre-commit hook blocks commits on `main`.
+- **One pull request per phase,** or per standalone change. Sofiane reviews it on GitHub; it merges only when CI is green. PRs are merged with a merge commit, not squashed, so the per-task commits stay visible in history.
+- **Commits are small and conventional** (`feat:`, `fix:`, `test:`, `docs:`, `chore:`, `ci:`, `refactor:`). Each phase ends with a `phase-NN` tag on `main` after the merge.
+- **Hooks:** run `make hooks` once per clone. They block secrets (gitleaks), fix formatting and check file hygiene before each commit. CI runs the same checks.
 
 ---
 
