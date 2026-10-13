@@ -10,6 +10,7 @@ from agent_runtime.api.app import create_app
 from agent_runtime.config import Settings
 from agent_runtime.db import Pool
 from agent_runtime.graphs import default_registry
+from agent_runtime.queue import RedisWorkQueue
 from agent_runtime.runs.executor import RunExecutor
 
 pytestmark = pytest.mark.integration
@@ -19,9 +20,9 @@ PROBLEM = "application/problem+json"
 
 @pytest.fixture
 async def client(
-    pool: Pool, test_settings: Settings, checkpoint_tables: None
+    pool: Pool, test_settings: Settings, queue: RedisWorkQueue, checkpoint_tables: None
 ) -> AsyncIterator[httpx.AsyncClient]:
-    app = create_app(test_settings, pool=pool)
+    app = create_app(test_settings, pool=pool, queue=queue)
     async with (
         app.router.lifespan_context(app),
         httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c,
@@ -121,3 +122,75 @@ async def test_openapi_contract_is_published(client: httpx.AsyncClient) -> None:
     assert {"/runs", "/runs/{run_id}", "/runs/{run_id}/events", "/runs/{run_id}/result"} <= set(
         spec["paths"]
     )
+
+
+async def test_create_run_sends_a_work_message(
+    client: httpx.AsyncClient, queue: RedisWorkQueue
+) -> None:
+    run_id = (await create(client)).json()["run_id"]
+    (delivery,) = await queue.read("w", count=10, block_ms=10)
+    assert str(delivery.run_id) == run_id
+
+
+async def test_cancel_endpoint(client: httpx.AsyncClient) -> None:
+    run_id = (await create(client)).json()["run_id"]
+    cancelled = await client.post(f"/runs/{run_id}/cancel")
+    assert cancelled.status_code == 202
+    assert (cancelled.json()["status"], cancelled.json()["reason"]) == (
+        "cancelled",
+        "cancel_requested",
+    )
+    again = await client.post(f"/runs/{run_id}/cancel")
+    assert again.status_code == 409
+    assert again.json()["type"].endswith("/run-terminal")
+    assert (await client.post(f"/runs/{uuid.uuid4()}/cancel")).status_code == 404
+
+
+async def test_resume_endpoint_is_idempotent(
+    client: httpx.AsyncClient, queue: RedisWorkQueue
+) -> None:
+    run_id = (await create(client)).json()["run_id"]
+    for _ in range(2):
+        resp = await client.post(f"/runs/{run_id}/resume")
+        assert resp.status_code == 202 and resp.json()["status"] == "queued"
+    delivered = [d.run_id for d in await queue.read("w", count=10, block_ms=10)]
+    assert all(str(d) == run_id for d in delivered)  # duplicates are harmless hints
+
+    await client.post(f"/runs/{run_id}/cancel")
+    assert (await client.post(f"/runs/{run_id}/resume")).status_code == 409
+
+
+async def test_kill_switch(client: httpx.AsyncClient) -> None:
+    try:
+        paused = await client.post("/admin/pause", json={"reason": "incident 42"})
+        assert paused.json()["paused"] is True
+        refused = await create(client)
+        assert refused.status_code == 503
+        assert refused.headers["retry-after"] == "30"
+        assert "incident 42" in refused.json()["detail"]
+        assert (await client.get("/admin/state")).json()["paused"] is True
+    finally:
+        resumed = await client.post("/admin/resume")
+    assert resumed.json() == resumed.json() | {"paused": False, "reason": None}
+    assert (await create(client)).status_code == 202
+
+
+async def test_cancel_all(client: httpx.AsyncClient) -> None:
+    ids = [(await create(client)).json()["run_id"] for _ in range(3)]
+    result = (await client.post("/admin/cancel-all")).json()
+    assert result["cancel_requested"] >= 3
+    for run_id in ids:
+        assert (await client.get(f"/runs/{run_id}")).json()["status"] == "cancelled"
+
+
+async def test_admin_routes_can_be_disabled(
+    pool: Pool, test_settings: Settings, queue: RedisWorkQueue
+) -> None:
+    app = create_app(
+        test_settings.model_copy(update={"admin_api_enabled": False}), pool=pool, queue=queue
+    )
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c,
+    ):
+        assert (await c.post("/admin/pause", json={})).status_code == 404

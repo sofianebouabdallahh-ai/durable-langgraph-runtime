@@ -71,6 +71,12 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U agent -d agent_runtime"
           --health-interval 2s --health-timeout 3s --health-retries 30
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 30
     # Throw-away credentials for an ephemeral service container: not secrets, so
     # plain env is fine. Real secrets would come from GitHub Environment secrets.
     env:
@@ -78,6 +84,11 @@ jobs:
       POSTGRES_DB: agent_runtime
       POSTGRES_USER: agent
       POSTGRES_PASSWORD: ci-only
+      REDIS_URL: redis://localhost:6379/0
+      API_POSTGRES_USER: agent_api
+      API_POSTGRES_PASSWORD: ci-only-api
+      WORKER_POSTGRES_USER: agent_worker
+      WORKER_POSTGRES_PASSWORD: ci-only-worker
       REQUIRE_SERVICES: "1" # missing services fail the tests instead of skipping them
     steps:
       - uses: actions/checkout@v7
@@ -87,6 +98,6 @@ jobs:
           cache-dependency-glob: backend/uv.lock
       - run: uv sync --locked
       - name: Migrate (our schema + LangGraph's tables), as the deploy will
-        run: uv run runtime db upgrade
+        run: uv run runtime db upgrade && uv run runtime db provision-users
       - name: All tests with coverage (fails under the floor in pyproject.toml)
         run: uv run pytest --cov --cov-report=term

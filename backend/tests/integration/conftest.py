@@ -9,6 +9,7 @@ turn into a green build.
 """
 
 import os
+import uuid
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import NoReturn
@@ -19,9 +20,11 @@ from alembic import command
 from alembic.config import Config
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg import sql
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from agent_runtime.config import Settings, get_settings
 from agent_runtime.db import Pool, create_pool
+from agent_runtime.queue import RedisWorkQueue, create_redis
 
 ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"  # backend/alembic.ini
 
@@ -101,3 +104,20 @@ async def pool(alembic_cfg: Config, test_settings: Settings) -> AsyncIterator[Po
 async def checkpoint_tables(pool: Pool) -> None:
     """LangGraph creates and migrates its own tables (idempotent)."""
     await AsyncPostgresSaver(pool).setup()
+
+
+@pytest.fixture
+async def queue(settings: Settings) -> AsyncIterator[RedisWorkQueue]:
+    """A real Redis work queue on its own stream (db 15), deleted afterwards."""
+    redis = create_redis(settings.redis_url.rsplit("/", 1)[0] + "/15")
+    try:
+        await redis.ping()
+    except RedisConnectionError as exc:
+        _unavailable(f"Redis not reachable ({exc}); run `make up`")
+    q = RedisWorkQueue(redis, stream=f"test:{uuid.uuid4()}", group="workers")
+    await q.ensure_group()
+    try:
+        yield q
+    finally:
+        await redis.delete(q.stream)
+        await redis.aclose()

@@ -1,0 +1,208 @@
+"""A throw-away cluster: fresh database, own Redis stream, API + N worker processes."""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import uuid
+from collections.abc import Awaitable, Callable
+from pathlib import Path
+from types import TracebackType
+from typing import Any
+
+import httpx
+import psycopg
+from psycopg import sql
+
+from agent_runtime.config import get_settings
+
+BACKEND = Path(__file__).resolve().parents[2]
+
+# Short timings so a scenario takes seconds, not minutes. Same code, same ratios.
+TIMINGS = {
+    "LEASE_TTL_S": "3",
+    "HEARTBEAT_S": "1",
+    "REAPER_INTERVAL_S": "1",
+    "WORKER_BLOCK_MS": "300",
+    "RELAY_INTERVAL_S": "2",
+    "RELAY_STALE_S": "5",
+    "WORKER_GRACE_S": "20",
+    "LOG_LEVEL": "INFO",
+}
+LEASE_TTL_S = float(TIMINGS["LEASE_TTL_S"])
+REAPER_INTERVAL_S = float(TIMINGS["REAPER_INTERVAL_S"])
+
+
+def _free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+
+
+class Cluster:
+    def __init__(self, *, workers: int = 2, concurrency: int = 2) -> None:
+        settings = get_settings()
+        self._admin_url = settings.database_url(driver="postgresql")
+        self.db = f"agent_runtime_e2e_{uuid.uuid4().hex[:8]}"
+        self.port = _free_port()
+        self.workers_n = workers
+        self.concurrency = concurrency
+        self.logs = Path(tempfile.mkdtemp(prefix="e2e-"))
+        self.env = (
+            os.environ
+            | TIMINGS
+            | {
+                "POSTGRES_DB": self.db,
+                "REDIS_URL": settings.redis_url.rsplit("/", 1)[0] + "/14",
+                "WORK_STREAM": f"e2e:{self.db}",
+                "PYTHONUNBUFFERED": "1",
+            }
+        )
+        self._log_paths: dict[int, Path] = {}
+        self.api: subprocess.Popen[bytes] | None = None
+        self.workers: list[subprocess.Popen[bytes]] = []
+        self.client = httpx.AsyncClient(base_url=f"http://127.0.0.1:{self.port}", timeout=10)
+
+    # --------------------------------------------------------------- lifecycle
+
+    async def __aenter__(self) -> Cluster:
+        # Blocking setup work runs in a thread so the event loop stays responsive.
+        await asyncio.to_thread(self._prepare_database)
+        self.api = self._spawn("api", "api", "--port", str(self.port))
+        for i in range(self.workers_n):
+            self.start_worker(f"worker-{i}")
+        await self.wait(self._api_ready, timeout_s=30, what="API ready")
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        await self.client.aclose()
+        await asyncio.to_thread(self._teardown)
+
+    def _prepare_database(self) -> None:
+        with psycopg.connect(self._admin_url, autocommit=True) as admin:
+            admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(self.db)))
+        for cmd in (["db", "upgrade"], ["db", "provision-users"]):
+            done = subprocess.run(self._cmd(*cmd), cwd=BACKEND, env=self.env, capture_output=True)
+            if done.returncode != 0:
+                raise RuntimeError(f"runtime {' '.join(cmd)} failed: {done.stderr.decode()}")
+
+    def _teardown(self) -> None:
+        procs = [p for p in [self.api, *self.workers] if p is not None]
+        for p in procs:
+            if p.poll() is None:
+                try:
+                    p.send_signal(signal.SIGCONT)  # in case a scenario left one stopped
+                    p.terminate()
+                except ProcessLookupError:
+                    pass
+        deadline = time.monotonic() + 15
+        for p in procs:
+            try:
+                p.wait(timeout=max(0.1, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                p.kill()
+                p.wait()
+        with psycopg.connect(self._admin_url, autocommit=True) as admin:
+            admin.execute(
+                sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(self.db))
+            )
+
+    def start_worker(self, name: str) -> subprocess.Popen[bytes]:
+        p = self._spawn(name, "worker", "--concurrency", str(self.concurrency))
+        self.workers.append(p)
+        return p
+
+    def _cmd(self, *args: str) -> list[str]:
+        return [sys.executable, "-m", "agent_runtime.cli", *args]
+
+    def _spawn(self, name: str, *args: str) -> subprocess.Popen[bytes]:
+        path = self.logs / f"{name}.log"
+        log = path.open("wb")
+        proc = subprocess.Popen(self._cmd(*args), cwd=BACKEND, env=self.env, stdout=log, stderr=log)
+        self._log_paths[proc.pid] = path
+        return proc
+
+    def log_of(self, pid: int) -> str:
+        return self._log_paths[pid].read_text(errors="replace")
+
+    async def _api_ready(self) -> bool:
+        try:
+            return (await self.client.get("/readyz")).status_code == 200
+        except httpx.TransportError:
+            return False
+
+    # ----------------------------------------------------------------- the API
+
+    async def create_run(self, **input: Any) -> str:
+        resp = await self.client.post("/runs", json={"graph": "toy", "input": input})
+        resp.raise_for_status()
+        return str(resp.json()["run_id"])
+
+    async def run(self, run_id: str) -> dict[str, Any]:
+        resp = await self.client.get(f"/runs/{run_id}")
+        resp.raise_for_status()
+        body: dict[str, Any] = resp.json()
+        return body
+
+    async def events(self, run_id: str) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        after = 0
+        while True:
+            page = (
+                await self.client.get(f"/runs/{run_id}/events", params={"after_seq": after})
+            ).json()
+            out += page["events"]
+            if not page["events"]:
+                return out
+            after = page["next_after_seq"]
+
+    async def result(self, run_id: str) -> httpx.Response:
+        return await self.client.get(f"/runs/{run_id}/result")
+
+    # ----------------------------------------------------------------- helpers
+
+    async def wait(
+        self, predicate: Callable[[], Awaitable[bool]], *, timeout_s: float, what: str
+    ) -> float:
+        """Poll until `predicate` holds; returns the seconds it took."""
+        t0 = time.monotonic()
+        while not await predicate():
+            if time.monotonic() - t0 > timeout_s:
+                raise TimeoutError(f"timed out after {timeout_s}s waiting for: {what}")
+            await asyncio.sleep(0.1)
+        return time.monotonic() - t0
+
+    async def node_completed(self, run_id: str, node: str) -> bool:
+        return any(
+            e["type"] == "node.completed" and e["payload"].get("node") == node
+            for e in await self.events(run_id)
+        )
+
+    async def status_is(self, run_id: str, *statuses: str) -> bool:
+        return (await self.run(run_id))["status"] in statuses
+
+    @staticmethod
+    def pid_of(owner: str) -> int:
+        """Owners are `{hostname}:{pid}` (R2.2), so the lease names the process."""
+        return int(owner.rsplit(":", 1)[1])
+
+    def process(self, pid: int) -> subprocess.Popen[bytes]:
+        return next(p for p in self.workers if p.pid == pid)
+
+    def log_tail(self, lines: int = 15) -> str:
+        parts = []
+        for f in sorted(self.logs.glob("*.log")):
+            text = f.read_text(errors="replace").splitlines()[-lines:]
+            parts.append(f"--- {f.name}\n" + "\n".join(text))
+        return "\n".join(parts)

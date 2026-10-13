@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from agent_runtime.config import Settings
+from agent_runtime.db import Pool
 
 pytestmark = pytest.mark.integration
 
@@ -76,3 +77,43 @@ def test_bad_requests_exit_2(
     done = runtime(test_settings, *args)
     assert done.returncode == 2
     assert message in done.stderr
+
+
+def test_supervisor_starts_n_workers_and_forwards_sigterm(
+    test_settings: Settings, pool: Pool
+) -> None:
+    """`runtime worker --workers 2` (what `make worker` runs): both children start,
+    and one SIGTERM to the supervisor drains and stops them all cleanly."""
+    import signal
+    import time
+    import uuid
+
+    env = os.environ | {
+        "POSTGRES_DB": test_settings.postgres_db,
+        "REDIS_URL": test_settings.redis_url.rsplit("/", 1)[0] + "/15",
+        "WORK_STREAM": f"test:{uuid.uuid4()}",
+        "LOG_LEVEL": "INFO",
+    }
+    cmd = ["worker", "--workers", "2", "--concurrency", "1"]
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "agent_runtime.cli", *cmd],
+        cwd=BACKEND,
+        env=env,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert proc.stderr is not None
+        lines: list[str] = []
+        deadline = time.monotonic() + 30
+        while sum("up (concurrency 1)" in line for line in lines) < 2:
+            assert time.monotonic() < deadline, "workers did not start:\n" + "".join(lines)
+            lines.append(proc.stderr.readline())
+        assert any("supervising 2 workers" in line for line in lines)
+        proc.send_signal(signal.SIGTERM)
+        out = proc.communicate(timeout=30)[1]
+        assert proc.returncode == 0, out
+        assert out.count("stopped") >= 2  # each child drained and stopped
+    finally:
+        if proc.poll() is None:
+            proc.kill()

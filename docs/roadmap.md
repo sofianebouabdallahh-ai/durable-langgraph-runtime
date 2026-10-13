@@ -62,8 +62,8 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 |---|---|---|
 | 0 | Foundations | ✅ Done — [summary](progress/phase-00.md) |
 | 1 | Durable single run | ✅ Done — [summary](progress/phase-01.md) |
-| 2 | Distributed workers | ⏳ Next |
-| 3 | Streaming across replicas | — |
+| 2 | Distributed workers | ✅ Done — [summary](progress/phase-02.md) |
+| 3 | Streaming across replicas | ⏳ Next |
 | 4 | Tools & human-in-the-loop | — |
 | 5 | Sub-runs, sub-agents & backpressure | — |
 | 6 | Chat sessions + chat agent | — |
@@ -109,7 +109,7 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 **Learn:** LangGraph state, supersteps, checkpointers, threads; transactional state transitions.
 **Done when:** killing the process mid-run and calling resume finishes the run without re-running completed nodes.
 
-### Phase 2 — Distributed workers · ~10–14 h
+### Phase 2 — Distributed workers · ~10–14 h (actual ~20 h; plan: [plans/phase-02.md](plans/phase-02.md))
 **Goal:** multiple worker processes share the work safely.
 - Redis Stream `runs:work`, consumer group, at-least-once delivery, `XAUTOCLAIM` (R2.1)
 - Worker pool with `--concurrency` and `--workers` (R2.2)

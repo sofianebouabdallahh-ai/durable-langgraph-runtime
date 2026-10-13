@@ -32,7 +32,7 @@ import os
 import socket
 import time
 import uuid
-from collections.abc import Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -50,7 +50,7 @@ from agent_runtime.graphs import GraphRegistry
 from agent_runtime.runs.events import EventType
 from agent_runtime.runs.limits import RunLimits, RunOptions, resolve_limits
 from agent_runtime.runs.state import FailureReason, RunStatus
-from agent_runtime.runs.store import Run, RunRepository
+from agent_runtime.runs.store import Run, RunRepository, RunTerminal
 
 log = logging.getLogger(__name__)
 
@@ -60,16 +60,16 @@ def default_owner() -> str:
     return os.environ.get("WORKER_ID") or f"{socket.gethostname()}:{os.getpid()}"
 
 
-class RunNotRunnable(Exception):
-    """The run is terminal: it can't be executed or resumed (R1.3, R1.6)."""
-
-    def __init__(self, run: Run) -> None:
-        super().__init__(f"run {run.id} is {run.status}; it can't be resumed")
-        self.run = run
-
-
 class StepLimitReached(Exception):
     pass
+
+
+class ReleaseRequested(Exception):
+    """The worker is shutting down: hand the run off after the current step (R10.7)."""
+
+
+class CancelRequested(Exception):
+    """Someone asked to cancel the run (R1.6)."""
 
 
 class LeaseLost(Exception):
@@ -110,9 +110,15 @@ class _NodeRecorder(AsyncCallbackHandler):
 
     raise_error = True  # let StepLimitReached abort the run instead of being logged
 
-    def __init__(self, outbox: _Outbox, max_steps: int) -> None:
+    def __init__(
+        self,
+        outbox: _Outbox,
+        max_steps: int,
+        check_interrupts: Callable[[], Awaitable[None]],
+    ) -> None:
         self._outbox = outbox
         self._max_steps = max_steps
+        self._check_interrupts = check_interrupts
         self._started: dict[uuid.UUID, tuple[str, float]] = {}
 
     async def on_chain_start(
@@ -132,6 +138,8 @@ class _NodeRecorder(AsyncCallbackHandler):
             return
         if self._outbox.committed_steps >= self._max_steps:
             raise StepLimitReached(f"max_steps={self._max_steps} reached before node {node!r}")
+        # Between nodes is the safe point: the previous step is checkpointed (R1.6, R10.7).
+        await self._check_interrupts()
         self._started[run_id] = (node, time.monotonic())
         self._outbox.stage(EventType.NODE_STARTED, {"node": node})
 
@@ -159,29 +167,47 @@ def _ms(t0: float) -> int:
 
 
 class RunExecutor:
+    """Executes one run under a lease.
+
+    Hooks supplied by the caller (a worker), so the executor knows nothing about
+    queues: `on_heartbeat` runs after each successful lease renewal (the worker
+    touches its work message), and `release_requested` asks for a graceful
+    hand-off after the current step.
+    """
+
     def __init__(
-        self, pool: Pool, settings: Settings, graphs: GraphRegistry, owner: str | None = None
+        self,
+        pool: Pool,
+        settings: Settings,
+        graphs: GraphRegistry,
+        owner: str | None = None,
+        *,
+        on_heartbeat: Callable[[], Awaitable[object]] | None = None,
+        release_requested: asyncio.Event | None = None,
     ) -> None:
         self._pool = pool
         self._settings = settings
         self._graphs = graphs
         self.owner = owner or default_owner()
+        self._on_heartbeat = on_heartbeat
+        self._release_requested = release_requested or asyncio.Event()
 
     async def execute(self, run_id: uuid.UUID) -> Run:
         """Run (or resume) `run_id` to a stopping point and return its final state.
 
         Idempotent (R1.3): if another live owner holds the run, nothing happens
-        and its current state is returned. A terminal run raises RunNotRunnable.
+        and its current state is returned. A terminal run raises RunTerminal.
         """
         async with self._pool.connection() as conn:
             repo = RunRepository(conn)
             run = await repo.get(run_id)
             if run.status.is_terminal:
-                raise RunNotRunnable(run)
+                raise RunTerminal(run)
             lease = await repo.acquire_lease(run_id, self.owner, self._settings.lease_ttl_s)
             if lease is None:
-                log.info("run %s is owned by %s; leaving it alone", run_id, run.owner)
-                return run
+                current = await repo.get(run_id)
+                log.info("run %s is owned by %s; leaving it alone", run_id, current.owner)
+                return current
             fence = lease.fence
             try:
                 if lease.reclaimed:
@@ -206,18 +232,26 @@ class RunExecutor:
         return await self._drive(run, fence)
 
     async def _drive(self, run: Run, fence: Fence) -> Run:
-        limits = (
-            RunLimits.model_validate(run.limits)
-            if run.limits
-            else resolve_limits(self._settings, RunOptions())
-        )
-        spec = self._graphs.get(run.graph_name)
+        # A run that can never execute (graph removed, input or limits no longer
+        # valid) must fail, not be retried forever by the reaper (a poison run).
+        try:
+            limits = (
+                RunLimits.model_validate(run.limits)
+                if run.limits
+                else resolve_limits(self._settings, RunOptions())
+            )
+            spec = self._graphs.get(run.graph_name)
+            spec.input_model.model_validate(run.input)
+        except Exception as exc:
+            return await self._fail(fence, FailureReason.ERROR, None, detail=repr(exc))
         outbox = _Outbox(run.id, fence, committed_steps=run.steps)
         checkpointer = FencedCheckpointer(self._pool, fence, on_commit=outbox.on_commit)
         graph = spec.build().compile(checkpointer=checkpointer)
         config: RunnableConfig = {
             "configurable": {"thread_id": run.thread_id},
-            "callbacks": [_NodeRecorder(outbox, limits.max_steps)],
+            "callbacks": [
+                _NodeRecorder(outbox, limits.max_steps, lambda: self._check_interrupts(run.id))
+            ],
             # Our step budget governs; LangGraph's recursion limit is only a backstop.
             "recursion_limit": limits.max_steps + 5,
         }
@@ -236,6 +270,13 @@ class RunExecutor:
             final = await self._under_lease(
                 graph.ainvoke(graph_input, config, durability="sync"), fence, remaining
             )
+        except ReleaseRequested:
+            return await self._release(fence, outbox)
+        except CancelRequested:
+            return await self._end(
+                fence, RunStatus.CANCELLED, EventType.RUN_CANCELLED,
+                FailureReason.CANCEL_REQUESTED, outbox,
+            )  # fmt: skip
         except (StepLimitReached, GraphRecursionError):
             return await self._fail(fence, FailureReason.STEP_LIMIT, outbox)
         except TimeoutError:
@@ -279,6 +320,11 @@ class RunExecutor:
                 continue
             if not renewed:
                 return
+            if self._on_heartbeat is not None:
+                try:
+                    await self._on_heartbeat()
+                except Exception:
+                    log.warning("run %s: heartbeat hook failed", fence.run_id, exc_info=True)
 
     async def _complete(self, fence: Fence, final: dict[str, Any], outbox: _Outbox) -> Run:
         output = json.loads(json.dumps(final, default=str))  # JSON-safe copy of the state
@@ -295,9 +341,43 @@ class RunExecutor:
         except FencedError:
             return await self._current(fence.run_id)
 
+    async def _check_interrupts(self, run_id: uuid.UUID) -> None:
+        if self._release_requested.is_set():
+            raise ReleaseRequested
+        async with self._pool.connection() as conn:
+            if await RunRepository(conn).is_cancel_requested(run_id):
+                raise CancelRequested
+
+    async def _release(self, fence: Fence, outbox: _Outbox) -> Run:
+        """Graceful hand-off (R10.7): back to `queued`, lease cleared, not a reclaim."""
+        try:
+            async with self._pool.connection() as conn, conn.transaction():
+                repo = RunRepository(conn)
+                await check_fence(conn, fence)
+                await outbox.flush(repo)
+                return await repo.transition(
+                    fence.run_id, RunStatus.QUEUED, event=EventType.RUN_RELEASED,
+                    fence=fence, payload={"owner": self.owner},
+                )  # fmt: skip
+        except FencedError:
+            return await self._current(fence.run_id)
+
     async def _fail(
         self,
         fence: Fence,
+        reason: FailureReason,
+        outbox: _Outbox | None,
+        detail: str | None = None,
+    ) -> Run:
+        return await self._end(
+            fence, RunStatus.FAILED, EventType.RUN_FAILED, reason, outbox, detail
+        )
+
+    async def _end(
+        self,
+        fence: Fence,
+        target: RunStatus,
+        event: EventType,
         reason: FailureReason,
         outbox: _Outbox | None,
         detail: str | None = None,
@@ -312,7 +392,7 @@ class RunExecutor:
                 if outbox is not None:
                     await outbox.flush(repo)  # e.g. node.failed for the failing node
                 return await repo.transition(
-                    fence.run_id, RunStatus.FAILED, event=EventType.RUN_FAILED,
+                    fence.run_id, target, event=event,
                     fence=fence, reason=str(reason), payload=payload,
                 )  # fmt: skip
         except FencedError:

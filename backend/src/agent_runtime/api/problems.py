@@ -18,7 +18,8 @@ from pydantic import ValidationError
 
 from agent_runtime.graphs import UnknownGraph
 from agent_runtime.runs.limits import LimitAboveCeiling
-from agent_runtime.runs.store import RunNotFound
+from agent_runtime.runs.service import AdmissionPaused
+from agent_runtime.runs.store import RunNotFound, RunTerminal
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +54,19 @@ def install(app: FastAPI) -> None:
     @app.exception_handler(ResultNotReady)
     async def _no_result(_: Request, exc: ResultNotReady) -> JSONResponse:
         return problem(404, "result-not-ready", "No result yet", str(exc), run_id=str(exc.run_id))
+
+    @app.exception_handler(RunTerminal)
+    async def _terminal(_: Request, exc: RunTerminal) -> JSONResponse:
+        return problem(
+            409, "run-terminal", "Run has already ended", str(exc),
+            run_id=str(exc.run.id), status_now=str(exc.run.status),
+        )  # fmt: skip
+
+    @app.exception_handler(AdmissionPaused)
+    async def _paused(_: Request, exc: AdmissionPaused) -> JSONResponse:
+        response = problem(503, "paused", "Runtime paused", str(exc))
+        response.headers["Retry-After"] = "30"
+        return response
 
     @app.exception_handler(UnknownGraph)
     async def _unknown_graph(_: Request, exc: UnknownGraph) -> JSONResponse:

@@ -9,11 +9,11 @@ from agent_runtime.config import Settings
 from agent_runtime.db import Pool
 from agent_runtime.graphs import UnknownGraph, default_registry
 from agent_runtime.runs.events import EventType as E
-from agent_runtime.runs.executor import RunExecutor, RunNotRunnable
+from agent_runtime.runs.executor import RunExecutor
 from agent_runtime.runs.limits import LimitAboveCeiling
 from agent_runtime.runs.service import RunService
 from agent_runtime.runs.state import RunStatus as S
-from agent_runtime.runs.store import RunRepository
+from agent_runtime.runs.store import RunRepository, RunTerminal
 from tests.integration.support import events, node_completed, summary, wait_until
 
 pytestmark = pytest.mark.integration
@@ -111,7 +111,7 @@ async def test_terminal_run_cannot_be_resumed(
 ) -> None:
     run = await service.create_run("toy", {"question": "q"})
     await executor(pool, settings_fast).execute(run.id)
-    with pytest.raises(RunNotRunnable, match="completed"):
+    with pytest.raises(RunTerminal, match="completed"):
         await executor(pool, settings_fast).execute(run.id)
 
 

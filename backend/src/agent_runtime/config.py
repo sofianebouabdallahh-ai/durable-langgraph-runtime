@@ -13,7 +13,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ENV_ONLY = SettingsConfigDict(
@@ -66,6 +66,18 @@ class Settings(AgentSettings):
 
     # Redis: work stream and pub/sub. Holds nothing that can't be rebuilt.
     redis_url: str = "redis://localhost:6379/0"
+    work_stream: str = "runs:work"  # R2.1
+    work_group: str = "workers"
+
+    # Workers (R2.2, R10.7)
+    worker_concurrency: int = Field(default=4, gt=0)  # runs in flight per worker process
+    worker_block_ms: int = Field(default=2000, gt=0)  # XREADGROUP BLOCK: how long a read waits
+    worker_grace_s: float = Field(default=50.0, gt=0)  # drain budget; < k8s terminationGrace (60)
+    relay_interval_s: float = Field(default=10.0, gt=0)  # outbox relay sweep period
+    relay_stale_s: float = Field(default=30.0, gt=0)  # re-send a queued run's message after this
+
+    # Kill switch / admin endpoints (R14.18): internal only, never routed by the Ingress.
+    admin_api_enabled: bool = True
 
     # Leases and reclaim (R2.3, R2.4)
     lease_ttl_s: float = Field(default=30.0, gt=0)
@@ -84,6 +96,23 @@ class Settings(AgentSettings):
             )
         return self
 
+    def for_component(self, component: str) -> Self:
+        """These settings, connecting as `component`'s own least-privilege user.
+
+        Fails fast if that user isn't configured: a long-running service must
+        never silently fall back to the migrator's (schema owner's) credentials.
+        """
+        creds = component_credentials(component)
+        if creds is None:
+            prefix = component.upper()
+            raise ValueError(
+                f"{prefix}_POSTGRES_USER and {prefix}_POSTGRES_PASSWORD must be set "
+                f"(least-privilege database user for the {component}, R14.13)"
+            )
+        return self.model_copy(
+            update={"postgres_user": creds.user, "postgres_password": creds.password}
+        )
+
     def database_url(self, driver: str = "postgresql+psycopg") -> str:
         """SQLAlchemy URL. Contains the password: never log it."""
         password = self.postgres_password.get_secret_value()
@@ -91,6 +120,25 @@ class Settings(AgentSettings):
             f"{driver}://{self.postgres_user}:{password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
+
+
+class DbCredentials(BaseSettings):
+    """One component's own database login (R14.13), read from
+    `<COMPONENT>_POSTGRES_USER` / `<COMPONENT>_POSTGRES_PASSWORD`."""
+
+    model_config = _ENV_ONLY
+
+    user: str
+    password: SecretStr
+
+
+def component_credentials(component: str) -> DbCredentials | None:
+    """Credentials for `component` (api, worker, …), or None if not configured."""
+    prefix = f"{component.upper()}_POSTGRES_"
+    try:
+        return DbCredentials(_env_prefix=prefix)  # type: ignore[call-arg]
+    except ValidationError:
+        return None
 
 
 @lru_cache

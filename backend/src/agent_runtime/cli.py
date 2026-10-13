@@ -25,7 +25,7 @@ from agent_runtime.agents.loader import (
 )
 from agent_runtime.config import Settings, get_agent_settings, get_settings
 from agent_runtime.runs.state import RunStatus
-from agent_runtime.runs.store import Event, Run, RunRepository
+from agent_runtime.runs.store import Event, Run, RunRepository, RunTerminal
 
 Handler = Callable[[argparse.Namespace], int]
 BACKEND_DIR = Path(__file__).resolve().parents[2]  # backend/ (holds alembic.ini)
@@ -61,11 +61,32 @@ def _db_upgrade(args: argparse.Namespace) -> int:
     command.upgrade(cfg, "head")
 
     async def checkpointer_setup() -> None:
+        from agent_runtime.dbadmin import grant_checkpoint_tables
+
         async with create_pool(settings, max_size=1) as pool:
             await AsyncPostgresSaver(pool).setup()
+            async with pool.connection() as conn:
+                await grant_checkpoint_tables(conn)
 
     asyncio.run(checkpointer_setup())
     print("ok: schema at head; LangGraph checkpoint tables ready")
+    return 0
+
+
+def _db_provision_users(args: argparse.Namespace) -> int:
+    """Create/update each component's login user from <COMPONENT>_POSTGRES_* (R14.13)."""
+    from agent_runtime.db import create_pool
+    from agent_runtime.dbadmin import provision_users
+
+    settings = get_settings()
+    _setup_logging(settings)
+
+    async def run() -> list[str]:
+        async with create_pool(settings, max_size=1) as pool, pool.connection() as conn:
+            return await provision_users(conn)
+
+    done = asyncio.run(run())
+    print(f"ok: provisioned {', '.join(done) or 'no'} database user(s)")
     return 0
 
 
@@ -83,12 +104,12 @@ def _print_run(run: Run, events: list[Event]) -> None:
 async def _execute_and_report(settings: Settings, run_id: uuid.UUID) -> int:
     from agent_runtime.db import create_pool
     from agent_runtime.graphs import default_registry
-    from agent_runtime.runs.executor import RunExecutor, RunNotRunnable
+    from agent_runtime.runs.executor import RunExecutor
 
     async with create_pool(settings) as pool:
         try:
             run = await RunExecutor(pool, settings, default_registry()).execute(run_id)
-        except RunNotRunnable as exc:
+        except RunTerminal as exc:
             print(exc, file=sys.stderr)
             return 2  # like HTTP 409: valid request, wrong state
         async with pool.connection() as conn:
@@ -112,7 +133,8 @@ def _run(args: argparse.Namespace) -> int:
     async def create() -> uuid.UUID:
         async with create_pool(settings, max_size=1) as pool:
             service = RunService(pool, settings, default_registry())
-            run = await service.create_run(args.graph, args.input, args.options)
+            # executes in this process, so don't also hand it to the workers
+            run = await service.create_run(args.graph, args.input, args.options, enqueue=False)
             return run.id
 
     try:
@@ -131,11 +153,84 @@ def _execute(args: argparse.Namespace) -> int:
     return asyncio.run(_execute_and_report(settings, args.run_id))
 
 
+# ------------------------------------------------------------------ worker
+
+
+async def _serve_worker(settings: Settings, concurrency: int) -> None:
+    """One worker process. First SIGTERM/SIGINT: drain gracefully (R10.7).
+    Second: exit immediately, like Kubernetes' SIGKILL after the grace period."""
+    import os
+    import signal
+
+    from agent_runtime.db import create_pool
+    from agent_runtime.graphs import default_registry
+    from agent_runtime.queue import RedisWorkQueue, create_redis
+    from agent_runtime.worker import Worker
+
+    stop = asyncio.Event()
+
+    def on_signal(signum: int) -> None:
+        if stop.is_set():
+            logging.getLogger(__name__).warning("second signal: exiting now")
+            os._exit(128 + signum)
+        logging.getLogger(__name__).info("signal %d: draining", signum)
+        stop.set()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, on_signal, sig)
+
+    redis = create_redis(settings.redis_url)
+    try:
+        async with create_pool(settings, max_size=concurrency + 4) as pool:
+            queue = RedisWorkQueue(redis, settings.work_stream, settings.work_group)
+            worker = Worker(pool, queue, settings, default_registry(), concurrency=concurrency)
+            await worker.run(stop)
+    finally:
+        await redis.aclose()
+
+
+def _worker(args: argparse.Namespace) -> int:
+    settings = get_settings()
+    _setup_logging(settings)
+    concurrency = args.concurrency or settings.worker_concurrency
+    if args.workers == 1:
+        settings = settings.for_component("worker")  # least-privilege DB user (R14.13)
+    if args.workers > 1:
+        return _supervise(args.workers, concurrency)
+    asyncio.run(_serve_worker(settings, concurrency))
+    return 0
+
+
+def _supervise(n: int, concurrency: int) -> int:
+    """Pattern: Supervisor. Start N worker processes and forward stop signals.
+
+    It deliberately does not restart crashed children: locally, a demo kills a
+    worker to prove another one takes over; in Kubernetes, the kubelet restarts
+    containers (each pod runs a single worker process).
+    """
+    import signal
+    import subprocess
+
+    cmd = [sys.executable, "-m", "agent_runtime.cli", "worker", "--concurrency", str(concurrency)]
+    children = [subprocess.Popen(cmd) for _ in range(n)]
+
+    def forward(signum: int, _frame: object) -> None:
+        for child in children:
+            if child.poll() is None:
+                child.send_signal(signum)
+
+    signal.signal(signal.SIGTERM, forward)
+    signal.signal(signal.SIGINT, forward)
+    print(f"supervising {n} workers: pids {[c.pid for c in children]}", file=sys.stderr)
+    return max(child.wait() for child in children)
+
+
 def _api(args: argparse.Namespace) -> int:
     import uvicorn
 
     uvicorn.run(
-        "agent_runtime.api.app:create_app",
+        "agent_runtime.api.app:create_api_app",
         factory=True,
         host=args.host,
         port=args.port,
@@ -194,6 +289,9 @@ def build_parser() -> argparse.ArgumentParser:
     db.add_parser("upgrade", help="migrate our schema and LangGraph's tables").set_defaults(
         handler=_db_upgrade
     )
+    db.add_parser(
+        "provision-users", help="create per-component least-privilege login users"
+    ).set_defaults(handler=_db_provision_users)
 
     api = commands.add_parser("api", help="serve the HTTP API")
     # 127.0.0.1 by default: never expose a dev server on the LAN by accident.
@@ -207,6 +305,16 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--input", type=_json_object, required=True, help="JSON object")
     run.add_argument("--options", type=_json_object, default=None, help="JSON object")
     run.set_defaults(handler=_run)
+
+    worker = commands.add_parser("worker", help="run worker process(es) that execute queued runs")
+    worker.add_argument(
+        "--concurrency",
+        type=int,
+        default=None,
+        help="runs in flight per process (default: WORKER_CONCURRENCY)",
+    )
+    worker.add_argument("--workers", type=int, default=1, help="number of worker processes")
+    worker.set_defaults(handler=_worker)
 
     execute = commands.add_parser(
         "execute", aliases=["resume"], help="execute a queued run or resume a crashed one"
