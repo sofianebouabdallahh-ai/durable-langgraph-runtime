@@ -1,5 +1,7 @@
 # Phase 3 plan — Streaming across replicas
 
+> **Status: delivered.** Every success criterion passed; results are in [progress/phase-03.md](../progress/phase-03.md).
+
 **Goal:** a client can watch any run live from **any** API replica. Every persisted event arrives exactly once and in order, with no sticky sessions, surviving reconnects, replica shutdowns and lost pub/sub messages.
 
 **Done when:** AC3 passes as `make demo-replicas` (PASS/FAIL per check): a run is created on replica A and streamed from replica B, every event arrives in order, and with pub/sub disabled on B the stream visibly stalls. Plus the success criteria below.
