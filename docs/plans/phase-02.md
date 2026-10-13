@@ -1,5 +1,7 @@
 # Phase 2 plan — Distributed workers
 
+> **Status: delivered.** Every success criterion passed; results are in [progress/phase-02.md](../progress/phase-02.md).
+
 **Goal:** many worker processes share the work safely. A run created by the API is picked up automatically, a crashed worker's run is reclaimed **automatically**, a worker asked to stop hands its runs off in seconds, and a "zombie" worker can't corrupt anything.
 
 **Done when:** AC2 (crash-and-resume) and AC5 (zombie safety) pass as scripted demos (`make demo-crash`, `make demo-zombie`) that print PASS/FAIL, plus the integration tests below.

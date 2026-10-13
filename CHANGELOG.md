@@ -18,6 +18,22 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - CR-004 + ADR-0003 (accepted): agents defined as `backend/agents/*.agent.md` (name, max turns, prompt, tools, limits, hooks); hooks for session start/end, turn start/end and pre/post tool, built on LangChain middleware plus harness-owned session hooks.
 - CR-003 (accepted): harness guardrails. Run budgets with a soft→hard wrap-up, loop detection, ceilings that callers can only tighten, deny-by-default tool grants, least-privilege DB roles, untrusted-content handling, audit trail, kill switch.
 
+### Phase 2 — Distributed workers
+#### Added
+- `WorkQueue` port with a Redis Streams adapter and an in-memory fake, verified by one contract suite.
+- Outbox relay that rebuilds the work stream from Postgres (`runs.message_id`/`enqueued_at`, migration `0003`).
+- Workers: `runtime worker --concurrency C --workers N` (competing consumers, bulkhead, supervisor), reaper (`XAUTOCLAIM`), heartbeat that also touches the message, graceful release on SIGTERM.
+- `POST /runs/{id}/cancel` and `/resume`; kill switch `/admin/pause|resume|cancel-all|state`; `503` while paused; `/readyz` checks Redis.
+- Database-enforced fencing trigger (migration `0004`).
+- Least-privilege database users per component (migration `0005`, `runtime db provision-users`).
+- End-to-end harness with real processes; `make demo-crash`, `demo-zombie`, `demo-release`, `demo-e2e`.
+
+#### Changed
+- `RunNotRunnable` unified into `RunTerminal`; the API returns `409` for runs that have already ended.
+- API and worker connect as their own database users (`API_POSTGRES_*`, `WORKER_POSTGRES_*`).
+- `make env` adds keys missing from `.env` without overwriting.
+- PR descriptions no longer carry a "Generated with Claude Code" footer.
+
 ### Phase 1 — Durable single run
 #### Added
 - Epoch-fenced LangGraph checkpointer (Protection Proxy over `AsyncPostgresSaver`); spike findings in `docs/design.md`.
