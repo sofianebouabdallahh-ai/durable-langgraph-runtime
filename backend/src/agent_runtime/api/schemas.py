@@ -34,6 +34,9 @@ class RunView(BaseModel):
     owner: str | None = Field(description="Worker (pod) holding the lease, if any")
     lease_expires_at: datetime | None
     steps: int
+    reclaims: int = Field(description="Times taken over after a worker died (R2.4)")
+    releases: int = Field(description="Graceful hand-offs on worker shutdown (R10.7)")
+    cancel_requested: bool
     limits: dict[str, Any]
     created_at: datetime
     started_at: datetime | None
@@ -51,6 +54,9 @@ class RunView(BaseModel):
             owner=run.owner,
             lease_expires_at=run.lease_expires_at,
             steps=run.steps,
+            reclaims=run.reclaims,
+            releases=run.releases,
+            cancel_requested=run.cancel_requested,
             limits=run.limits,
             created_at=run.created_at,
             started_at=run.started_at,

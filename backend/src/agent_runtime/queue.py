@@ -51,6 +51,7 @@ class WorkQueue(Protocol):
     async def touch(self, consumer: str, message_id: str) -> bool: ...
     async def autoclaim(self, consumer: str, min_idle_ms: int, count: int) -> Claimed: ...
     async def exists(self, message_id: str) -> bool: ...
+    async def holder(self, message_id: str) -> str | None: ...
     async def pending_count(self) -> int: ...
     async def remove_consumer_if_idle(self, consumer: str) -> bool: ...
 
@@ -111,6 +112,13 @@ class RedisWorkQueue:
 
     async def exists(self, message_id: str) -> bool:
         return bool(await self._r.xrange(self.stream, min=message_id, max=message_id, count=1))
+
+    async def holder(self, message_id: str) -> str | None:
+        """The consumer whose pending list holds `message_id`, if any."""
+        entries = await self._r.xpending_range(
+            self.stream, self.group, min=message_id, max=message_id, count=1
+        )
+        return str(entries[0]["consumer"]) if entries else None
 
     async def pending_count(self) -> int:
         try:
@@ -214,6 +222,10 @@ class InMemoryWorkQueue:
 
     async def exists(self, message_id: str) -> bool:
         return message_id in self.entries
+
+    async def holder(self, message_id: str) -> str | None:
+        p = self.pending.get(message_id)
+        return p.consumer if p else None
 
     async def pending_count(self) -> int:
         return len(self.pending)

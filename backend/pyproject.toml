@@ -92,6 +92,7 @@ exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", 'if __name__ =
 testpaths = ["tests"]
 markers = [
     "integration: needs Postgres/Redis running (make up)",
+    "e2e: real API and worker processes (tests/e2e); also marked integration",
 ]
 addopts = "-ra --strict-markers"
 asyncio_mode = "auto"

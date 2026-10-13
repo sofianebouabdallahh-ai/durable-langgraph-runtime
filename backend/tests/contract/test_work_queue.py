@@ -126,3 +126,14 @@ async def test_poison_message_is_dropped_not_redelivered(queue: WorkQueue) -> No
     delivered = await queue.read("a", count=5, block_ms=10)
     assert [d.message_id for d in delivered] == [good]
     assert await queue.pending_count() == 1  # the poison message was acked and deleted
+
+
+async def test_holder_follows_claims(queue: WorkQueue) -> None:
+    await queue.enqueue(uuid.uuid4())
+    (d,) = await queue.read("zombie", 1, 10)
+    assert await queue.holder(d.message_id) == "zombie"
+    await asyncio.sleep(IDLE_MS / 1000 * 2)
+    await queue.autoclaim("rescuer", min_idle_ms=IDLE_MS, count=1)
+    assert await queue.holder(d.message_id) == "rescuer"  # the zombie must not ack it now
+    await queue.ack(d.message_id)
+    assert await queue.holder(d.message_id) is None

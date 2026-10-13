@@ -17,7 +17,7 @@ Patterns:
 Settling a message after `execute` returns (R2.1):
 - run ended or is waiting (terminal / waiting_*)        → ack
 - run released by us (graceful shutdown)                → send a new message, then ack
-- run owned by another live worker (we lost the race)   → ack: the owner holds its own message
+- run owned by another live worker (we lost the race)   → ack if we still hold the message
 - anything unexpected (e.g. our process failed mid-run) → leave pending; the reaper reclaims it
 
 Shutdown (R10.7): the first SIGTERM/SIGINT stops reading and asks every
@@ -161,8 +161,10 @@ class Worker:
             await self._relay.enqueue(run.id)
             await self._queue.ack(delivery.message_id)
         elif run.owner is not None and run.owner != self.consumer:
-            # Another live worker owns it and holds its own message: ours is a duplicate.
-            await self._queue.ack(delivery.message_id)
+            # Another live worker owns the run. Our message is a duplicate *unless* the new
+            # owner reclaimed this very message (we were a zombie): then it's theirs to ack.
+            if await self._queue.holder(delivery.message_id) == self.consumer:
+                await self._queue.ack(delivery.message_id)
         else:
             log.warning("run %s left %s/%s; leaving its message pending",
                         run.id, run.status, run.owner)  # fmt: skip

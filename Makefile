@@ -22,7 +22,7 @@ BACKEND     := cd backend && uv run --frozen
 BACKEND_ENV := cd backend && uv run --frozen --env-file $(ENV_FILE)
 
 .DEFAULT_GOAL := help
-.PHONY: help env hooks up down nuke ps logs migrate migration api worker run-toy lint fmt typecheck agents-validate test test-unit test-integration coverage check
+.PHONY: help env hooks up down nuke ps logs migrate migration api worker run-toy demo-crash demo-zombie demo-release demo-e2e lint fmt typecheck agents-validate test test-unit test-integration coverage check
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -72,6 +72,21 @@ worker: env ## Run worker processes (WORKERS=2 CONCURRENCY=4)
 
 run-toy: env ## Create and execute one run of the toy graph
 	$(BACKEND_ENV) runtime run --graph toy --input '{"question": "What is a fencing token?"}'
+
+# ---------------------------------------------------- end-to-end demos (AC2, AC5)
+# Each starts a throw-away cluster (fresh DB, own stream, API + 2 worker processes),
+# runs one scenario and prints PASS/FAIL per check. REPEAT=5 to repeat.
+demo-crash: env ## AC2: SIGKILL the owning worker mid-run; another finishes it
+	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e crash --repeat $(or $(REPEAT),1)
+
+demo-zombie: env ## AC5: SIGSTOP the owner past its lease, then SIGCONT: its writes are refused
+	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e zombie --repeat $(or $(REPEAT),1)
+
+demo-release: env ## SIGTERM the owner: graceful hand-off in < 5 s, not a reclaim
+	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e release --repeat $(or $(REPEAT),1)
+
+demo-e2e: env ## All end-to-end scenarios
+	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e all --repeat $(or $(REPEAT),1)
 
 # ------------------------------------------------------ backend: code quality
 lint: ## Ruff lint + format check
