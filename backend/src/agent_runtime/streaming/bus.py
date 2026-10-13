@@ -17,6 +17,7 @@ Wire format (JSON):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import uuid
@@ -117,6 +118,9 @@ class Subscription(Protocol):
     async def get(self, wait_s: float) -> tuple[str, StreamEvent] | None:
         """Next message, waiting up to `wait_s`; None if nothing arrived (a poll)."""
 
+    def attach_reader(self) -> None:
+        """Declare that one dedicated task will call `get` in a loop."""
+
     async def close(self) -> None: ...
 
 
@@ -140,32 +144,52 @@ class RedisEventBus:
 
 
 class RedisSubscription:
-    """Not safe for concurrent use: one owner task (the Broker) drives it."""
+    """One Pub/Sub connection. Writes (SUBSCRIBE/UNSUBSCRIBE) may come from any
+    task, but there must only ever be ONE reader.
+
+    - Standalone (default): `subscribe` reads its own confirmation.
+    - Attached (`attach_reader()`, used by the Broker): a dedicated task calls
+      `get` in a loop and is the only reader; `subscribe` just sends and waits
+      for that reader to see the confirmation (one round trip, no poll tick).
+    """
 
     def __init__(self, pubsub: PubSub) -> None:
         self._ps = pubsub
         self._channels: set[str] = set()
         self._confirm: dict[str, asyncio.Future[None]] = {}
         self._buffer: list[tuple[str, StreamEvent]] = []
+        self._attached = False
+        self._has_channels = asyncio.Event()
+
+    def attach_reader(self) -> None:
+        self._attached = True
 
     async def subscribe(self, channel: str) -> None:
         fut: asyncio.Future[None] = asyncio.get_running_loop().create_future()
         self._confirm[channel] = fut
-        await self._ps.subscribe(channel)
+        await self._ps.subscribe(channel)  # write only
         self._channels.add(channel)
-        # Read until Redis confirms; messages that arrive meanwhile are kept.
-        while not fut.done():
-            await self._read(wait_s=1.0)
+        self._has_channels.set()
+        if self._attached:
+            await asyncio.wait_for(fut, timeout=5)  # the reader task resolves it
+        else:
+            while not fut.done():
+                await self._read(wait_s=1.0)
 
     async def unsubscribe(self, channel: str) -> None:
         self._channels.discard(channel)
+        if not self._channels:
+            self._has_channels.clear()
         await self._ps.unsubscribe(channel)
 
     async def get(self, wait_s: float) -> tuple[str, StreamEvent] | None:
         if self._buffer:
             return self._buffer.pop(0)
-        if not self._channels:  # redis-py refuses to read with no subscriptions
-            await asyncio.sleep(wait_s)
+        if not self._channels:
+            # redis-py can't read with no subscriptions: wait until one is added
+            # (returns at once when a stream subscribes, instead of a fixed sleep).
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._has_channels.wait(), timeout=wait_s)
             return None
         await self._read(wait_s)
         return self._buffer.pop(0) if self._buffer else None
@@ -216,6 +240,9 @@ class InMemorySubscription:
         self._bus = bus
         self.channels: set[str] = set()
         self.inbox: asyncio.Queue[tuple[str, StreamEvent]] = asyncio.Queue()
+
+    def attach_reader(self) -> None:
+        return None
 
     async def subscribe(self, channel: str) -> None:
         self.channels.add(channel)
