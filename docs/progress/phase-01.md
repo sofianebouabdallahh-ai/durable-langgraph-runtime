@@ -1,6 +1,6 @@
 # Phase 1 — Durable single run
 
-**Completed:** 2026-10-12 · **Branch:** `feat/phase-01-durable-run` · **Tag:** `phase-01` (after merge) · **Tests:** 108 (16 at the end of phase 0)
+**Completed:** 2026-10-12 · **Branch:** `feat/phase-01-durable-run` · **Tag:** `phase-01` (after merge) · **Tests:** 116 (16 at the end of phase 0) · **Branch coverage:** 95.9% (CI floor 90%)
 
 ## What we built
 
@@ -116,6 +116,8 @@ Errors are RFC 9457 problem details, and the OpenAPI contract is published at `/
 
 ## Known issues & follow-ups
 
+- **Closing audit (before merge):** replaced three `assert`s in production code with explicit errors (asserts vanish under `python -O`); added CLI tests and a branch-coverage gate (95.9%, CI floor 90%).
+
 - **Nothing executes API-created runs automatically yet.** `POST /runs` creates a `queued` run, and `runtime execute <id>` runs it. Workers that pull from a queue arrive in phase 2.
 - **Reclaim is manual:** you run `resume` after the lease expires. Phase 2 adds the reaper loop that does it automatically every 5 s.
 - **Fencing covers checkpoints, transitions and run events.** Tool results, findings and transcripts get fenced as they're built (phases 4–6).
@@ -137,5 +139,6 @@ cd backend && uv run --env-file ../.env runtime execute <run_id>   # Ctrl-C it m
 # …wait ~30 s for the lease to expire, then:
 uv run --env-file ../.env runtime resume <run_id>                  # finishes; see run.reclaimed
 
-make check                                 # 108 tests, lint, mypy --strict, agent validation
+make check                                 # 116 tests, lint, mypy --strict, agent validation
+make coverage                              # branch coverage + HTML report (backend/htmlcov/)
 ```

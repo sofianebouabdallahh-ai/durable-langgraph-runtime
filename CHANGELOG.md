@@ -28,7 +28,7 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - API: `POST /runs`, `GET /runs/{id}`, `/events`, `/result`, `/graphs`, `/healthz`, `/readyz`; RFC 9457 problem details.
 - CLI: `runtime db upgrade`, `api`, `run`, `execute`/`resume`. Makefile: `api`, `run-toy`, `agents-validate`.
 - Migration `0002` (agent snapshots, usage counters, limits, kill switch, sub-agent invocations).
-- Tests: 108 (unit + integration), including a real-process SIGKILL crash-and-resume test.
+- Tests: 116 (unit + integration), including a real-process SIGKILL crash-and-resume test; branch coverage 95.9% with a 90% floor in CI (`make coverage`).
 
 #### Changed
 - Package renamed `runtime` → `agent_runtime` (the CLI is still `runtime`).
