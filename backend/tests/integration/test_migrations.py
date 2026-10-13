@@ -168,3 +168,41 @@ def test_subagent_spawn_is_idempotent_by_tool_call(migrated_db: psycopg.Connecti
         "SELECT count(*) FROM subagent_invocations WHERE run_id = %s", (rid,)
     ).fetchone()
     assert count == (1,)
+
+
+def test_sc9_database_rejects_stale_epoch_writes(migrated_db: psycopg.Connection) -> None:
+    """The trigger fences writes even when application code is bypassed."""
+    rid = _insert_run(migrated_db, status="running")
+    migrated_db.execute("UPDATE runs SET epoch = 3 WHERE id = %s", (rid,))
+    insert = (
+        "INSERT INTO run_events (run_id, seq, epoch, type) VALUES (%s, %s, %s, 'node.completed')"
+    )
+
+    migrated_db.execute(insert, (rid, 1, 3))  # current epoch: accepted
+    migrated_db.execute(insert, (rid, 2, 4))  # a newer epoch (racing takeover): accepted
+    migrated_db.execute("SAVEPOINT before_stale")
+    with pytest.raises(psycopg.Error) as exc:
+        migrated_db.execute(insert, (rid, 3, 2))  # stale: rejected
+    assert exc.value.sqlstate == "EF001"
+    assert "stale epoch 2" in str(exc.value)
+    migrated_db.execute("ROLLBACK TO SAVEPOINT before_stale")
+
+    # Updates are fenced too (e.g. a zombie finishing a tool invocation).
+    migrated_db.execute(
+        "INSERT INTO tool_invocations (key, run_id, tool, status, epoch) "
+        "VALUES (%s, %s, 'search', 'in_progress', 3)",
+        ("a" * 64, rid),
+    )
+    with pytest.raises(psycopg.Error, match="stale epoch 1"):
+        migrated_db.execute(
+            "UPDATE tool_invocations SET status = 'done', epoch = 1 WHERE key = %s", ("a" * 64,)
+        )
+
+
+def test_rows_without_an_epoch_are_not_fenced(migrated_db: psycopg.Connection) -> None:
+    sid = _insert_session(migrated_db)
+    migrated_db.execute(
+        "INSERT INTO session_messages (session_id, seq, message_id, type, role, content) "
+        "VALUES (%s, 1, 'm-api', 'user', 'user', '{}')",
+        (sid,),
+    )
