@@ -138,3 +138,21 @@ async def _subscribers(redis: Redis | None, broker: Broker, channel: str) -> int
     if redis is None:
         return 1 if channel in broker._listeners else 0
     return int(dict(await redis.pubsub_numsub(channel))[channel])
+
+
+async def test_reconnects_resubscribes_and_flags_catch_up_after_redis_drops_it(
+    broker: Broker, bus_and_redis: tuple[EventBus, Redis | None]
+) -> None:
+    bus, redis = bus_and_redis
+    if redis is None:
+        pytest.skip("needs a real Redis connection to kill")
+    run = uuid.uuid4()
+    async with broker.listen(run_channel(run)) as listener:
+        await redis.client_kill_filter(_type="pubsub")  # Redis drops the broker's connection
+        async with asyncio.timeout(10):  # broker notices, reconnects, resubscribes
+            while broker.subscriptions_opened < 2 or not listener.overflowed:  # noqa: ASYNC110
+                await asyncio.sleep(0.05)
+        assert listener.take_overflow()  # the stream is told it may have missed events
+        await asyncio.sleep(0.2)
+        await bus.publish(run_channel(run), ev(run, 9))  # and live delivery works again
+        assert (await asyncio.wait_for(listener.queue.get(), timeout=3)).seq == 9

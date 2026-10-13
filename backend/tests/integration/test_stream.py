@@ -234,3 +234,21 @@ async def _until_status(api: Server, run_id: str, status: str) -> None:
     async with asyncio.timeout(20):
         while (await api.client.get(f"/runs/{run_id}")).json()["status"] != status:  # noqa: ASYNC110
             await asyncio.sleep(0.05)
+
+
+async def test_a_stream_that_overflows_catches_up_from_postgres(
+    pool: Pool, fast: Settings, queue: RedisWorkQueue, bus: EventBus, checkpoint_tables: None
+) -> None:
+    """Per-stream queue of 1: live events overflow it constantly; the stream must
+    drain, catch up from Postgres and still deliver every event exactly once."""
+    tiny = fast.model_copy(update={"stream_queue_size": 1})
+    async with Server(create_app(tiny, pool=pool, queue=queue, bus=bus)) as api:
+        run_ids = [await create(api, delay_s=0.0) for _ in range(3)]
+        readers = [asyncio.create_task(read_sse(api.client, f"/runs/{r}/stream")) for r in run_ids]
+        stops, tasks = await start_workers(pool, queue, tiny, bus)
+        try:
+            streams = await asyncio.gather(*readers)
+        finally:
+            await stop_workers(stops, tasks)
+        for run_id, s in zip(run_ids, streams, strict=True):
+            assert s.seqs == await db_seqs(api, run_id)

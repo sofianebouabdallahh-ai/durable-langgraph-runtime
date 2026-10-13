@@ -113,13 +113,17 @@ class Broker:
             try:
                 self._sub = None
                 sub = self._bus.subscription()
-                sub.attach_reader()  # this task is its only reader
                 self.subscriptions_opened += 1
+                # After a reconnect: resubscribe, and make streams catch up. This runs in
+                # standalone mode (subscribe reads its own confirmation): attaching the
+                # reader first would make each subscribe wait for a reader that only
+                # starts afterwards, so reconnecting would never succeed.
                 for channel, listeners in list(self._listeners.items()):
-                    if listeners:  # after a reconnect: resubscribe, and make streams catch up
+                    if listeners:
                         await sub.subscribe(channel)
                         for listener in listeners:
                             listener.overflowed = True
+                sub.attach_reader()  # from here on, _serve is its only reader
                 self._sub = sub
                 await self._serve(sub)
             except asyncio.CancelledError:
