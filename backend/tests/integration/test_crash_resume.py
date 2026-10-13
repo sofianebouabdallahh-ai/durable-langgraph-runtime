@@ -28,7 +28,10 @@ from tests.integration.support import events, node_completed, summary, wait_unti
 pytestmark = pytest.mark.integration
 
 BACKEND = Path(__file__).resolve().parents[2]
-LEASE_TTL_S = 1.5
+# Long enough that the "resume while the dead owner's lease is still live" step
+# (a fresh Python process) starts well inside the lease even on a slow CI runner;
+# 1.5 s was not (GitHub's runner took longer to start the process).
+LEASE_TTL_S = 8.0
 
 
 def runtime_process(settings: Settings, worker_id: str, *args: str) -> subprocess.Popen[bytes]:
@@ -36,7 +39,7 @@ def runtime_process(settings: Settings, worker_id: str, *args: str) -> subproces
     env = os.environ | {
         "POSTGRES_DB": settings.postgres_db,
         "LEASE_TTL_S": str(LEASE_TTL_S),
-        "HEARTBEAT_S": "0.4",
+        "HEARTBEAT_S": "2",
         "WORKER_ID": worker_id,
         "LOG_LEVEL": "WARNING",
     }
