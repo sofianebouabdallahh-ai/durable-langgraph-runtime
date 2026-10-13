@@ -62,7 +62,7 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 |---|---|---|
 | 0 | Foundations | ✅ Done — [summary](progress/phase-00.md) |
 | 1 | Durable single run | ✅ Done — [summary](progress/phase-01.md) |
-| 2 | Distributed workers | ⏳ Next |
+| 2 | Distributed workers | 🚧 In progress (`feat/phase-02-distributed-workers`) |
 | 3 | Streaming across replicas | — |
 | 4 | Tools & human-in-the-loop | — |
 | 5 | Sub-runs, sub-agents & backpressure | — |
