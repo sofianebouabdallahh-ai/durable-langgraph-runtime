@@ -112,7 +112,8 @@ def _run(args: argparse.Namespace) -> int:
     async def create() -> uuid.UUID:
         async with create_pool(settings, max_size=1) as pool:
             service = RunService(pool, settings, default_registry())
-            run = await service.create_run(args.graph, args.input, args.options)
+            # executes in this process, so don't also hand it to the workers
+            run = await service.create_run(args.graph, args.input, args.options, enqueue=False)
             return run.id
 
     try:
