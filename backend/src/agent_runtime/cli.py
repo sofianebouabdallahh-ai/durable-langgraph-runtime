@@ -231,19 +231,34 @@ def _supervise(n: int, concurrency: int) -> int:
 
 
 def _api(args: argparse.Namespace) -> int:
+    """Serve the API. On SIGTERM/SIGINT, flag the app as draining *before* uvicorn
+    starts its shutdown, so open streams can send `reconnect` and close on their
+    own within the grace period (R10.7) instead of blocking shutdown."""
+    from types import FrameType
+
     import uvicorn
 
-    uvicorn.run(
-        "agent_runtime.api.app:create_api_app",
-        factory=True,
+    from agent_runtime.api.app import create_api_app
+
+    settings = get_settings()
+    app = create_api_app()
+    config = uvicorn.Config(
+        app,
         host=args.host,
         port=args.port,
-        log_level=get_settings().log_level.lower(),
+        log_level=settings.log_level.lower(),
+        timeout_graceful_shutdown=int(settings.api_grace_s),
     )
+
+    class DrainingServer(uvicorn.Server):
+        def handle_exit(self, sig: int, frame: FrameType | None) -> None:
+            loop = app.state.loop
+            if loop is not None:
+                loop.call_soon_threadsafe(app.state.draining.set)
+            super().handle_exit(sig, frame)
+
+    DrainingServer(config).run()
     return 0
-
-
-# ------------------------------------------------------------------- agents
 
 
 def _agents_validate(args: argparse.Namespace) -> int:
