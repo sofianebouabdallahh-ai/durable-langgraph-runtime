@@ -119,4 +119,4 @@ async def test_resuming_a_completed_run_is_rejected(
     again = runtime_process(test_settings, "w:2", "resume", str(run_id))
     out, _ = again.communicate(timeout=30)
     assert again.returncode == 2  # like HTTP 409
-    assert b"is completed; it can't be resumed" in out
+    assert b"is completed; it has already ended" in out

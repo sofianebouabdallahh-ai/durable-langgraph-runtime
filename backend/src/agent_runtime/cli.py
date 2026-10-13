@@ -25,7 +25,7 @@ from agent_runtime.agents.loader import (
 )
 from agent_runtime.config import Settings, get_agent_settings, get_settings
 from agent_runtime.runs.state import RunStatus
-from agent_runtime.runs.store import Event, Run, RunRepository
+from agent_runtime.runs.store import Event, Run, RunRepository, RunTerminal
 
 Handler = Callable[[argparse.Namespace], int]
 BACKEND_DIR = Path(__file__).resolve().parents[2]  # backend/ (holds alembic.ini)
@@ -83,12 +83,12 @@ def _print_run(run: Run, events: list[Event]) -> None:
 async def _execute_and_report(settings: Settings, run_id: uuid.UUID) -> int:
     from agent_runtime.db import create_pool
     from agent_runtime.graphs import default_registry
-    from agent_runtime.runs.executor import RunExecutor, RunNotRunnable
+    from agent_runtime.runs.executor import RunExecutor
 
     async with create_pool(settings) as pool:
         try:
             run = await RunExecutor(pool, settings, default_registry()).execute(run_id)
-        except RunNotRunnable as exc:
+        except RunTerminal as exc:
             print(exc, file=sys.stderr)
             return 2  # like HTTP 409: valid request, wrong state
         async with pool.connection() as conn:

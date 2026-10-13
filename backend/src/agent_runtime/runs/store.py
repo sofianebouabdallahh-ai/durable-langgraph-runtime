@@ -38,6 +38,14 @@ from agent_runtime.runs.events import EventType
 from agent_runtime.runs.state import InvalidTransition, RunStatus, sources_of
 
 
+class RunTerminal(Exception):
+    """The run already ended; it can't be cancelled, resumed or executed."""
+
+    def __init__(self, run: Run) -> None:
+        super().__init__(f"run {run.id} is {run.status}; it has already ended")
+        self.run = run
+
+
 class RunNotFound(LookupError):
     def __init__(self, run_id: uuid.UUID) -> None:
         super().__init__(f"run {run_id} not found")
@@ -64,6 +72,10 @@ class Run:
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    cancel_requested: bool = False
+    reclaims: int = 0
+    releases: int = 0
+    message_id: str | None = None
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> Run:
@@ -86,6 +98,10 @@ class Run:
             created_at=row["created_at"],
             started_at=row["started_at"],
             finished_at=row["finished_at"],
+            cancel_requested=row["cancel_requested"],
+            reclaims=row["reclaims"],
+            releases=row["releases"],
+            message_id=row["message_id"],
         )
 
 
@@ -130,7 +146,7 @@ def _required(row: dict[str, Any] | None, statement: str) -> dict[str, Any]:
 _RUN_COLUMNS = """
     id, graph_name, kind, thread_id, status, reason, epoch, owner, lease_expires_at,
     input, options, limits, steps, parent_run_id, session_id,
-    created_at, started_at, finished_at
+    created_at, started_at, finished_at, cancel_requested, reclaims, releases, message_id
 """
 
 
@@ -244,7 +260,11 @@ class RunRepository:
                                        THEN coalesce(started_at, now()) ELSE started_at END,
                     finished_at = CASE WHEN %(terminal)s THEN now() ELSE NULL END,
                     owner            = CASE WHEN %(target)s = 'running' THEN owner END,
-                    lease_expires_at = CASE WHEN %(target)s = 'running' THEN lease_expires_at END
+                    lease_expires_at = CASE WHEN %(target)s = 'running' THEN lease_expires_at END,
+                    -- running → queued is a graceful release (R10.7): counted, but not
+                    -- toward max_reclaims (R2.4)
+                    releases    = releases + CASE WHEN status = 'running' AND %(target)s = 'queued'
+                                                  THEN 1 ELSE 0 END
                 WHERE id = %(id)s AND status = ANY(%(sources)s)
                 RETURNING {_RUN_COLUMNS}
                 """,
@@ -262,6 +282,31 @@ class RunRepository:
                 raise InvalidTransition(current.status, target)
             await self.append_event(run_id, epoch=row["epoch"], type=event, payload=payload or {})
         return Run.from_row(row)
+
+    async def request_cancel(self, run_id: uuid.UUID) -> Run:
+        """Cooperative cancel (R1.6). A run nobody is executing ends now; a
+        running one is flagged and its worker cancels it before its next node."""
+        async with self._conn.transaction():
+            cur = await self._conn.execute(
+                f"UPDATE runs SET cancel_requested = true WHERE id = %s "
+                f"AND status NOT IN ('completed', 'failed', 'cancelled') RETURNING {_RUN_COLUMNS}",
+                (run_id,),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                raise RunTerminal(await self.get(run_id))  # or RunNotFound
+            run = Run.from_row(row)
+            if run.status is RunStatus.RUNNING:
+                return run
+            return await self.transition(
+                run_id, RunStatus.CANCELLED, event=EventType.RUN_CANCELLED,
+                reason="cancel_requested", payload={"reason": "cancel_requested"},
+            )  # fmt: skip
+
+    async def is_cancel_requested(self, run_id: uuid.UUID) -> bool:
+        cur = await self._conn.execute("SELECT cancel_requested FROM runs WHERE id = %s", (run_id,))
+        row = await cur.fetchone()
+        return bool(row and row["cancel_requested"])
 
     # ------------------------------------------------------------- ownership
 
