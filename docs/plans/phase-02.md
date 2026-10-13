@@ -73,7 +73,26 @@
 
 **Estimate:** ~18–24 focused hours. That's more than the roadmap's 10–14, because CR-003 added the DB roles and kill switch and the database-level fencing is new.
 
-## 4. Risks
+## 4. Success criteria
+
+Each criterion is verified by an automated test or demo. "e2e" means real OS processes (API server plus several workers) talking to real Postgres and Redis, as in production, with short timings (lease TTL 3 s, heartbeat 1 s, reaper every 1 s).
+
+| # | Criterion | Measured by | Pass when |
+|---|---|---|---|
+| SC1 | **Automatic pickup**: a run created over HTTP executes with no manual command | e2e | `completed` via the API; nobody ran `execute` |
+| SC2 | **Exactly once under load**: 20 runs, 2 workers, `--concurrency 3` | integration | all 20 `completed`; every run `epoch = 1`, `reclaims = 0`; each node completed exactly once per run; both workers took work; peak in-flight per worker ≤ 3 |
+| SC3 | **Crash recovery (AC2)**: SIGKILL the owning worker mid-run | `make demo-crash` (e2e) | completes on the other worker; exactly 1 `run.reclaimed`; epoch 1 → 2; the committed step not re-executed; recovered within lease TTL + 2 reaper intervals + 1 step |
+| SC4 | **Zombie safety (AC5)**: SIGSTOP the owner past the TTL, then SIGCONT | `make demo-zombie` (e2e) | reclaimed by the other worker; after SIGCONT, 0 rows written with the old epoch after the takeover; exactly 1 `run.completed` and 1 result |
+| SC5 | **Graceful hand-off**: SIGTERM the owner mid-run | `make demo-release` (e2e) | `run.released` (no `run.reclaimed`); `releases = 1`, `reclaims = 0`; the other worker restarts it **< 5 s** after the release (vs ≥ TTL for a crash) |
+| SC6 | **Redis is rebuildable**: wipe the stream while runs are queued | integration | every run still completes (outbox relay) |
+| SC7 | **Healthy long runs aren't stolen**: a run lasting > 3 × TTL | integration | `epoch = 1`, `reclaims = 0` |
+| SC8 | **Cancellation**: queued, running and terminal runs | integration + API | queued → `cancelled` immediately; running → `cancelled` before its next node; terminal → `409` |
+| SC9 | **The database enforces fencing**: a stale-epoch `INSERT` in raw SQL | integration | rejected by the trigger |
+| SC10 | **Least privilege**: per-component DB users | integration | as worker: `DROP TABLE` / `DELETE FROM runs` denied; as API: checkpoints unreadable; a full run executes as the worker user (grants sufficient) |
+| SC11 | **Kill switch** | integration + API | paused → `POST /runs` `503` + `Retry-After`, no new claims, in-flight finishes; resume → work flows; cancel-all cancels every non-terminal run |
+| SC12 | **Quality** | CI | all jobs green (including e2e); branch coverage ≥ 90 %; each e2e demo passes 5× in a row locally before merge |
+
+## 5. Risks
 
 | Risk | Mitigation |
 |---|---|
