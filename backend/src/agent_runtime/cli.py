@@ -61,11 +61,32 @@ def _db_upgrade(args: argparse.Namespace) -> int:
     command.upgrade(cfg, "head")
 
     async def checkpointer_setup() -> None:
+        from agent_runtime.dbadmin import grant_checkpoint_tables
+
         async with create_pool(settings, max_size=1) as pool:
             await AsyncPostgresSaver(pool).setup()
+            async with pool.connection() as conn:
+                await grant_checkpoint_tables(conn)
 
     asyncio.run(checkpointer_setup())
     print("ok: schema at head; LangGraph checkpoint tables ready")
+    return 0
+
+
+def _db_provision_users(args: argparse.Namespace) -> int:
+    """Create/update each component's login user from <COMPONENT>_POSTGRES_* (R14.13)."""
+    from agent_runtime.db import create_pool
+    from agent_runtime.dbadmin import provision_users
+
+    settings = get_settings()
+    _setup_logging(settings)
+
+    async def run() -> list[str]:
+        async with create_pool(settings, max_size=1) as pool, pool.connection() as conn:
+            return await provision_users(conn)
+
+    done = asyncio.run(run())
+    print(f"ok: provisioned {', '.join(done) or 'no'} database user(s)")
     return 0
 
 
@@ -173,6 +194,8 @@ def _worker(args: argparse.Namespace) -> int:
     settings = get_settings()
     _setup_logging(settings)
     concurrency = args.concurrency or settings.worker_concurrency
+    if args.workers == 1:
+        settings = settings.for_component("worker")  # least-privilege DB user (R14.13)
     if args.workers > 1:
         return _supervise(args.workers, concurrency)
     asyncio.run(_serve_worker(settings, concurrency))
@@ -207,7 +230,7 @@ def _api(args: argparse.Namespace) -> int:
     import uvicorn
 
     uvicorn.run(
-        "agent_runtime.api.app:create_app",
+        "agent_runtime.api.app:create_api_app",
         factory=True,
         host=args.host,
         port=args.port,
@@ -266,6 +289,9 @@ def build_parser() -> argparse.ArgumentParser:
     db.add_parser("upgrade", help="migrate our schema and LangGraph's tables").set_defaults(
         handler=_db_upgrade
     )
+    db.add_parser(
+        "provision-users", help="create per-component least-privilege login users"
+    ).set_defaults(handler=_db_provision_users)
 
     api = commands.add_parser("api", help="serve the HTTP API")
     # 127.0.0.1 by default: never expose a dev server on the LAN by accident.

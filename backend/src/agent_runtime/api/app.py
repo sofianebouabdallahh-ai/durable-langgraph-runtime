@@ -286,3 +286,8 @@ def create_app(
     if settings.admin_api_enabled:
         app.include_router(admin)
     return app
+
+
+def create_api_app() -> FastAPI:
+    """Server entry point (`runtime api`): connects as the API's own DB user."""
+    return create_app(get_settings().for_component("api"))
