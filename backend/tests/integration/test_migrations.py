@@ -19,15 +19,23 @@ TABLES = {
     "documents",
     "chunks",
     "session_messages",
+    "agent_definitions",
+    "admin_state",
+    "subagent_invocations",
 }
 
 
+# Owned by LangGraph's checkpointer (created by its own `setup()`), not by Alembic.
+LANGGRAPH_TABLES = {"checkpoints", "checkpoint_blobs", "checkpoint_writes", "checkpoint_migrations"}
+
+
 def _tables(conn: psycopg.Connection) -> set[str]:
+    """Tables managed by our migrations (excludes Alembic's and LangGraph's own)."""
     rows = conn.execute(
         "SELECT tablename FROM pg_tables "
         "WHERE schemaname = 'public' AND tablename != 'alembic_version'"
     ).fetchall()
-    return {r[0] for r in rows}
+    return {r[0] for r in rows} - LANGGRAPH_TABLES
 
 
 def test_upgrade_downgrade_upgrade(alembic_cfg: Config, test_db_url: str) -> None:
@@ -123,3 +131,40 @@ def test_vector_extension_and_dimension(migrated_db: psycopg.Connection) -> None
     migrated_db.execute(insert, (uuid.uuid4(), did, 0, good))
     with pytest.raises(psycopg.errors.DataException):
         migrated_db.execute(insert, (uuid.uuid4(), did, 1, "[0.1,0.2]"))
+
+
+def test_admin_state_is_a_single_row(migrated_db: psycopg.Connection) -> None:
+    """The kill switch has exactly one row; a second one is impossible (R14.18)."""
+    rows = migrated_db.execute("SELECT paused FROM admin_state").fetchall()
+    assert rows == [(False,)]
+    with pytest.raises(psycopg.errors.CheckViolation):
+        migrated_db.execute("INSERT INTO admin_state (id) VALUES (false)")
+
+
+def test_new_run_columns_have_safe_defaults(migrated_db: psycopg.Connection) -> None:
+    """Expand step: old code inserting runs without the new columns still works."""
+    rid = _insert_run(migrated_db)
+    row = migrated_db.execute(
+        "SELECT kind, steps, model_calls, tool_calls_total, tool_calls, depth, limits "
+        "FROM runs WHERE id = %s",
+        (rid,),
+    ).fetchone()
+    assert row == ("workflow", 0, 0, 0, {}, 0, {})
+
+
+def test_subagent_spawn_is_idempotent_by_tool_call(migrated_db: psycopg.Connection) -> None:
+    """Replaying a spawn after a reclaim must not create a second invocation (R16.4)."""
+    rid = _insert_run(migrated_db, status="running")
+    insert = (
+        "INSERT INTO subagent_invocations "
+        "(handle, run_id, agent, task, thread_id, epoch, spawned_by_tool_call_id) "
+        "VALUES (%s, %s, 'chat/researcher', 't', %s, 1, 'call-1') "
+        "ON CONFLICT (spawned_by_tool_call_id) DO NOTHING"
+    )
+    for _ in range(2):
+        handle = uuid.uuid4()
+        migrated_db.execute(insert, (handle, rid, f"{rid}/sub/{handle}"))
+    count = migrated_db.execute(
+        "SELECT count(*) FROM subagent_invocations WHERE run_id = %s", (rid,)
+    ).fetchone()
+    assert count == (1,)

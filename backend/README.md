@@ -4,7 +4,7 @@ The Python service: the durable runtime (API and workers in later phases), its d
 
 | Path | What |
 |---|---|
-| `src/runtime/` | The `runtime` package. `src/` layout, so tests import the installed package, never stray files from the working directory |
+| `src/agent_runtime/` | The `agent_runtime` package (its CLI command is `runtime`). `src/` layout, so tests import the installed package, never stray files from the working directory |
 | `migrations/` | Alembic migrations, written as explicit SQL. Config in `alembic.ini` |
 | `tests/unit/` | Fast tests, no services needed |
 | `tests/integration/` | Need Postgres/Redis (`make up` from the repo root) |

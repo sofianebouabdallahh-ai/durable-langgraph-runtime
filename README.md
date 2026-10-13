@@ -4,7 +4,7 @@
 
 A runtime that runs LangGraph agents across a pool of workers and makes them survive what distributed systems throw at them: crashed workers, paused "zombie" workers, restarts, human approvals that take hours, node drains and rolling upgrades. It survives all of these without losing or duplicating work.
 
-> **Status: Phase 0 (foundations).** The tooling, local services, schema and CI are in place. Nothing runs agents yet. See the [roadmap](docs/roadmap.md).
+> **Status: Phase 1 (durable single run) complete.** Runs execute durably: checkpointed every step, fenced against zombie workers, resumable after a crash. Workers, streaming and real agents come next. See the [roadmap](docs/roadmap.md) and [phase summaries](docs/progress/).
 
 ## How it works (target design)
 
@@ -17,14 +17,16 @@ A runtime that runs LangGraph agents across a pool of workers and makes them sur
 
 The full design is in the [spec](docs/requirements/Project_4_Detailed_Requirements_K8s.pdf) and the change requests in [docs/requirements/](docs/requirements/).
 
-## Quickstart (Phase 0)
+## Quickstart
 
 Requirements: [uv](https://docs.astral.sh/uv/), Docker (Desktop or OrbStack), GNU make.
 
 ```bash
-make up      # creates .env from .env.example, starts Postgres + Redis, applies migrations
-make check   # lint + mypy --strict + all tests
-make help    # every target
+make up        # creates .env from .env.example, starts Postgres + Redis, migrates
+make run-toy   # create and durably execute a run of the `toy` graph; prints its event log
+make api       # HTTP API on http://127.0.0.1:8000 (docs at /docs); API_PORT=8765 to change
+make check     # lint + mypy --strict + agent validation + all tests
+make help      # every target
 ```
 
 `make down` stops the services and keeps their data; `make nuke` deletes the data too.
@@ -35,7 +37,7 @@ A monorepo with one folder per deliverable ([ADR-0001](docs/adr/0001-repository-
 
 | Path | What |
 |---|---|
-| [`backend/`](backend/) | Python service: `src/runtime` package, Alembic `migrations/`, `tests/{unit,integration}` |
+| [`backend/`](backend/) | Python service: `src/agent_runtime` package, Alembic `migrations/`, `tests/{unit,integration}` |
 | [`frontend/`](frontend/) | React + TypeScript UI (phase 11) |
 | [`infra/`](infra/) | How it runs: `compose/` now; sandbox image, observability, kind, k8s and Helm later |
 | [`docs/`](docs/) | `requirements/` (spec + change requests), `adr/`, `progress/` (phase summaries), `roadmap.md` |
@@ -43,7 +45,7 @@ A monorepo with one folder per deliverable ([ADR-0001](docs/adr/0001-repository-
 
 ## Configuration
 
-All settings come from environment variables, validated at startup by [backend/src/runtime/config.py](backend/src/runtime/config.py). How they get there depends on the environment:
+All settings come from environment variables, validated at startup by [backend/src/agent_runtime/config.py](backend/src/agent_runtime/config.py). How they get there depends on the environment:
 
 | Environment | Configuration | Secrets |
 |---|---|---|

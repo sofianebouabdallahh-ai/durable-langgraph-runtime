@@ -5,7 +5,7 @@
 | **Status** | Accepted |
 | **Date** | 2026-10-11 |
 | **Supersedes** | The flat layout used during phase 0 (`runtime/`, `tests/` and `docker-compose.yml` at the root) |
-| **Amended by** | [ADR-0003](0003-agents-as-definition-files.md): agents become `backend/agents/*.agent.md`, plus `src/runtime/hooks/` and `src/workflows/` |
+| **Amended by** | [ADR-0003](0003-agents-as-definition-files.md): agents become `backend/agents/*.agent.md`, plus `src/agent_runtime/hooks/` and `src/workflows/` |
 
 ## Context
 
@@ -19,7 +19,7 @@ One repository, split into **one top-level folder per deliverable**. Each folder
 .
 ├── backend/                     Python service (one package, several entrypoints)
 │   ├── src/
-│   │   ├── runtime/             the durable runtime: API, worker, leases, streaming, tools
+│   │   ├── agent_runtime/       the durable runtime: API, worker, leases, streaming, tools
 │   │   ├── agents/              graphs that run on it: chat (phase 6), research (phase 8)   [later]
 │   │   └── sandboxd/            sandbox manager service (phase 7)                            [later]
 │   ├── migrations/              Alembic, explicit SQL
@@ -59,7 +59,7 @@ One repository, split into **one top-level folder per deliverable**. Each folder
 
 | Spec path | Path here |
 |---|---|
-| `runtime` (package) | `backend/src/runtime` |
+| `runtime` (package) | `backend/src/agent_runtime` (renamed in phase 1; the CLI command is still `runtime`) |
 | `examples/research`, `examples/chat` | `backend/src/agents/research`, `backend/src/agents/chat` |
 | `evals/cases/*.yaml`, `evals/baseline.json` | `backend/evals/…` |
 | `fixtures/search/*.json` | `backend/fixtures/search/…` |
@@ -71,7 +71,7 @@ One repository, split into **one top-level folder per deliverable**. Each folder
 
 - **Flat layout** (the phase 0 starting point). Simple, but mixes deliverables, and the Docker build context would be the whole repo.
 - **Separate repositories** for backend, frontend and infra. Teams do this when separate teams own each part. Here it would split one change, such as a new API field plus the UI that shows it, across several PRs, and the end-to-end and cluster tests would need to check out several repos at matching versions. One developer, one release train: a monorepo fits.
-- **`agents/` as a top-level folder.** The agents are Python, depend on `runtime`, and ship in the same worker image, so they belong in the same package tree.
+- **`agents/` as a top-level folder.** The agents are Python, depend on `agent_runtime`, and ship in the same worker image, so they belong in the same package tree.
 
 ## Consequences
 

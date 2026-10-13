@@ -20,7 +20,7 @@ backend/
 │   ├── planner.agent.md · researcher.agent.md · critic.agent.md · synthesizer.agent.md
 │   └── README.md                the frontmatter schema, with an example
 └── src/
-    ├── runtime/
+    ├── agent_runtime/
     │   ├── agents/              loader, schema, validation, snapshotting, middleware builder
     │   └── hooks/               hook registry + built-in hooks
     └── workflows/
@@ -30,7 +30,7 @@ backend/
 1. **Definitions are data, outside `src/`.** They aren't importable code. They ship in the worker image as package data (`backend/agents/` is in the Docker build context, ADR-0001 rule 1).
 2. **Folder name `agents/` (plural)**, matching the common convention (`.github/agents/`, `.claude/agents/`) and the rest of this repo (`migrations/`, `tests/`).
 3. **File suffix `.agent.md`**, so tooling (and people) can tell agent files from other Markdown, such as the folder's `README.md`.
-4. **Hooks are Python in `runtime/hooks/`, never inline in definitions.** Definitions reference hooks by name only, so editing Markdown can't execute code.
+4. **Hooks are Python in `agent_runtime/hooks/`, never inline in definitions.** Definitions reference hooks by name only, so editing Markdown can't execute code.
 5. **Workflows are Python in `src/workflows/`.** Control flow (routing, fan-out, loops) stays in tested code; behaviour (prompt, tools, limits) lives in the definitions.
 
 ## Alternatives considered

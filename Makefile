@@ -22,7 +22,7 @@ BACKEND     := cd backend && uv run --frozen
 BACKEND_ENV := cd backend && uv run --frozen --env-file $(ENV_FILE)
 
 .DEFAULT_GOAL := help
-.PHONY: help env hooks up down nuke ps logs migrate migration lint fmt typecheck test test-unit test-integration check
+.PHONY: help env hooks up down nuke ps logs migrate migration api run-toy lint fmt typecheck agents-validate test test-unit test-integration coverage check
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -51,12 +51,20 @@ logs: ## Follow service logs
 	$(COMPOSE) logs -f
 
 # --------------------------------------------------------- backend: migrations
-migrate: env ## Apply all migrations (alembic upgrade head)
-	$(BACKEND_ENV) alembic upgrade head
+migrate: env ## Migrate our schema (Alembic) and LangGraph's checkpoint tables
+	$(BACKEND_ENV) runtime db upgrade
 
 migration: ## Create a new empty migration: make migration m="add foo"
 	@test -n "$(m)" || (echo 'usage: make migration m="message"' && exit 1)
 	$(BACKEND_ENV) alembic revision -m "$(m)"
+
+# ---------------------------------------------------------- backend: running
+API_PORT ?= 8000
+api: env ## Serve the API on http://127.0.0.1:$(API_PORT) (docs at /docs); make api API_PORT=8765
+	$(BACKEND_ENV) runtime api --port $(API_PORT)
+
+run-toy: env ## Create and execute one run of the toy graph
+	$(BACKEND_ENV) runtime run --graph toy --input '{"question": "What is a fencing token?"}'
 
 # ------------------------------------------------------ backend: code quality
 lint: ## Ruff lint + format check
@@ -70,14 +78,22 @@ fmt: ## Auto-format and fix lint
 typecheck: ## mypy --strict
 	$(BACKEND) mypy
 
+agents-validate: ## Validate every agent definition in backend/agents (no services needed)
+	$(BACKEND) runtime agents validate
+
 # -------------------------------------------------------------- backend: tests
 test-unit: ## Unit tests (no services, no .env: proves they need neither)
 	$(BACKEND) pytest tests/unit
 
+# REQUIRE_SERVICES=1: a missing database fails the run instead of skipping it.
 test-integration: env ## Integration tests (needs `make up`)
-	$(BACKEND_ENV) pytest -m integration
+	cd backend && REQUIRE_SERVICES=1 uv run --frozen --env-file $(ENV_FILE) pytest -m integration
+
+coverage: env ## All tests with branch coverage; fails under the floor (needs `make up`)
+	cd backend && REQUIRE_SERVICES=1 uv run --frozen --env-file $(ENV_FILE) pytest --cov --cov-report=term --cov-report=html
+	@echo "HTML report: backend/htmlcov/index.html"
 
 test: env ## All tests (needs `make up`)
-	$(BACKEND_ENV) pytest
+	cd backend && REQUIRE_SERVICES=1 uv run --frozen --env-file $(ENV_FILE) pytest
 
-check: lint typecheck test ## Everything CI runs
+check: lint typecheck agents-validate test ## Everything CI runs

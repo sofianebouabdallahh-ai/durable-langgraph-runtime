@@ -13,7 +13,7 @@ The same code runs in four places: a developer laptop, CI, a local kind cluster,
 ## Decision
 
 ### Principle 1 — The application reads environment variables, and nothing else decides
-`runtime.config.Settings` (pydantic-settings) is the **only** place configuration enters the code. It reads environment variables, validates them at startup and **fails fast** with a clear error if a required value is missing or invalid. The application never knows *how* the variables were delivered: that is the job of each environment ([twelve-factor config](https://12factor.net/config)).
+`agent_runtime.config.Settings` (pydantic-settings) is the **only** place configuration enters the code. It reads environment variables, validates them at startup and **fails fast** with a clear error if a required value is missing or invalid. The application never knows *how* the variables were delivered: that is the job of each environment ([twelve-factor config](https://12factor.net/config)).
 
 ### Principle 2 — Build once, configure per environment
 Images contain **no configuration and no secrets** (R10.1). The *same* image, identified by git SHA, moves from CI to kind to cloud. Only the injected environment differs. That way what you tested is exactly what you deploy.

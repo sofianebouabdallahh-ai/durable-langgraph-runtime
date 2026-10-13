@@ -159,7 +159,7 @@ Routing and fan-out logic stay in code (the Critic's routing remains a pure, uni
 | **CR-003 R14.19** | Runs record `agent_name`, `agent_version`, `agent_hash` (R15.4). |
 | **§5 API** | Adds `GET /agents`, `GET /agents/{name}`; `POST /sessions` takes `agent`. |
 | **§9 Storage** | New table `agent_definitions (hash PK, name, version, content jsonb, created_at)`. `runs` adds `agent_name`, `agent_version`, `agent_hash`, and `kind` (`turn`, `workflow`, `child`, `session_end`). `sessions` adds `agent_name`, `summary`, `ended_at`. |
-| **ADR-0001 layout** | Amended by [ADR-0003](../adr/0003-agents-as-definition-files.md): `backend/agents/` (definitions), `backend/src/runtime/hooks/` (hook registry + built-ins), `backend/src/workflows/` (multi-step graphs). |
+| **ADR-0001 layout** | Amended by [ADR-0003](../adr/0003-agents-as-definition-files.md): `backend/agents/` (definitions), `backend/src/agent_runtime/hooks/` (hook registry + built-ins), `backend/src/workflows/` (multi-step graphs). |
 
 ## 4. Acceptance criteria (§11)
 

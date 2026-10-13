@@ -61,8 +61,8 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 | # | Phase | Status |
 |---|---|---|
 | 0 | Foundations | ✅ Done — [summary](progress/phase-00.md) |
-| 1 | Durable single run | ⏳ Next |
-| 2 | Distributed workers | — |
+| 1 | Durable single run | ✅ Done — [summary](progress/phase-01.md) |
+| 2 | Distributed workers | ⏳ Next |
 | 3 | Streaming across replicas | — |
 | 4 | Tools & human-in-the-loop | — |
 | 5 | Sub-runs, sub-agents & backpressure | — |
@@ -95,14 +95,16 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 **Learn:** project tooling, migrations, config from environment.
 **Done when:** a fresh clone runs `make up && make test` green.
 
-### Phase 1 — Durable single run · ~8–10 h
+### Phase 1 — Durable single run · ~14–18 h (actual: delivered with the lease and heartbeat pulled in from phase 2)
 **Goal:** a toy 3-node graph runs to completion in one process, survives a restart, and its events can be replayed.
 - Run model and state machine (R1.1); limits (R1.7)
 - Postgres checkpointer with `thread_id` (R1.2); **prototype the epoch-aware checkpointer first (F1 / R2.10)**
 - Persisted events with a per-run `seq` (R1.5)
 - First API endpoints: `POST /runs`, `GET /runs/{id}`, `GET /runs/{id}/events`, `/healthz`
 - Agent definition loader (`backend/agents/<name>/agent.md`, sub-agents as leaf sub-folders), strict schema, `runtime agents validate` in CI, per-run snapshots in `agent_definitions` (R15.1–R15.4, R16.1, R16.2; AC38)
-- `ScriptedModelProvider` for deterministic tests (R14.20); budget accounting and the ceiling → graph profile → options hierarchy, where options can only tighten limits (R14.1, R14.3)
+- Limits hierarchy, where options can only tighten server ceilings, for wall-clock and steps (R1.7, R14.3)
+- *Pulled in from phase 2:* lease acquisition with the exact R2.3 SQL, heartbeat, and reclaim counting toward `max_reclaims`, because "resume after a crash" can't be correct without them
+- *Moved to phase 4:* `ScriptedModelProvider` (R14.20) and the model-call/tool/token/cost budgets. Nothing calls a model before phase 4, so there was no consumer to test them against
 
 **Learn:** LangGraph state, supersteps, checkpointers, threads; transactional state transitions.
 **Done when:** killing the process mid-run and calling resume finishes the run without re-running completed nodes.
@@ -111,7 +113,8 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 **Goal:** multiple worker processes share the work safely.
 - Redis Stream `runs:work`, consumer group, at-least-once delivery, `XAUTOCLAIM` (R2.1)
 - Worker pool with `--concurrency` and `--workers` (R2.2)
-- Leases, fencing tokens and heartbeats (R2.3); reaper and reclaim (R2.4); the reclaim race (F2)
+- Reaper loop and `XAUTOCLAIM` reclaim (R2.4); the reclaim race (F2). *Leases, fencing and heartbeats already exist from phase 1*
+- Fencing extended to every write (DB trigger or check on events, results, tool rows)
 - Resume (R1.3), cooperative cancel (R1.6)
 - Worker graceful shutdown on SIGTERM, release with `run.released` (the runtime part of R10.7)
 - Least-privilege Postgres roles per component (R14.13); kill switch (R14.18); budgets survive reclaim
@@ -134,6 +137,7 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 - `ToolPolicy` (R3.2); idempotency wrapper and `tool_invocations` (R2.6)
 - `interrupt()`, the approve endpoint, re-enqueue on approval (R1.4)
 - Hook registry; `pre_tool` / `post_tool` hooks with the fixed check order, fail-closed and audited (R15.5, R15.7–R15.9)
+- `ScriptedModelProvider` (R14.20) and model-call/tool budgets (R14.1), moved here from phase 1
 - Deny-by-default grants per graph/node, risk classes, strict argument validation, audit events, result truncation (R14.9–R14.11, R14.17, R14.5)
 
 **Learn:** idempotency keys, the outbox-style "record, then act" pattern, durable pauses.

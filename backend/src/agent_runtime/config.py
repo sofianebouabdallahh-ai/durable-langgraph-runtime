@@ -10,18 +10,49 @@ to exist. LLM provider settings arrive with ModelProvider (phase 6).
 """
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal, Self
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_ENV_ONLY = SettingsConfigDict(
+    env_file=None,  # environment only (R9.1)
+    case_sensitive=False,
+    extra="ignore",
+)
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=None,  # environment only (R9.1)
-        case_sensitive=False,
-        extra="ignore",
-    )
+
+class AgentSettings(BaseSettings):
+    """What loading and validating agent definitions needs, and nothing more.
+
+    Interface segregation: `runtime agents validate` (in CI, on a laptop) must
+    not require database credentials just to read Markdown files.
+    """
+
+    model_config = _ENV_ONLY
+
+    # Run limits (R1.7, R2.8, R2.9)
+    run_timeout_s: int = Field(default=20 * 60, gt=0)
+    run_max_steps: int = Field(default=200, gt=0)
+    run_max_children: int = Field(default=6, gt=0)
+    queue_depth_limit: int = Field(default=100, gt=0)  # above this, POST /runs returns 429
+
+    # Server ceilings (R14.3): agent profiles and per-run options may only go below these.
+    # Wall-clock and steps ceilings are run_timeout_s and run_max_steps above.
+    ceiling_model_calls: int = Field(default=100, gt=0)
+    ceiling_tool_calls: int = Field(default=100, gt=0)
+    ceiling_tokens: int = Field(default=1_000_000, gt=0)
+    ceiling_cost_usd: float = Field(default=2.0, gt=0)
+
+    # Agent definitions (R15.1): one folder per agent, relative to the working directory.
+    agents_dir: Path = Path("agents")
+
+
+class Settings(AgentSettings):
+    """Full runtime configuration: everything in AgentSettings plus services."""
+
+    model_config = _ENV_ONLY
 
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
@@ -35,12 +66,6 @@ class Settings(BaseSettings):
 
     # Redis: work stream and pub/sub. Holds nothing that can't be rebuilt.
     redis_url: str = "redis://localhost:6379/0"
-
-    # Run limits (R1.7, R2.8, R2.9)
-    run_timeout_s: int = Field(default=20 * 60, gt=0)
-    run_max_steps: int = Field(default=200, gt=0)
-    run_max_children: int = Field(default=6, gt=0)
-    queue_depth_limit: int = Field(default=100, gt=0)  # above this, POST /runs returns 429
 
     # Leases and reclaim (R2.3, R2.4)
     lease_ttl_s: float = Field(default=30.0, gt=0)
@@ -66,6 +91,11 @@ class Settings(BaseSettings):
             f"{driver}://{self.postgres_user}:{password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
+
+
+@lru_cache
+def get_agent_settings() -> AgentSettings:
+    return AgentSettings()
 
 
 @lru_cache
