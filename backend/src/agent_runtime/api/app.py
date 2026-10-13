@@ -7,8 +7,9 @@ Patterns:
   `Depends`. Tests inject an already-open pool; the server opens its own in the
   lifespan.
 
-Phase 1 note: `POST /runs` creates a `queued` run. Workers that pick queued runs
-up arrive in phase 2; until then, `runtime execute <run_id>` runs it.
+`POST /runs` creates a `queued` run and sends its work message; workers
+(`runtime worker`) execute it. Admin endpoints (kill switch, R14.18) are internal:
+the Ingress never routes `/admin` (phase 12).
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response, status
 
 from agent_runtime import __doc__ as package_doc
+from agent_runtime.admin import AdminRepository, AdminState
 from agent_runtime.api import problems
 from agent_runtime.api.problems import ResultNotReady
 from agent_runtime.api.schemas import (
@@ -31,12 +33,15 @@ from agent_runtime.api.schemas import (
     GraphEdge,
     GraphView,
     Health,
+    PauseRequest,
     ResultView,
     RunView,
 )
 from agent_runtime.config import Settings, get_settings
 from agent_runtime.db import Pool, create_pool
 from agent_runtime.graphs import GraphRegistry, GraphSpec, default_registry
+from agent_runtime.queue import RedisWorkQueue, WorkQueue, create_redis
+from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.service import RunService
 from agent_runtime.runs.store import RunRepository
 
@@ -117,6 +122,30 @@ async def get_result(run_id: uuid.UUID, pool: PoolDep) -> ResultView:
     return ResultView(run_id=run_id, output=result["output"], partial=result["partial"])
 
 
+@runs.post(
+    "/{run_id}/cancel",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=RunView,
+    summary="Cancel a run (cooperative)",
+    description="A queued or waiting run is cancelled now; a running run stops before its "
+    "next node (R1.6). 409 if the run has already ended.",
+)
+async def cancel_run(run_id: uuid.UUID, service: ServiceDep) -> RunView:
+    return RunView.of(await service.cancel(run_id))
+
+
+@runs.post(
+    "/{run_id}/resume",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=RunView,
+    summary="Resume a run (idempotent)",
+    description="Re-sends work for a queued run or one whose worker died; does nothing for a "
+    "run a live worker is executing (R1.3). 409 if the run has already ended.",
+)
+async def resume_run(run_id: uuid.UUID, service: ServiceDep) -> RunView:
+    return RunView.of(await service.resume(run_id))
+
+
 graphs_router = APIRouter(prefix="/graphs", tags=["graphs"])
 
 
@@ -159,14 +188,47 @@ async def healthz() -> Health:
     summary="Readiness: dependencies reachable",
     responses={503: {"description": "Not ready"}},
 )
-async def readyz(pool: PoolDep, response: Response) -> Health:
+async def readyz(request: Request, pool: PoolDep, response: Response) -> Health:
     try:
         async with pool.connection(timeout=2) as conn:
             await conn.execute("SELECT 1")
     except Exception:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return Health(status="unavailable: postgres")
+    redis = request.app.state.redis
+    if redis is not None:
+        try:
+            await redis.ping()
+        except Exception:
+            response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+            return Health(status="unavailable: redis")
     return Health(status="ok")
+
+
+admin = APIRouter(prefix="/admin", tags=["admin (internal)"])
+
+
+@admin.get("/state", summary="Kill-switch state")
+async def admin_state(pool: PoolDep) -> AdminState:
+    async with pool.connection() as conn:
+        return await AdminRepository(conn).get()
+
+
+@admin.post("/pause", summary="Stop admission and claiming (R14.18)")
+async def admin_pause(body: PauseRequest, pool: PoolDep) -> AdminState:
+    async with pool.connection() as conn:
+        return await AdminRepository(conn).set_paused(True, body.reason)
+
+
+@admin.post("/resume", summary="Resume admission and claiming")
+async def admin_resume(pool: PoolDep) -> AdminState:
+    async with pool.connection() as conn:
+        return await AdminRepository(conn).set_paused(False)
+
+
+@admin.post("/cancel-all", summary="Cooperatively cancel every non-terminal run")
+async def admin_cancel_all(service: ServiceDep) -> dict[str, int]:
+    return {"cancel_requested": await service.cancel_all()}
 
 
 # ---------------------------------------------------------------------- factory
@@ -176,35 +238,51 @@ def create_app(
     settings: Settings | None = None,
     *,
     pool: Pool | None = None,
+    queue: WorkQueue | None = None,
     graphs: GraphRegistry | None = None,
 ) -> FastAPI:
-    """Build the app. Pass `pool` to reuse an open pool (tests); otherwise the
-    app opens and closes its own in the lifespan."""
+    """Build the app. Pass `pool` / `queue` to reuse open ones (tests); otherwise
+    the app opens and closes its own in the lifespan."""
     settings = settings or get_settings()
     graphs = graphs or default_registry()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        if pool is not None:
-            app.state.pool = pool
-            app.state.service = RunService(pool, settings, graphs)
-            yield
-            return
-        async with create_pool(settings) as owned:
-            app.state.pool = owned
-            app.state.service = RunService(owned, settings, graphs)
-            yield
+        redis = None
+        work_queue = queue
+        if work_queue is None:
+            redis = create_redis(settings.redis_url)
+            work_queue = RedisWorkQueue(redis, settings.work_stream, settings.work_group)
+        app.state.redis = redis
+        try:
+            if pool is not None:
+                _wire(app, pool, work_queue)
+                yield
+                return
+            async with create_pool(settings) as owned:
+                _wire(app, owned, work_queue)
+                yield
+        finally:
+            if redis is not None:
+                await redis.aclose()
+
+    def _wire(app: FastAPI, p: Pool, q: WorkQueue) -> None:
+        app.state.pool = p
+        relay = OutboxRelay(p, q, stale_s=settings.relay_stale_s)
+        app.state.service = RunService(p, settings, graphs, relay)
 
     app = FastAPI(
         title="Agent Runtime API",
-        version="0.1.0",
+        version="0.2.0",
         description=package_doc or "",
         lifespan=lifespan,
     )
     app.state.graphs = graphs
+    app.state.redis = None
     problems.install(app)
-
     app.include_router(runs)
     app.include_router(graphs_router)
     app.include_router(health)
+    if settings.admin_api_enabled:
+        app.include_router(admin)
     return app

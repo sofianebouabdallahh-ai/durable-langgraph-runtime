@@ -95,5 +95,11 @@ class GraphView(BaseModel):
     input_schema: dict[str, Any]
 
 
+class PauseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str | None = Field(default=None, max_length=500)
+
+
 class Health(BaseModel):
     status: str

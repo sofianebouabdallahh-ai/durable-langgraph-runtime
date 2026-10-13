@@ -215,10 +215,10 @@ async def test_duplicate_messages_execute_once(
 async def test_sc11_paused_workers_claim_nothing_until_resumed(
     pool: Pool, fast: Settings, queue: RedisWorkQueue, service: RunService
 ) -> None:
+    run = await service.create_run("toy", {"question": "q"})  # admission refuses once paused
     async with pool.connection() as conn:
         await AdminRepository(conn).set_paused(True, reason="test")
     try:
-        run = await service.create_run("toy", {"question": "q"})
         async with workers(pool, queue, fast, "w-a:1"):
             await asyncio.sleep(1.5)
             assert (await get(pool, run.id)).status is S.QUEUED

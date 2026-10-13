@@ -132,6 +132,77 @@ def _execute(args: argparse.Namespace) -> int:
     return asyncio.run(_execute_and_report(settings, args.run_id))
 
 
+# ------------------------------------------------------------------ worker
+
+
+async def _serve_worker(settings: Settings, concurrency: int) -> None:
+    """One worker process. First SIGTERM/SIGINT: drain gracefully (R10.7).
+    Second: exit immediately, like Kubernetes' SIGKILL after the grace period."""
+    import os
+    import signal
+
+    from agent_runtime.db import create_pool
+    from agent_runtime.graphs import default_registry
+    from agent_runtime.queue import RedisWorkQueue, create_redis
+    from agent_runtime.worker import Worker
+
+    stop = asyncio.Event()
+
+    def on_signal(signum: int) -> None:
+        if stop.is_set():
+            logging.getLogger(__name__).warning("second signal: exiting now")
+            os._exit(128 + signum)
+        logging.getLogger(__name__).info("signal %d: draining", signum)
+        stop.set()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, on_signal, sig)
+
+    redis = create_redis(settings.redis_url)
+    try:
+        async with create_pool(settings, max_size=concurrency + 4) as pool:
+            queue = RedisWorkQueue(redis, settings.work_stream, settings.work_group)
+            worker = Worker(pool, queue, settings, default_registry(), concurrency=concurrency)
+            await worker.run(stop)
+    finally:
+        await redis.aclose()
+
+
+def _worker(args: argparse.Namespace) -> int:
+    settings = get_settings()
+    _setup_logging(settings)
+    concurrency = args.concurrency or settings.worker_concurrency
+    if args.workers > 1:
+        return _supervise(args.workers, concurrency)
+    asyncio.run(_serve_worker(settings, concurrency))
+    return 0
+
+
+def _supervise(n: int, concurrency: int) -> int:
+    """Pattern: Supervisor. Start N worker processes and forward stop signals.
+
+    It deliberately does not restart crashed children: locally, a demo kills a
+    worker to prove another one takes over; in Kubernetes, the kubelet restarts
+    containers (each pod runs a single worker process).
+    """
+    import signal
+    import subprocess
+
+    cmd = [sys.executable, "-m", "agent_runtime.cli", "worker", "--concurrency", str(concurrency)]
+    children = [subprocess.Popen(cmd) for _ in range(n)]
+
+    def forward(signum: int, _frame: object) -> None:
+        for child in children:
+            if child.poll() is None:
+                child.send_signal(signum)
+
+    signal.signal(signal.SIGTERM, forward)
+    signal.signal(signal.SIGINT, forward)
+    print(f"supervising {n} workers: pids {[c.pid for c in children]}", file=sys.stderr)
+    return max(child.wait() for child in children)
+
+
 def _api(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -208,6 +279,16 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--input", type=_json_object, required=True, help="JSON object")
     run.add_argument("--options", type=_json_object, default=None, help="JSON object")
     run.set_defaults(handler=_run)
+
+    worker = commands.add_parser("worker", help="run worker process(es) that execute queued runs")
+    worker.add_argument(
+        "--concurrency",
+        type=int,
+        default=None,
+        help="runs in flight per process (default: WORKER_CONCURRENCY)",
+    )
+    worker.add_argument("--workers", type=int, default=1, help="number of worker processes")
+    worker.set_defaults(handler=_worker)
 
     execute = commands.add_parser(
         "execute", aliases=["resume"], help="execute a queued run or resume a crashed one"

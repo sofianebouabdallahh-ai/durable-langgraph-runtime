@@ -8,16 +8,28 @@ input valid for that graph, options within ceilings) live here once.
 from __future__ import annotations
 
 import logging
+import uuid
+from datetime import UTC, datetime
 from typing import Any
 
+from agent_runtime.admin import AdminRepository
 from agent_runtime.config import Settings
 from agent_runtime.db import Pool
 from agent_runtime.graphs import GraphRegistry
 from agent_runtime.runs.limits import RunOptions, resolve_limits
 from agent_runtime.runs.relay import OutboxRelay
-from agent_runtime.runs.store import Run, RunRepository
+from agent_runtime.runs.state import RunStatus
+from agent_runtime.runs.store import Run, RunRepository, RunTerminal
 
 log = logging.getLogger(__name__)
+
+
+class AdmissionPaused(Exception):
+    """The kill switch is on (R14.18): no new runs are accepted."""
+
+    def __init__(self, reason: str | None) -> None:
+        super().__init__(f"the runtime is paused{f': {reason}' if reason else ''}")
+        self.reason = reason
 
 
 class RunService:
@@ -49,6 +61,10 @@ class RunService:
         The run is durable once created. Sending its work message is best
         effort: if Redis is unavailable, the outbox relay sends it later.
         """
+        async with self._pool.connection() as conn:
+            state = await AdminRepository(conn).get()
+        if state.paused:
+            raise AdmissionPaused(state.reason)
         spec = self._graphs.get(graph)
         validated_input = spec.input_model.model_validate(input)
         run_options = RunOptions.model_validate(options or {})
@@ -67,3 +83,41 @@ class RunService:
                 log.warning("run %s created but not enqueued; the relay will send it", run.id,
                             exc_info=True)  # fmt: skip
         return run
+
+    async def cancel(self, run_id: uuid.UUID) -> Run:
+        """R1.6: queued or waiting → cancelled now; running → its worker stops at the
+        next node. Raises RunTerminal (→ 409) or RunNotFound (→ 404)."""
+        async with self._pool.connection() as conn:
+            return await RunRepository(conn).request_cancel(run_id)
+
+    async def resume(self, run_id: uuid.UUID) -> Run:
+        """R1.3, idempotent: (re)send work for a run that needs it; do nothing for a
+        run a live worker is executing. Raises RunTerminal (→ 409)."""
+        async with self._pool.connection() as conn:
+            run = await RunRepository(conn).get(run_id)
+        if run.status.is_terminal:
+            raise RunTerminal(run)
+        orphaned = (
+            run.status is RunStatus.RUNNING
+            and run.lease_expires_at is not None
+            and run.lease_expires_at < datetime.now(UTC)
+        )
+        if (run.status is RunStatus.QUEUED or orphaned) and self._relay is not None:
+            await self._relay.enqueue(run.id)
+        return run
+
+    async def cancel_all(self) -> int:
+        """Kill switch helper: request cancellation of every non-terminal run."""
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT id FROM runs WHERE status NOT IN ('completed', 'failed', 'cancelled')"
+            )
+            ids = [r["id"] for r in await cur.fetchall()]
+        cancelled = 0
+        for run_id in ids:
+            try:
+                await self.cancel(run_id)
+                cancelled += 1
+            except RunTerminal:
+                pass  # finished meanwhile
+        return cancelled
