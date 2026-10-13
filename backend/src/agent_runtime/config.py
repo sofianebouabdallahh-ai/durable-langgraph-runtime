@@ -66,6 +66,18 @@ class Settings(AgentSettings):
 
     # Redis: work stream and pub/sub. Holds nothing that can't be rebuilt.
     redis_url: str = "redis://localhost:6379/0"
+    work_stream: str = "runs:work"  # R2.1
+    work_group: str = "workers"
+
+    # Workers (R2.2, R10.7)
+    worker_concurrency: int = Field(default=4, gt=0)  # runs in flight per worker process
+    worker_block_ms: int = Field(default=2000, gt=0)  # XREADGROUP BLOCK: how long a read waits
+    worker_grace_s: float = Field(default=50.0, gt=0)  # drain budget; < k8s terminationGrace (60)
+    relay_interval_s: float = Field(default=10.0, gt=0)  # outbox relay sweep period
+    relay_stale_s: float = Field(default=30.0, gt=0)  # re-send a queued run's message after this
+
+    # Kill switch / admin endpoints (R14.18): internal only, never routed by the Ingress.
+    admin_api_enabled: bool = True
 
     # Leases and reclaim (R2.3, R2.4)
     lease_ttl_s: float = Field(default=30.0, gt=0)

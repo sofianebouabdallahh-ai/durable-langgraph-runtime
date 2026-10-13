@@ -71,6 +71,12 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U agent -d agent_runtime"
           --health-interval 2s --health-timeout 3s --health-retries 30
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 30
     # Throw-away credentials for an ephemeral service container: not secrets, so
     # plain env is fine. Real secrets would come from GitHub Environment secrets.
     env:
@@ -78,6 +84,7 @@ jobs:
       POSTGRES_DB: agent_runtime
       POSTGRES_USER: agent
       POSTGRES_PASSWORD: ci-only
+      REDIS_URL: redis://localhost:6379/0
       REQUIRE_SERVICES: "1" # missing services fail the tests instead of skipping them
     steps:
       - uses: actions/checkout@v7
