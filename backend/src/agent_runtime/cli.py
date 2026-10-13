@@ -165,6 +165,7 @@ async def _serve_worker(settings: Settings, concurrency: int) -> None:
     from agent_runtime.db import create_pool
     from agent_runtime.graphs import default_registry
     from agent_runtime.queue import RedisWorkQueue, create_redis
+    from agent_runtime.streaming.bus import RedisEventBus
     from agent_runtime.worker import Worker
 
     stop = asyncio.Event()
@@ -184,7 +185,10 @@ async def _serve_worker(settings: Settings, concurrency: int) -> None:
     try:
         async with create_pool(settings, max_size=concurrency + 4) as pool:
             queue = RedisWorkQueue(redis, settings.work_stream, settings.work_group)
-            worker = Worker(pool, queue, settings, default_registry(), concurrency=concurrency)
+            worker = Worker(
+                pool, queue, settings, default_registry(), concurrency=concurrency,
+                bus=RedisEventBus(redis),
+            )  # fmt: skip
             await worker.run(stop)
     finally:
         await redis.aclose()

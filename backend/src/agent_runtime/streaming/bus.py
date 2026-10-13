@@ -86,6 +86,27 @@ class StreamEvent:
         )
 
 
+def to_stream_event(event: Any) -> StreamEvent:
+    """A persisted run event (runs.store.Event) in wire form."""
+    return StreamEvent(
+        run_id=event.run_id, seq=event.seq, ts=event.ts, epoch=event.epoch,
+        type=str(event.type), payload=event.payload,
+    )  # fmt: skip
+
+
+async def publish_events(bus: EventBus | None, events: list[Any]) -> None:
+    """Best effort, after commit. A lost publish only costs latency: readers
+    back-fill from Postgres. It must never fail the run that produced it."""
+    if bus is None:
+        return
+    for event in events:
+        try:
+            await bus.publish(run_channel(event.run_id), to_stream_event(event))
+        except Exception:
+            log.warning("publish of %s seq %s failed; readers will back-fill",
+                        event.type, event.seq, exc_info=True)  # fmt: skip
+
+
 class Subscription(Protocol):
     """One connection, many channels."""
 

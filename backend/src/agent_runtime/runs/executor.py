@@ -50,7 +50,8 @@ from agent_runtime.graphs import GraphRegistry
 from agent_runtime.runs.events import EventType
 from agent_runtime.runs.limits import RunLimits, RunOptions, resolve_limits
 from agent_runtime.runs.state import FailureReason, RunStatus
-from agent_runtime.runs.store import Run, RunRepository, RunTerminal
+from agent_runtime.runs.store import Event, Run, RunRepository, RunTerminal
+from agent_runtime.streaming.bus import EventBus, publish_events
 
 log = logging.getLogger(__name__)
 
@@ -86,7 +87,9 @@ class _Outbox:
     run_id: uuid.UUID
     fence: Fence
     committed_steps: int  # steps committed for this run so far (all executions)
+    bus: EventBus | None = None
     pending: list[tuple[EventType, dict[str, Any]]] = field(default_factory=list)
+    _just_written: list[Event] = field(default_factory=list)
 
     def stage(self, type: EventType, payload: dict[str, Any]) -> None:
         self.pending.append((type, payload))
@@ -103,6 +106,12 @@ class _Outbox:
         if metadata.get("source") == "loop" and metadata.get("step", 0) >= 1:
             self.committed_steps = await repo.add_steps(self.run_id, 1)
         await self.flush(repo)
+        self._just_written = repo.emitted  # replaced, not appended: a rollback discards it
+
+    async def after_commit(self) -> None:
+        """FencedCheckpointer hook: the transaction committed; now announce it."""
+        written, self._just_written = self._just_written, []
+        await publish_events(self.bus, written)
 
 
 class _NodeRecorder(AsyncCallbackHandler):
@@ -184,6 +193,7 @@ class RunExecutor:
         *,
         on_heartbeat: Callable[[], Awaitable[object]] | None = None,
         release_requested: asyncio.Event | None = None,
+        bus: EventBus | None = None,
     ) -> None:
         self._pool = pool
         self._settings = settings
@@ -191,6 +201,7 @@ class RunExecutor:
         self.owner = owner or default_owner()
         self._on_heartbeat = on_heartbeat
         self._release_requested = release_requested or asyncio.Event()
+        self._bus = bus  # events are published after each commit (R1.5)
 
     async def execute(self, run_id: uuid.UUID) -> Run:
         """Run (or resume) `run_id` to a stopping point and return its final state.
@@ -228,6 +239,7 @@ class RunExecutor:
                     )  # fmt: skip
             except FencedError:
                 return await repo.get(run_id)
+            await publish_events(self._bus, repo.emitted)  # committed above
             run = await repo.get(run_id)
         return await self._drive(run, fence)
 
@@ -244,8 +256,10 @@ class RunExecutor:
             spec.input_model.model_validate(run.input)
         except Exception as exc:
             return await self._fail(fence, FailureReason.ERROR, None, detail=repr(exc))
-        outbox = _Outbox(run.id, fence, committed_steps=run.steps)
-        checkpointer = FencedCheckpointer(self._pool, fence, on_commit=outbox.on_commit)
+        outbox = _Outbox(run.id, fence, committed_steps=run.steps, bus=self._bus)
+        checkpointer = FencedCheckpointer(
+            self._pool, fence, on_commit=outbox.on_commit, after_commit=outbox.after_commit
+        )
         graph = spec.build().compile(checkpointer=checkpointer)
         config: RunnableConfig = {
             "configurable": {"thread_id": run.thread_id},
@@ -328,16 +342,32 @@ class RunExecutor:
 
     async def _complete(self, fence: Fence, final: dict[str, Any], outbox: _Outbox) -> Run:
         output = json.loads(json.dumps(final, default=str))  # JSON-safe copy of the state
+
+        async def work(repo: RunRepository) -> Run:
+            await outbox.flush(repo)
+            await repo.save_result(fence.run_id, output)
+            return await repo.transition(
+                fence.run_id, RunStatus.COMPLETED, event=EventType.RUN_COMPLETED,
+                fence=fence, payload={"steps": outbox.committed_steps},
+            )  # fmt: skip
+
+        return await self._fenced_then_publish(fence, work)
+
+    async def _fenced_then_publish(
+        self, fence: Fence, work: Callable[[RunRepository], Awaitable[Run]]
+    ) -> Run:
+        """Run `work` in one fenced transaction; publish its events only after COMMIT.
+
+        If the fence is stale, nothing is written and nothing is published.
+        """
         try:
-            async with self._pool.connection() as conn, conn.transaction():
+            async with self._pool.connection() as conn:
                 repo = RunRepository(conn)
-                await check_fence(conn, fence)
-                await outbox.flush(repo)
-                await repo.save_result(fence.run_id, output)
-                return await repo.transition(
-                    fence.run_id, RunStatus.COMPLETED, event=EventType.RUN_COMPLETED,
-                    fence=fence, payload={"steps": outbox.committed_steps},
-                )  # fmt: skip
+                async with conn.transaction():
+                    await check_fence(conn, fence)
+                    run = await work(repo)
+                await publish_events(self._bus, repo.emitted)
+                return run
         except FencedError:
             return await self._current(fence.run_id)
 
@@ -350,17 +380,15 @@ class RunExecutor:
 
     async def _release(self, fence: Fence, outbox: _Outbox) -> Run:
         """Graceful hand-off (R10.7): back to `queued`, lease cleared, not a reclaim."""
-        try:
-            async with self._pool.connection() as conn, conn.transaction():
-                repo = RunRepository(conn)
-                await check_fence(conn, fence)
-                await outbox.flush(repo)
-                return await repo.transition(
-                    fence.run_id, RunStatus.QUEUED, event=EventType.RUN_RELEASED,
-                    fence=fence, payload={"owner": self.owner},
-                )  # fmt: skip
-        except FencedError:
-            return await self._current(fence.run_id)
+
+        async def work(repo: RunRepository) -> Run:
+            await outbox.flush(repo)
+            return await repo.transition(
+                fence.run_id, RunStatus.QUEUED, event=EventType.RUN_RELEASED,
+                fence=fence, payload={"owner": self.owner},
+            )  # fmt: skip
+
+        return await self._fenced_then_publish(fence, work)
 
     async def _fail(
         self,
@@ -385,18 +413,16 @@ class RunExecutor:
         payload: dict[str, Any] = {"reason": str(reason)}
         if detail:
             payload["detail"] = detail[:2000]
-        try:
-            async with self._pool.connection() as conn, conn.transaction():
-                repo = RunRepository(conn)
-                await check_fence(conn, fence)
-                if outbox is not None:
-                    await outbox.flush(repo)  # e.g. node.failed for the failing node
-                return await repo.transition(
-                    fence.run_id, target, event=event,
-                    fence=fence, reason=str(reason), payload=payload,
-                )  # fmt: skip
-        except FencedError:
-            return await self._current(fence.run_id)
+
+        async def work(repo: RunRepository) -> Run:
+            if outbox is not None:
+                await outbox.flush(repo)  # e.g. node.failed for the failing node
+            return await repo.transition(
+                fence.run_id, target, event=event,
+                fence=fence, reason=str(reason), payload=payload,
+            )  # fmt: skip
+
+        return await self._fenced_then_publish(fence, work)
 
     async def _current(self, run_id: uuid.UUID) -> Run:
         async with self._pool.connection() as conn:

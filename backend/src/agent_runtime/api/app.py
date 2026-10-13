@@ -44,6 +44,7 @@ from agent_runtime.queue import RedisWorkQueue, WorkQueue, create_redis
 from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.service import RunService
 from agent_runtime.runs.store import RunRepository
+from agent_runtime.streaming.bus import EventBus, RedisEventBus
 
 # ----------------------------------------------------------------- dependencies
 
@@ -239,6 +240,7 @@ def create_app(
     *,
     pool: Pool | None = None,
     queue: WorkQueue | None = None,
+    bus: EventBus | None = None,
     graphs: GraphRegistry | None = None,
 ) -> FastAPI:
     """Build the app. Pass `pool` / `queue` to reuse open ones (tests); otherwise
@@ -249,27 +251,30 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         redis = None
-        work_queue = queue
-        if work_queue is None:
+        work_queue, event_bus = queue, bus
+        if work_queue is None or event_bus is None:
             redis = create_redis(settings.redis_url)
-            work_queue = RedisWorkQueue(redis, settings.work_stream, settings.work_group)
+            work_queue = work_queue or RedisWorkQueue(
+                redis, settings.work_stream, settings.work_group
+            )
+            event_bus = event_bus or RedisEventBus(redis)
         app.state.redis = redis
         try:
             if pool is not None:
-                _wire(app, pool, work_queue)
+                _wire(app, pool, work_queue, event_bus)
                 yield
                 return
             async with create_pool(settings) as owned:
-                _wire(app, owned, work_queue)
+                _wire(app, owned, work_queue, event_bus)
                 yield
         finally:
             if redis is not None:
                 await redis.aclose()
 
-    def _wire(app: FastAPI, p: Pool, q: WorkQueue) -> None:
+    def _wire(app: FastAPI, p: Pool, q: WorkQueue, b: EventBus) -> None:
         app.state.pool = p
         relay = OutboxRelay(p, q, stale_s=settings.relay_stale_s)
-        app.state.service = RunService(p, settings, graphs, relay)
+        app.state.service = RunService(p, settings, graphs, relay, b)
 
     app = FastAPI(
         title="Agent Runtime API",
