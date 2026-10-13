@@ -57,7 +57,7 @@ jobs:
       - run: uv run pytest -m "not integration"
 
   integration:
-    name: migrations · integration
+    name: migrations · integration · coverage
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -88,5 +88,5 @@ jobs:
       - run: uv sync --locked
       - name: Migrate (our schema + LangGraph's tables), as the deploy will
         run: uv run runtime db upgrade
-      - name: Integration tests
-        run: uv run pytest -m integration
+      - name: All tests with coverage (fails under the floor in pyproject.toml)
+        run: uv run pytest --cov --cov-report=term
