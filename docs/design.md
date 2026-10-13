@@ -39,6 +39,12 @@ Every non-trivial component names the pattern it applies. If no pattern fits, th
 | **Supervisor** | `runtime worker --workers N` | Starts N worker processes and forwards stop signals. It deliberately doesn't restart them: Kubernetes restarts pods, and demos need a killed worker to stay dead. |
 | **Defence in depth (DB-enforced fencing)** | Migration `0004` trigger | The database rejects stale-epoch writes even if application code forgets the check or someone writes raw SQL. |
 | **Least privilege** | Migration `0005` group roles + `runtime db provision-users` | One login user per component, holding only the grants it needs. Migrations hold no passwords. Tests prove the grants both **restrict** and **suffice**. |
+| **Publish after commit** | `RunRepository.emitted` + `FencedCheckpointer.after_commit` + `publish_events` | An event is announced only after its transaction commits; a rolled-back (fenced) write is never seen by anyone. A failed publish is logged and never fails a run. Verified with a spy bus that checks visibility from another connection, plus a control test. |
+| **Pub/Sub multiplexer** | [`streaming/broker.py`](../backend/src/agent_runtime/streaming/broker.py) | One Redis subscription per API replica, however many clients it streams to; channels are reference-counted. A single reader task resolves `SUBSCRIBE` confirmations, so opening a stream costs one round trip. |
+| **Bounded queue + catch-up** | `Listener.overflowed` | A slow client never slows the broker or other clients: its queue overflows, it's flagged, and it catches up from Postgres. |
+| **Functional core, imperative shell** | [`streaming/merger.py`](../backend/src/agent_runtime/streaming/merger.py) (core), [`streaming/session.py`](../backend/src/agent_runtime/streaming/session.py) (shell) | The replay/live/dedup/back-fill logic has no I/O, so it is verified with property-based tests (600 generated interleavings per run). |
+| **Anti-entropy (safety-net poll)** | `RunStream` | Pub/Sub is at-most-once, so even the final event can be lost. If nothing live arrives for `stream_poll_s`, the stream reconciles with Postgres. |
+| **Graceful drain** | `DrainingServer` + `app.state.draining` | SIGTERM flags the app before uvicorn shuts down: `/readyz` fails, new streams get `503`, and open streams send `event: reconnect` and close, so clients resume elsewhere with `Last-Event-ID`. |
 | **Idempotency key** | *Phase 4* | Tool calls keyed by `sha256(run · node · call_index · tool · args)`. A retry after reclaim returns the stored result instead of executing again (R2.6). |
 
 ## Spike: fencing LangGraph checkpoints (phase 1, task 1.4)
@@ -69,3 +75,4 @@ Tests: [`test_fenced_checkpointer.py`](../backend/tests/integration/test_fenced_
 - **Sub-runs vs LangGraph `Send` for distributed fan-out:** see the spec's design note under R2.8. *(Expanded in phase 5, as R2.8 requires.)*
 - **In-process sub-agents vs child runs:** [CR-005 §1](requirements/CR-005-subagents.md).
 - **Configuration and secrets:** [ADR-0002](adr/0002-configuration-and-secrets.md).
+- **Live events (Pub/Sub vs LISTEN/NOTIFY vs Streams vs polling):** [ADR-0004](adr/0004-live-events-redis-pubsub.md).

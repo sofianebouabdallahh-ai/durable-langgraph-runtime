@@ -9,6 +9,7 @@ All three also prove SC1: runs are created over HTTP and nobody runs `execute`.
 from __future__ import annotations
 
 import asyncio
+import json
 import signal
 import time
 from collections.abc import Awaitable, Callable
@@ -17,6 +18,7 @@ from datetime import datetime
 from typing import Any
 
 from tests.e2e.harness import LEASE_TTL_S, REAPER_INTERVAL_S, Cluster
+from tests.sse import Sse, read_sse
 
 STEP_S = 1.5  # each toy node sleeps this long
 
@@ -156,18 +158,136 @@ async def _exit_code(proc: object, timeout_s: float) -> int | None:
     return proc.poll()
 
 
-SCENARIOS: dict[str, Callable[[Cluster], Awaitable[Report]]] = {
-    "crash": crash,
-    "zombie": zombie,
-    "release": release,
+# --------------------------------------------------------------- phase 3: streaming
+
+
+def _latencies(stream: Sse, opened_at: float) -> list[float]:
+    """Commit → client delay for events committed after the stream opened (live ones)."""
+    out = []
+    for e in stream.events:
+        if not e.get("id"):
+            continue
+        committed = datetime.fromisoformat(json.loads(e["data"])["ts"]).timestamp()
+        if committed >= opened_at:
+            out.append(e["_received_at"] - committed)
+    return sorted(out)
+
+
+def _p(values: list[float], pct: float) -> float:
+    return values[min(len(values) - 1, int(len(values) * pct))] if values else float("nan")
+
+
+async def replicas(c: Cluster) -> Report:
+    """AC3 / SC2: create on replica A, stream from replica B (neither hosts a worker)."""
+    r = Report("stream from any replica (AC3)")
+    a, b = c.clients
+    run_id = (
+        await a.post("/runs", json={"graph": "toy", "input": {"question": "ac3", "delay_s": 0.5}})
+    ).json()["run_id"]
+    opened = time.time()
+    stream = await read_sse(b, f"/runs/{run_id}/stream", timeout_s=60)
+    in_db = [e["seq"] for e in await c.events(run_id)]
+    lat = _latencies(stream, opened)
+    r.check(
+        "every event arrived on replica B", stream.seqs == in_db, f"{len(stream.seqs)}/{len(in_db)}"
+    )
+    r.check("in order, no duplicates", stream.seqs == sorted(set(stream.seqs)))
+    r.check("stream closed after run.completed", stream.events[-1].get("event") == "run.completed")
+    detail = f"p50 {_p(lat, 0.5) * 1000:.0f} ms, p95 {_p(lat, 0.95) * 1000:.0f} ms"
+    r.check("p95 delivery latency < 250 ms", _p(lat, 0.95) < 0.25, f"{detail}, {len(lat)} events")
+    return r
+
+
+async def stall(c: Cluster) -> Report:
+    """AC3 part 2 / SC5: replica C has Pub/Sub disabled; the same run streamed from B
+    (live) and C side by side. C still gets everything, but only at the safety-net
+    poll cadence: the stream visibly stalls."""
+    r = Report("Pub/Sub disabled: the stream stalls (AC3)")
+    _, b, cc = c.clients
+    run_id = (
+        await b.post("/runs", json={"graph": "toy", "input": {"question": "stall", "delay_s": 1.0}})
+    ).json()["run_id"]
+    opened = time.time()
+    live, polled = await asyncio.gather(
+        read_sse(b, f"/runs/{run_id}/stream", timeout_s=60),
+        read_sse(cc, f"/runs/{run_id}/stream", timeout_s=60),
+    )
+    in_db = [e["seq"] for e in await c.events(run_id)]
+    lat_live, lat_polled = _latencies(live, opened), _latencies(polled, opened)
+    r.check("live replica: every event, in order", live.seqs == in_db)
+    r.check("no-Pub/Sub replica: still every event, in order (from Postgres)", polled.seqs == in_db)
+    p95_live = _p(lat_live, 0.95)
+    r.check(
+        "live replica is real-time (p95 < 250 ms)", p95_live < 0.25, f"p95 {p95_live * 1000:.0f} ms"
+    )
+    median, worst = _p(lat_polled, 0.5), max(lat_polled, default=0)
+    r.check(
+        "no-Pub/Sub replica visibly stalls (median ≥ 0.5 s)",
+        median >= 0.5,
+        f"median {median:.2f} s, max {worst:.2f} s (poll every 3 s)",
+    )
+    return r
+
+
+async def api_shutdown(c: Cluster) -> Report:
+    """SC9 / R10.7: SIGTERM the replica a client is streaming from."""
+    r = Report("API replica shutdown mid-stream (R10.7)")
+    a, b = c.clients
+    run_id = (
+        await a.post("/runs", json={"graph": "toy", "input": {"question": "drain", "delay_s": 1.0}})
+    ).json()["run_id"]
+    reader = asyncio.create_task(read_sse(b, f"/runs/{run_id}/stream", timeout_s=60))
+    await c.wait(lambda: c.node_completed(run_id, "plan"), timeout_s=30, what="plan committed")
+    replica_b = c.apis[1]
+    t0 = time.monotonic()
+    replica_b.send_signal(signal.SIGTERM)
+    first = await reader
+    told = first.events[-1].get("event") == "reconnect" if first.events else False
+    last_id = str(first.seqs[-1]) if first.seqs else "0"
+    second = await read_sse(
+        a, f"/runs/{run_id}/stream", headers={"Last-Event-ID": last_id}, timeout_s=60
+    )
+    exit_code = await _exit_code(replica_b, timeout_s=15)
+    drained_s = time.monotonic() - t0
+    in_db = [e["seq"] for e in await c.events(run_id)]
+    r.check(
+        "client told to reconnect",
+        told,
+        first.events[-1].get("event", "?") if first.events else "no events",
+    )
+    r.check(
+        "reconnected elsewhere; nothing lost, nothing duplicated",
+        first.seqs + second.seqs == in_db,
+        f"{len(first.seqs)} + {len(second.seqs)} = {len(in_db)}",
+    )
+    # uvicorn re-raises the captured SIGTERM after a graceful shutdown (so supervisors
+    # see why it stopped): exit status -15 *with* a completed shutdown is clean.
+    graceful = "Application shutdown complete" in c.log_of(replica_b.pid)
+    r.check(
+        "replica shut down gracefully",
+        graceful and exit_code in (0, -signal.SIGTERM),
+        f"exit {exit_code}, shutdown {'complete' if graceful else 'INCOMPLETE'}",
+    )
+    r.check("replica drained within its grace period (10 s)", drained_s < 10, f"{drained_s:.1f} s")
+    return r
+
+
+SCENARIOS: dict[str, tuple[Callable[[Cluster], Awaitable[Report]], dict[str, Any]]] = {
+    "crash": (crash, {}),
+    "zombie": (zombie, {}),
+    "release": (release, {}),
+    "replicas": (replicas, {"api_replicas": [{}, {}]}),
+    "stall": (stall, {"api_replicas": [{}, {}, {"STREAM_LIVE_ENABLED": "false"}]}),
+    "api-shutdown": (api_shutdown, {"api_replicas": [{}, {}]}),
 }
 
 
 async def run_scenario(name: str) -> tuple[Report, str]:
     """Run one scenario in a fresh cluster; returns the report and the logs' tail."""
-    async with Cluster(workers=2, concurrency=2) as c:
+    scenario, cluster_kwargs = SCENARIOS[name]
+    async with Cluster(workers=2, concurrency=2, **cluster_kwargs) as c:
         try:
-            report = await SCENARIOS[name](c)
+            report = await scenario(c)
         except Exception as exc:
             report = Report(name)
             report.check("scenario ran to the end", False, repr(exc))

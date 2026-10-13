@@ -4,7 +4,7 @@
 
 A runtime that runs LangGraph agents across a pool of workers and makes them survive what distributed systems throw at them: crashed workers, paused "zombie" workers, restarts, human approvals that take hours, node drains and rolling upgrades. It survives all of these without losing or duplicating work.
 
-> **Status: Phase 2 (distributed workers) complete.** Worker processes share runs through Redis Streams. A crashed worker's run is reclaimed automatically, a stopping worker hands its runs off in milliseconds, and zombie workers can't write. Streaming and real agents come next. See the [roadmap](docs/roadmap.md) and [phase summaries](docs/progress/).
+> **Status: Phase 3 (streaming across replicas) complete.** Runs execute on a pool of workers that survives crashes and zombies, and any API replica streams any run live over SSE, in order and exactly once, across reconnects and replica restarts. Tools, human-in-the-loop and real agents come next. See the [roadmap](docs/roadmap.md) and [phase summaries](docs/progress/).
 
 ## How it works (target design)
 
@@ -26,7 +26,7 @@ make up        # creates .env from .env.example, starts Postgres + Redis, migrat
 make worker    # 2 worker processes that execute queued runs
 make api       # HTTP API on http://127.0.0.1:8000 (docs at /docs); API_PORT=8765 to change
 make run-toy   # create and execute one toy run in this process; prints its event log
-make demo-e2e  # crash / zombie / graceful-release scenarios with real processes
+make demo-e2e  # crash / zombie / release / multi-replica streaming scenarios (real processes)
 make check     # lint + mypy --strict + agent validation + all tests
 make help      # every target
 ```
