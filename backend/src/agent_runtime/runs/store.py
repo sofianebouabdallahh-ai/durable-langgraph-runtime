@@ -119,6 +119,14 @@ class Event:
         )
 
 
+def _required(row: dict[str, Any] | None, statement: str) -> dict[str, Any]:
+    """`RETURNING` on a successful INSERT always yields a row. Raise instead of
+    `assert` so the invariant still holds under `python -O`."""
+    if row is None:
+        raise RuntimeError(f"{statement} returned no row")
+    return row
+
+
 _RUN_COLUMNS = """
     id, graph_name, kind, thread_id, status, reason, epoch, owner, lease_expires_at,
     input, options, limits, steps, parent_run_id, session_id,
@@ -169,8 +177,7 @@ class RunRepository:
                     traceparent,
                 ),
             )
-            row = await cur.fetchone()
-            assert row is not None
+            row = _required(await cur.fetchone(), "INSERT INTO runs … RETURNING")
             await self.append_event(run_id, epoch=0, type=EventType.RUN_CREATED, payload={})
         return Run.from_row(row)
 
@@ -201,8 +208,7 @@ class RunRepository:
             """,
             (run_id, row["last_event_seq"], epoch, str(type), Jsonb(payload)),
         )
-        event_row = await cur.fetchone()
-        assert event_row is not None
+        event_row = _required(await cur.fetchone(), "INSERT INTO run_events … RETURNING")
         return Event.from_row(event_row)
 
     async def transition(

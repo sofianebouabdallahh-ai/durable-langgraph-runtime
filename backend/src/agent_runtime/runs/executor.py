@@ -225,7 +225,8 @@ class RunExecutor:
         graph_input = (
             None if resuming else spec.input_model.model_validate(run.input).model_dump(mode="json")
         )
-        assert run.started_at is not None
+        if run.started_at is None:  # set by the queued → running transition
+            raise RuntimeError(f"run {run.id} is running without started_at")
         elapsed = (datetime.now(UTC) - run.started_at).total_seconds()
         remaining = limits.timeout_s - elapsed
         if remaining <= 0:
