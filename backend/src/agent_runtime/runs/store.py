@@ -195,6 +195,9 @@ class Event:
     epoch: int
     type: str
     payload: dict[str, Any]
+    # The run's chat session, if it is a turn: not stored with the event, read with
+    # it, so the post-commit publish can tell the session's stream too (turn.status).
+    session_id: uuid.UUID | None = None
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> Event:
@@ -205,6 +208,7 @@ class Event:
             epoch=row["epoch"],
             type=row["type"],
             payload=row["payload"],
+            session_id=row.get("session_id"),
         )
 
 
@@ -309,7 +313,7 @@ class RunRepository:
             raise RuntimeError("append_event must be called inside a transaction")
         cur = await self._conn.execute(
             "UPDATE runs SET last_event_seq = last_event_seq + 1 "
-            "WHERE id = %s RETURNING last_event_seq",
+            "WHERE id = %s RETURNING last_event_seq, session_id",
             (run_id,),
         )
         row = await cur.fetchone()
@@ -324,7 +328,7 @@ class RunRepository:
             (run_id, row["last_event_seq"], epoch, str(type), Jsonb(payload)),
         )
         event_row = _required(await cur.fetchone(), "INSERT INTO run_events … RETURNING")
-        event = Event.from_row(event_row)
+        event = Event.from_row({**event_row, "session_id": row["session_id"]})
         self.emitted.append(event)
         return event
 

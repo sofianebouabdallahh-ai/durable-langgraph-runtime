@@ -32,6 +32,22 @@ log = logging.getLogger(__name__)
 
 TERMINAL_EVENTS = frozenset({"run.completed", "run.failed", "run.cancelled"})
 
+# A chat turn's lifecycle, told to its session's stream as a transient `turn.status`
+# (phase L2): the session stream carries messages, so without it a client could
+# only learn that a turn ended by polling the session.
+TURN_STATUS = "turn.status"
+TURN_STATUS_OF = {
+    "run.created": "queued",
+    "run.started": "running",
+    "run.reclaimed": "running",  # taken over by another worker after a crash
+    "run.released": "queued",  # handed back on a graceful shutdown
+    "run.resumed": "queued",  # approved or rejected: back in the queue
+    "interrupt.raised": "waiting_approval",
+    "run.completed": "completed",
+    "run.failed": "failed",
+    "run.cancelled": "cancelled",
+}
+
 
 def run_channel(run_id: uuid.UUID) -> str:
     return f"run:{run_id}"
@@ -106,6 +122,26 @@ async def publish_events(bus: EventBus | None, events: list[Any]) -> None:
         except Exception:
             log.warning("publish of %s seq %s failed; readers will back-fill",
                         event.type, event.seq, exc_info=True)  # fmt: skip
+        if (turn := turn_status(event)) is not None:
+            try:
+                await bus.publish(*turn)
+            except Exception:  # transient: clients re-read the session on reconnect
+                log.warning("turn.status for %s failed (transient: dropped)", event.type,
+                            exc_info=True)  # fmt: skip
+
+
+def turn_status(event: Any) -> tuple[str, StreamEvent] | None:
+    """(session channel, transient turn.status) for a lifecycle event of a chat turn."""
+    session_id = getattr(event, "session_id", None)
+    status = TURN_STATUS_OF.get(str(event.type))
+    if session_id is None or status is None:
+        return None
+    return session_channel(session_id), StreamEvent(
+        run_id=event.run_id, seq=None, ts=event.ts, epoch=event.epoch, type=TURN_STATUS,
+        payload={"run_id": str(event.run_id), "status": status, "event": str(event.type),
+                 "reason": event.payload.get("reason")},
+        after_seq=0,  # shown to every client, like tokens
+    )  # fmt: skip
 
 
 class Subscription(Protocol):

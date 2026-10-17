@@ -162,6 +162,15 @@ class Health(BaseModel):
     status: str
 
 
+class AboutView(BaseModel):
+    """What the UI shows about this installation; nothing secret (no keys, no URLs)."""
+
+    version: str | None
+    model_provider: str
+    demo_model: bool = Field(description="The offline demo model (MODEL_PROVIDER=scripted)")
+    chat_model: str | None = Field(description="The chat role's model, when configured")
+
+
 class AdminStatus(BaseModel):
     paused: bool
     reason: str | None

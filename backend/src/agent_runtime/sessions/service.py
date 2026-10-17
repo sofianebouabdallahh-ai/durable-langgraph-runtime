@@ -155,6 +155,8 @@ class SessionService:
         """R12.2. Raises SessionNotFound, SessionArchived, TurnActive (→ 409),
         AdmissionPaused, Overloaded, pydantic.ValidationError, LimitAboveCeiling."""
         session = await self.get(session_id)
+        if script is None and self._settings.model_provider == "scripted":
+            script, subagent_scripts = self._demo(session.graph_name, content)
         inp: dict[str, Any] = {"message": content}
         if script is not None:
             inp["script"] = script
@@ -186,6 +188,16 @@ class SessionService:
         await publish_messages(self._bus, repo.created)
         await self._enqueue(run.id)
         return Turn(message, run)
+
+    def _demo(
+        self, graph: str, content: str
+    ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]] | None]:
+        """The offline demo model's reply to free text (models/demo.py). Stored in the
+        run's input like a sent script, so replays read it back."""
+        from agent_runtime.models.demo import demo_script
+
+        script, subs = demo_script(content, self._graphs.get(graph).agent)
+        return script, subs or None
 
     async def approve(
         self,
