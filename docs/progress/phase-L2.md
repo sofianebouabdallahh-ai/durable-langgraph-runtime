@@ -1,5 +1,7 @@
 # Phase L2 — Chat UI (milestone M1: it works in the browser)
 
+> **Update, same phase: the UI became _Nuria_.** A redesign after review: a home screen with suggestions (the chat starts from the first message), a new visual language (warm neutrals, an ink primary, a sunrise accent; Inter, Fraunces, Lucide icons), tool steps as compact rows, and an **Agents** section showing each agent's instructions, tools, limits and helpers (read-only: building agents is the Studio, L3 + L4). Test agents are hidden with a new `hidden` flag. Browser suite after the redesign: **75/75** (15 scenarios × 5), axe clean on every screen.
+
 **Completed:** 2026-10-17 · **Branch:** `feat/l2-chat-ui` · **Plan:** [plans/phase-L2.md](../plans/phase-L2.md) · **Part of:** the [local release](../plans/local-release.md) · **Tests:** backend 374 · UI unit 42 · browser 14 scenarios (+1 live) · container e2e 3
 
 ![The chat](../images/chat-ui.png)
