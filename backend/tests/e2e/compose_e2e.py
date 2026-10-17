@@ -1,14 +1,15 @@
 """End-to-end checks against the containerised stack (`./setup.sh`), phase L1.
 
 Unlike tests/e2e (processes on the host), these drive the real images: the API
-container, the worker containers under their least-privilege database logins.
+replicas behind the UI's proxy (as a browser reaches them), the worker containers
+under their least-privilege database logins.
 
     crash      docker kill the worker running a chat turn, mid tool call (AC19)
     graceful   docker stop it instead: SIGTERM → released → resumed elsewhere (R10.7)
     privilege  the worker's login can't drop a table or delete runs (R14.13)
 
 Usage (the stack must be up):
-    COMPOSE_PROJECT_NAME=agent-runtime API_PORT=8000 \\
+    COMPOSE_PROJECT_NAME=agent-runtime UI_PORT=3000 \\
         uv run python -m tests.e2e.compose_e2e [crash|graceful|privilege|all] [--repeat N]
 """
 
@@ -26,7 +27,7 @@ import httpx
 ROOT = os.environ.get("STACK_DIR") or os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..")
 )  # the checkout whose stack (and .env) to test
-API = f"http://127.0.0.1:{os.environ.get('API_PORT', '8000')}"
+API = f"http://127.0.0.1:{os.environ.get('UI_PORT', '3000')}/api"
 DOCKER = os.environ.get("DOCKER", "docker")
 
 

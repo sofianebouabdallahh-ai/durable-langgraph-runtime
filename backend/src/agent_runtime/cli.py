@@ -272,7 +272,7 @@ def _smoke(args: argparse.Namespace) -> int:
 
     settings = get_settings()
     try:
-        result = asyncio.run(smoke(args.api, settings, timeout_s=args.timeout))
+        result = asyncio.run(smoke(args.api, settings, timeout_s=args.timeout, ui=args.ui))
     except SmokeFailed as exc:
         print(f"smoke test FAILED: {exc}", file=sys.stderr)
         return 1
@@ -494,6 +494,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     smoke = commands.add_parser("smoke", help="one chat turn through the API and workers")
     smoke.add_argument("--api", default="http://127.0.0.1:8000")
+    smoke.add_argument("--ui", help="also check the web UI at this URL (page + headers)")
     smoke.add_argument("--timeout", type=float, default=180.0)
     smoke.set_defaults(handler=_smoke)
 

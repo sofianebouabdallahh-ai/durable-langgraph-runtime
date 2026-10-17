@@ -96,7 +96,7 @@ doctor: ## Diagnostics bundle, secrets redacted (attach it to an issue)
 	./setup.sh --doctor
 
 demo-compose: ## Container e2e: kill / stop a worker container mid-turn; least privilege
-	cd backend && API_PORT=$$(awk -F= '$$1=="API_PORT"{print $$2}' ../$(ENV_FILE)) uv run --frozen python -m tests.e2e.compose_e2e all --repeat $(or $(REPEAT),1)
+	cd backend && UI_PORT=$$(awk -F= '$$1=="UI_PORT"{print $$2}' $(ENV_FILE)) uv run --frozen python -m tests.e2e.compose_e2e all --repeat $(or $(REPEAT),1)
 
 llm-up: env ## Start the local model server (Ollama, profile llm) and pull OLLAMA_MODEL
 	$(COMPOSE) --profile llm up -d --wait ollama

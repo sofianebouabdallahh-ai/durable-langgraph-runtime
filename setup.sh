@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # setup.sh: run the Durable Agent Runtime on this machine. Only Docker is needed.
 #
-#   ./setup.sh                      first run: checks, .env, model questions, start, smoke test
+#   ./setup.sh                      first run: checks, .env, model questions, start, smoke
+#                                   test, then opens the app (http://localhost:3000)
 #   ./setup.sh --model ollama       (re)configure the model, then start
+#   ./setup.sh --port 3100          the app on another port (default 3000, or a free one)
 #   ./setup.sh --non-interactive --model scripted     no questions (CI, scripts)
 #   ./setup.sh --chat               chat in this terminal
 #   ./setup.sh --stop | --update | --doctor | --reset | --help
@@ -24,18 +26,19 @@ ok()   { printf '%s\n' "  ${G}✓${N} $*"; }
 warn() { printf '%s\n' "  ${Y}!${N} $*"; }
 die()  { printf '%s\n' "  ${R}✗ $1${N}" >&2; [ $# -gt 1 ] && printf '    %s\n' "${@:2}" >&2; exit 1; }
 
-usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
 # ------------------------------------------------------------------ options
 ACTION=start; MODEL=""; INTERACTIVE=1; BUILD=0
-API_KEY="${SETUP_API_KEY:-}"; BASE_URL=""; MODEL_NAME=""; WANT_PORT=""
+API_KEY="${SETUP_API_KEY:-}"; BASE_URL=""; MODEL_NAME=""; WANT_PORT=""; OPEN_BROWSER=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --model) MODEL="${2:?--model needs scripted|ollama|openai|foundry|compatible}"; shift ;;
     --api-key) API_KEY="${2:?}"; shift ;;
     --base-url) BASE_URL="${2:?}"; shift ;;
     --model-name) MODEL_NAME="${2:?}"; shift ;;
-    --api-port) WANT_PORT="${2:?}"; shift ;;
+    --port) WANT_PORT="${2:?}"; shift ;;
+    --no-browser) OPEN_BROWSER=0 ;;
     --non-interactive|-y) INTERACTIVE=0 ;;
     --build) BUILD=1 ;;
     --stop) ACTION=stop ;;
@@ -119,12 +122,12 @@ pick_port() {  # pick_port SERVICE CONTAINER_PORT ENV_KEY DEFAULT [WANTED] → a
 }
 
 choose_ports() {
-  API_PORT=$(pick_port api 8000 API_PORT 8000 "$WANT_PORT")
+  UI_PORT=$(pick_port ui 8080 UI_PORT 3000 "$WANT_PORT")
   local pg redis
   pg=$(pick_port postgres 5432 POSTGRES_PORT 5432)
   redis=$(pick_port redis 6379 REDIS_PORT 6379)
   env_set REDIS_URL "redis://localhost:$redis/0"  # for tools on this machine; containers use redis:6379
-  ok "ports: API $API_PORT, Postgres $pg, Redis $redis (all on 127.0.0.1 only)"
+  ok "ports: app $UI_PORT, Postgres $pg, Redis $redis (all on 127.0.0.1 only)"
 }
 
 ask() {  # ask "Question" default  → REPLY
@@ -201,7 +204,7 @@ start_stack() {
     warn "couldn't download the published images; building them here instead (a few minutes)…"
     compose build
   fi
-  say "Starting (database, queue, API, 2 workers)…"
+  say "Starting (database, queue, app, 2 API replicas, 2 workers)…"
   compose up -d --wait --remove-orphans >/dev/null || {
     compose ps; compose logs --tail 30 migrate api 2>/dev/null
     die "the stack didn't become healthy (logs above)." "Diagnostics: ./setup.sh --doctor"
@@ -215,7 +218,8 @@ start_stack() {
 
 smoke() {
   say "Checking a real chat turn end to end…"
-  compose run --rm --no-deps -T api smoke --api http://api:8000 --timeout 300 \
+  # Through the UI's proxy, as a browser would: the page, then a turn via /api.
+  compose run --rm --no-deps -T api smoke --api http://ui:8080/api --ui http://ui:8080 --timeout 300 \
     || die "the smoke test failed (above)." "Diagnostics: ./setup.sh --doctor"
 }
 
@@ -227,17 +231,23 @@ case "$ACTION" in
     start_stack; smoke
     echo
     say "${G}Ready.${N}"
-    echo "    API and its docs:    http://127.0.0.1:$API_PORT/docs"
+    echo "    Open the app:        ${G}http://localhost:$UI_PORT${N}"
+    echo "    API docs:            http://localhost:$UI_PORT/docs"
     echo "    Chat in a terminal:  ./setup.sh --chat"
     echo "    Stop / start again:  ./setup.sh --stop  /  ./setup.sh"
     echo "    Something wrong?     ./setup.sh --doctor   (a report you can attach to an issue)"
+    if [ "$INTERACTIVE" -eq 1 ] && [ "$OPEN_BROWSER" -eq 1 ]; then
+      if command -v open >/dev/null 2>&1; then open "http://localhost:$UI_PORT" >/dev/null 2>&1 || true
+      elif command -v xdg-open >/dev/null 2>&1; then xdg-open "http://localhost:$UI_PORT" >/dev/null 2>&1 || true
+      fi
+    fi
     ;;
   chat)  check_docker; compose run --rm --no-deps api chat ;;
   stop)  check_docker; compose stop; ok "stopped (your data is kept)" ;;
   doctor)
     check_docker
     out="diagnostics-$(date +%Y%m%d-%H%M%S)"; mkdir -p "$out"
-    compose run --rm --no-deps -T api doctor --api http://api:8000 > "$out/doctor.json" || true
+    compose run --rm --no-deps -T api doctor --api http://ui:8080/api > "$out/doctor.json" || true
     compose ps > "$out/services.txt" 2>&1 || true
     compose logs --no-color --tail 300 > "$out/logs.txt" 2>&1 || true
     "$DOCKER" version > "$out/docker.txt" 2>&1 || true
