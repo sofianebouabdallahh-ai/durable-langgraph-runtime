@@ -67,15 +67,25 @@ export async function send(page: Page, text: string): Promise<void> {
 
 interface Msg { seq: number; message_id: string; type: string; content: Record<string, unknown> }
 
+/** GET JSON from the API, riding out a moment of 502/503/504 (a replica restarting). */
+export async function getJson<T>(request: APIRequestContext, path: string): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    const resp = await request.get(path);
+    if (resp.ok()) return (await resp.json()) as T;
+    if (![502, 503, 504].includes(resp.status()) || attempt >= 20) {
+      throw new Error(`GET ${path}: HTTP ${resp.status()}`);
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
 export async function transcript(request: APIRequestContext, sessionId: string): Promise<Msg[]> {
-  const resp = await request.get(`/api/sessions/${sessionId}/messages?limit=500`);
-  expect(resp.ok()).toBe(true);
-  return ((await resp.json()) as { messages: Msg[] }).messages;
+  return (await getJson<{ messages: Msg[] }>(request, `/api/sessions/${sessionId}/messages?limit=500`)).messages;
 }
 
 export async function waitTurnOver(request: APIRequestContext, sessionId: string): Promise<void> {
   await expect.poll(async () => {
-    const s = (await (await request.get(`/api/sessions/${sessionId}`)).json()) as { active_run_id: string | null };
+    const s = await getJson<{ active_run_id: string | null }>(request, `/api/sessions/${sessionId}`);
     return s.active_run_id;
   }, { timeout: 90_000 }).toBeNull();
 }

@@ -6,7 +6,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { containers, docker, expectScreenMatchesTranscript, newChat, restoreStack, send, servingReplica, waitTurnOver } from "./support";
+import { containers, docker, expectScreenMatchesTranscript, getJson, newChat, restoreStack, send, servingReplica, waitTurnOver } from "./support";
 
 const API_REPLICAS = Number(process.env.API_REPLICAS ?? 2);
 const WORKERS = Number(process.env.WORKERS ?? 2);
@@ -53,7 +53,7 @@ test("the worker running the turn is killed in the middle of a tool call", async
   await expect(page.getByTestId("tool-card")).toContainText("Saved a note");
   let owner = "";
   await expect.poll(async () => {
-    const run = (await (await request.get(`/api/runs/${runId}`)).json()) as { status: string; owner: string | null };
+    const run = await getJson<{ status: string; owner: string | null }>(request, `/api/runs/${runId}`);
     owner = run.status === "running" && run.owner ? run.owner : "";
     return owner;
   }).not.toBe("");
@@ -65,7 +65,7 @@ test("the worker running the turn is killed in the middle of a tool call", async
   await waitTurnOver(request, sid);
   await expectScreenMatchesTranscript(page, request, sid);
   await expect(page.getByTestId("tool-card")).toHaveCount(1); // the tool ran once, shown once
-  const events = (await (await request.get(`/api/runs/${runId}/events?limit=500`)).json()) as { events: { type: string }[] };
+  const events = await getJson<{ events: { type: string }[] }>(request, `/api/runs/${runId}/events?limit=500`);
   expect(events.events.filter((e) => e.type === "run.reclaimed")).toHaveLength(1);
   await page.getByRole("button", { name: "What happened?" }).click();
   await expect(page.getByTestId("what-happened")).toContainText("another one took over");
