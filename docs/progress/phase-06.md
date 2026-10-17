@@ -1,6 +1,6 @@
 # Phase 6 — Chat sessions + chat agent
 
-**Plan:** [plans/phase-06.md](../plans/phase-06.md) · Delivered in three PRs: **6a, chat sessions** (this part), 6b guardrails, and 6c real models & the chat agent (added below as they merge).
+**Plan:** [plans/phase-06.md](../plans/phase-06.md) · Delivered in three PRs: **6a, chat sessions**, **6b, guardrails**, and 6c real models & the chat agent (added below when it merges).
 
 ## Part A — Chat sessions
 
@@ -108,5 +108,74 @@
 
 ### Known issues & follow-ups
 
-- **One unexplained test failure.** One full coverage run (run right after the 5× e2e loop) had 1 failing test out of 323. pytest named it (`-ra`), but my log filter matched only the summary line, so the name was lost. **5 further full runs passed** (323/323 each). The flaky test is not identified yet. Full logs are kept from now on, so the next occurrence will name it.
+- **One unexplained test failure** (in one of 6 full coverage runs). **Identified in 6b:** `test_cancel_stops_a_subagent_between_steps` raced the sub-agent's start. Under coverage tracing, the cancel could land before the sub-agent's first step, which the runtime handles correctly but the test didn't expect. The test now orders the steps deterministically (see Part B).
 - **No token streaming yet:** `run.status` / `token` transient events and the partial reply on cancel come with real models in 6c.
+
+## Part B — Guardrails
+
+**Completed:** 2026-10-17 · **Branch:** `feat/phase-06b-guardrails` · **Tests:** 344 (323 after 6a) · **Branch coverage:** 95 %
+
+### What we built
+
+**Soft → hard budgets** (R14.2).
+- **Trigger:** before each model call, a main agent's budgets are compared with what's been used: model calls, tool calls, tokens and cost.
+- **At 80 % of any budget,** that call is the **wrap-up turn**:
+  - It goes out with **no tools** and a system note ("give your best final answer now").
+  - Any tool call the model returns anyway is dropped.
+  - The answer is stored (`output.budget_limited = true`, and `budget_limited` on the transcript's `assistant` row).
+  - The run ends `failed(budget:<kind>)`.
+- **At 100 %** the hard limits still refuse the call. Sub-agents get their wrap-up note as in phase 5.
+
+**Tokens and cost** (R14.1).
+- **Priced** per model from `MODEL_PRICES` (USD per million input / output tokens).
+- **Counted with the step,** in the checkpoint's transaction, so a run's totals are exactly the sum of its committed steps, including across a reclaim (AC26).
+- **Rolled up** to ancestors and the session.
+- **Hard limits:** `max_tokens` / `max_cost_usd` (from the agent file, options and ceilings). A call is refused once a budget is used up.
+- Model *calls* are still counted immediately: they are the runaway guard.
+
+**Loop detection** (R14.4).
+- **Repeats:** a call with the same tool and canonical arguments as an earlier one in the run is found through `tool_invocations.args_hash` (migration `0009`). The idempotency key can't be used: it includes the call's position.
+  - The 2nd identical call is recorded and charged, but **served from the 1st's result** with a note.
+  - The 3rd ends the run `loop_detected`.
+  - Polling tools (`wait_subagents`, `subagent_status`, `report_progress`) are exempt.
+- **No progress:** 5 identical model outputs in a row also end the run.
+
+**Retries and the circuit breaker** (R14.7, [models/retry.py](../../backend/src/agent_runtime/models/retry.py)).
+- **`ModelCaller`, a Decorator around one model call:**
+  - Only retryable errors (429, 5xx, timeouts), at most 3 attempts.
+  - Exponential backoff from 1 s, capped at 20 s, with full jitter; `Retry-After` is honoured.
+  - **The budget is charged before every attempt.**
+- **A circuit breaker per provider:** 5 failures in 30 s open it for 30 s, and a trial call half-opens it. While it's open, a run is **released** (`run.released {reason: circuit_open}`) and *not* re-sent at once. The outbox relay re-sends it once the message is stale, which is the backoff.
+
+**Admission control** (R14.8).
+- At most `SESSION_MESSAGES_PER_MINUTE` (10) user messages per session per minute, counted under the session lock.
+- A global daily cost ceiling (`GLOBAL_DAILY_COST_USD`, over root runs, so roll-ups aren't counted twice). New work is refused; in-flight runs finish.
+- Both are `429` problems with a `reason` (`rate_limited`, `daily_budget`, `queue_depth`).
+
+**No secrets in the transcript** (R14.12). The model's tool-call arguments are recorded as it produced them, before any `pre_tool` hook ran, so the transcript writer redacts secret-looking strings itself (defence in depth).
+
+### Success criteria: results
+
+| # | Criterion | Result |
+|---|---|---|
+| SC12 | **AC26: runaway agent** | ✅ An agent calling tools forever, `max_tool_calls = 5`: 4 tool calls, then **one wrap-up call with 0 tools bound** (every earlier call had tools) and the note; the dropped tool call became "I had to stop early…"; `failed(budget:tool_calls)` with the stored `budget_limited` answer; **tokens and cost equal the sum of the thread's AI messages' usage**, also for a run killed mid-tool and reclaimed |
+| SC13 | **AC27: loop** | ✅ 3 identical calls: executed once; the 2nd served from cache (`cached: true`, the earlier result + the note); the 3rd → `loop_detected` and never recorded. Polling `wait_subagents` 5× identically → `loop_detected`, and the sub-agent was cancelled with the run |
+| SC14 | **AC28: ceilings** | ✅ `POST /runs` with `options.max_tool_calls: 1000` → `422 limit-above-ceiling` naming `options.max_tool_calls` and its maximum 100; `3` is honoured. A chat turn above the ceiling is refused the same way; `2` is honoured |
+| SC15 | Retries | ✅ Fake-clock unit tests: backoff `1, 2` s at the top of the jitter range; jitter capped; `Retry-After` 7 s honoured and 99 s capped at 20; 400 fails at once; 3 attempts maximum; breaker opens after 5 in 30 s, failures outside the window don't count, half-open trial, re-open. Integration: two 503s then success → completed with **3 model calls charged**; a 400 → failed after 1 attempt; an open breaker → the next run is **released, not failed**, with 0 calls charged |
+| SC16 | Admission control | ✅ The 3rd message within a minute at a limit of 2 → `rate_limited` (`Retry-After` 60); with today's spend at the ceiling → `daily_budget` |
+| SC17 | **AC34: tool hooks in chat** | ✅ In a chat turn, the `pre_tool` redaction changed what executed (the note stored `key=[REDACTED]`); the secret appears in no transcript row (the phase 4 hook suite covers modify / deny / ask / fail-closed / cached redaction) |
+| — | Quality | ✅ 344 tests; 8 new fake-clock unit tests; coverage 95 %; **65/65 e2e runs** (13 scenarios × 5) with the guardrails in place; CI keyless |
+
+### Decisions & trade-offs
+
+- **Tokens and cost commit with the step; model calls don't.** A step lost to a crash doesn't bill its tokens to the run (so the totals match the transcript), but it still counted as a model call (so a crash loop can't run forever).
+- **The wrap-up turn is enforced on the response, not only the request.** A provider that ignores "no tools", like the scripted model, still can't act during wrap-up.
+- **"No progress" = identical consecutive outputs.** In `create_agent`, a reply without tool calls ends the loop, so a run can only make no progress by repeating itself. Identical outputs capture exactly that.
+- **The breaker's backoff is the relay's staleness window** (`RELAY_STALE_S`, 30 s), the same order as the 30 s open time. There's no new scheduler.
+
+### Bugs found by testing
+
+- **A secret the model put in tool-call arguments would have reached the transcript**: hooks clean the args *before execution*, but the transcript records the model's raw call. Fixed by redacting in the writer.
+- **A test claimed more than it checked.** The runaway test's spy recorded "tools bound" as always true. It now records the real count from `bind_tools` (0 for the wrap-up call).
+- **The flaky test from 6a, found.** With full logs kept, the next coverage run named it: `test_cancel_stops_a_subagent_between_steps`. The main agent cancelled right after spawning, which sometimes landed before the sub-agent's first step (cooperative cancel, correctly honoured), so no note was written. The test now waits 1 s first, so the cancel arrives during the sub-agent's slow first tool call. It asserts what the test is about: the first note exists, the second never does. 3/3 under coverage, and 2 full coverage runs clean (344/344).
+- **AC28's exact case had no test.** `POST /runs` with `options.max_tool_calls` above the ceiling was only covered for `max_steps`. Added.

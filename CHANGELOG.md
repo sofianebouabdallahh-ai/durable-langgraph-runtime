@@ -18,6 +18,15 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - CR-004 + ADR-0003 (accepted): agents defined as `backend/agents/*.agent.md` (name, max turns, prompt, tools, limits, hooks); hooks for session start/end, turn start/end and pre/post tool, built on LangChain middleware plus harness-owned session hooks.
 - CR-003 (accepted): harness guardrails. Run budgets with a soft→hard wrap-up, loop detection, ceilings that callers can only tighten, deny-by-default tool grants, least-privilege DB roles, untrusted-content handling, audit trail, kill switch.
 
+### Phase 6b — Guardrails
+#### Added
+- Soft → hard budgets (R14.2): at 80 % of the model-call, tool-call, token or cost budget a main agent gets one wrap-up turn with no tools; its answer is stored (`budget_limited`) and the run ends `failed(budget:*)`.
+- Token and cost accounting (R14.1): priced per model (`MODEL_PRICES`), counted with each committed step, rolled up to ancestors and sessions; `max_tokens` / `max_cost_usd` budgets (from agent definitions, options, ceilings).
+- Loop detection (R14.4): a repeated identical tool call is served from cache with a note, the 3rd ends the run `loop_detected`; five identical model outputs in a row too (migration `0009`: `tool_invocations.args_hash`).
+- Model retries with capped full-jitter backoff and `Retry-After`, every attempt charged; a circuit breaker per provider that releases runs instead of retrying (R14.7).
+- Admission control (R14.8): `SESSION_MESSAGES_PER_MINUTE`, `GLOBAL_DAILY_COST_USD`; `429` problems carry a `reason`.
+- The transcript redacts secrets in tool-call arguments and results (R14.12).
+
 ### Phase 6a — Chat sessions
 #### Added
 - Sessions (CR-001): `POST/GET/PATCH /sessions`, `GET /sessions/{id}/messages`, `POST /sessions/{id}/messages` (one active turn: `409`), `/approve`, `/cancel`, `GET /sessions/{id}/stream` (SSE, any replica, `Last-Event-ID`).

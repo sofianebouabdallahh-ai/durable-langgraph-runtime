@@ -272,15 +272,20 @@ async def test_progress_partial_results_and_the_rate_limit(
 async def test_cancel_stops_a_subagent_between_steps(
     pool: Pool, test_settings: Settings, checkpoint_tables: None
 ) -> None:
+    # The main agent waits 1 s first, so the scribe is inside its first (slow) tool call
+    # when the cancel arrives. (Cancelling right after the spawn raced the scribe's
+    # start: under coverage tracing the cancel could land before its first step, which
+    # is correct behaviour but not what this test is about.)
     script = [
         turn(spawn("scribe")),
+        turn(wait(0, timeout_s=1)),
         turn(call("cancel_subagent", handle=handle(0), reason="not needed")),
         turn(wait(0)),
         say("ok"),
     ]
     subs = {
         "scribe": [
-            turn(call("save_note", text="first", linger_s=1.0)),  # cancelled meanwhile
+            turn(call("save_note", text="first", linger_s=3.0)),  # cancelled meanwhile
             turn(call("save_note", text="second")),
             RETURN,
         ]
