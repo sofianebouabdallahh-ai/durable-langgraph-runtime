@@ -1,6 +1,6 @@
 # Phase 6 — Chat sessions + chat agent
 
-**Plan:** [plans/phase-06.md](../plans/phase-06.md) · Delivered in three PRs: **6a, chat sessions**, **6b, guardrails**, and 6c real models & the chat agent (added below when it merges).
+**Plan:** [plans/phase-06.md](../plans/phase-06.md) · Delivered in three PRs: **6a, chat sessions**, **6b, guardrails**, and **6c, real models & the chat agent**.
 
 ## Part A — Chat sessions
 
@@ -179,3 +179,83 @@
 - **A test claimed more than it checked.** The runaway test's spy recorded "tools bound" as always true. It now records the real count from `bind_tools` (0 for the wrap-up call).
 - **The flaky test from 6a, found.** With full logs kept, the next coverage run named it: `test_cancel_stops_a_subagent_between_steps`. The main agent cancelled right after spawning, which sometimes landed before the sub-agent's first step (cooperative cancel, correctly honoured), so no note was written. The test now waits 1 s first, so the cancel arrives during the sub-agent's slow first tool call. It asserts what the test is about: the first note exists, the second never does. 3/3 under coverage, and 2 full coverage runs clean (344/344).
 - **AC28's exact case had no test.** `POST /runs` with `options.max_tool_calls` above the ceiling was only covered for `max_steps`. Added.
+
+## Part C — Real models & the chat agent
+
+**Completed:** 2026-10-17 · **Branch:** `feat/phase-06c-chat-agent` · **Tests:** 359 (+ 1 live test, run on request) · **Branch coverage:** 94 %
+
+### What we built
+
+**`ModelProvider`** (R3.1, [models/provider.py](../../backend/src/agent_runtime/models/provider.py)). Ports & Adapters: agent files name a model *role* (`model: chat`, `researcher`), and the provider maps it to a model.
+
+| Adapter | Use | Notes |
+|---|---|---|
+| `scripted` | The default: tests, CI, demos | Keyless; can stream word by word for the token tests |
+| `openai` | OpenAI's API | Needs `OPENAI_API_KEY` |
+| `ollama` | A local model server | The same adapter as OpenAI, because Ollama speaks the OpenAI API |
+
+- **Configuration:** `MODEL_PROVIDER`; `MODEL_CHAT` / `MODEL_RESEARCHER` / … select the model per role.
+- **Runtime-owned behavior:**
+  - The SDK's own retries are off; `ModelCaller` owns them (R14.7).
+  - Output is capped at 4 096 tokens (R14.5).
+  - Usage comes from the stream (`stream_usage`).
+  - Keys stay `SecretStr` all the way into the client.
+- **`embed()`:** real embeddings from either API, deterministic hashed ones from the scripted provider.
+- **Ollama** runs as an opt-in Compose profile (`make llm-up`), pinned to `0.34.4` (a 23-day-old release, as with the lockfile's cooldown). It pulls `qwen2.5:7b`.
+
+**Live tokens** ([streaming/tokens.py](../../backend/src/agent_runtime/streaming/tokens.py)). `TokenRelay`, a callback handler on the graph:
+- coalesces streamed tokens (≥ 20 ms) into *transient* `token` events on the session's channel (or the run's), never persisted;
+- tracks the unfinished reply: if the turn is cancelled mid-stream, it is stored as an `assistant` message with `interrupted: true` (R12.7);
+- checks the cancel flag twice a second while streaming, so a long reply stops promptly.
+
+**Fixture `search`** (R3.3, [tools/search.py](../../backend/src/agent_runtime/tools/search.py)). `fixtures/search/*.json`, matched by normalised query, then fuzzy (word overlap or similarity). It never guesses: an unknown query returns nothing. Six topics, all with `example.org` URLs so they can't be mistaken for real pages.
+
+**The `chat` agent, v2.**
+- **Tools:** `search`, `calculator`, `save_note`, `notify` (with approval).
+- **Sub-agents:** `researcher` (search) and `data-analyst` (calculator).
+- **Visibility:** sub-agent events carry the worker that ran them and are relayed to the session stream, so a chat shows their progress live.
+
+**Talking to it.** `runtime chat` / `make chat` is a terminal chat with tokens printed as they stream, tool calls and results, sub-agent progress, and each turn's status, model calls, tokens, cost and time. `make demo-chat-live` runs a three-turn script on the real model; `make test-live` runs the provider contract against the real local model. Neither runs in CI.
+
+### Live runs (Ollama `qwen2.5:7b`, CPU-only in Docker on an M2, 16 GB)
+
+| Run | Result |
+|---|---|
+| "What is 1234 * 5678? Use the calculator." | ✅ calculator(`1234 * 5678`) → **7006652**, streamed; 2 model calls, 1 783 tokens, 23.7 s (incl. loading the model) |
+| "Now add 1000 to that result." | ✅ The context carried: calculator(`(1234 * 5678) + 1000`) → **7007652**; 2 calls, 2 012 tokens, 9.5 s |
+| "In parallel: researcher + data-analyst, then combine" (1st try) | ⚠️ Both spawned in parallel, but **both timed out** (120 s): the data-analyst found 48, then its `return_result(result: 48)` was **rejected by our schema** and it retried until the timeout; the researcher was simply slow (three agents sharing one CPU-bound model). The main agent re-spawned the researcher, and the turn guard (R16.9) waited for it: completed, but 19 calls in 297.7 s against a 300 s limit |
+| The same, after the fixes | ✅ Both in parallel: data-analyst 2 calls / 37 s, researcher 3 calls / 74 s; the answer combined both; **8 model calls, 113.7 s** |
+
+### Success criteria: results
+
+| # | Criterion | Result |
+|---|---|---|
+| SC18 | Model providers | ✅ One contract suite, against a fake OpenAI-compatible server, for **both** the `openai` and `ollama` configurations: streamed text (token callbacks fired), the tool call (name, args, id), usage (11 / 7 tokens), model name, `max_completion_tokens: 4096`, embeddings; provider selection; the key is never printable. **Live:** the same contract against the real local Ollama (a real calculator tool call) |
+| SC19 | Token streaming | ✅ The concatenated `token` events equal the reply; they have no `seq` and are never persisted; one `assistant` message per reply. A reply cancelled after 1 s of an ~4 s stream ended `cancelled`, with the streamed prefix stored as `interrupted`, then an `error` row; the session stays usable |
+| SC20 | Fixture search | ✅ Exact, alias, normalised and fuzzy matches; `k`; an unknown query → nothing; deterministic |
+| SC21 | **AC37: parallel sub-agents in chat** | ✅ `make demo-subagents` (scripted, real processes), **5/5**: `researcher` and `data-analyst` spawned in one turn **in the main run's worker** (`subagent.spawned.worker`); spawned → progress → completed arrived **on the session stream from the other API replica, in that order**; the saved answer contains both results. **Live:** the same on the real model (above) |
+| SC22 | **AC39** (without sandboxes) | ✅ The chat researcher's first request = its prompt + the task; the data-analyst's `search` and the researcher's `save_note` (the chat agent's tools) → `Deny(not_granted)` |
+| SC23 | Live | ✅ `make demo-chat-live`: context across turns, tools through the pipeline, sub-agents in parallel; tokens and timings recorded above (cost $0: local) |
+| SC24 | Quality | ✅ 359 tests; coverage 94 %; **70/70 e2e runs** (14 scenarios × 5); CI keyless (the live test is skipped unless selected) |
+
+### Concepts learned
+
+- **Real models find what scripted ones can't.** Every guarantee was tested with the scripted model, yet the first live run found a schema that was too strict for how models actually answer. Strict validation is right, but a schema must describe what a model will naturally send.
+- **A budget for an agent with sub-agents is a budget for the team.** Sub-agent usage counts toward the run (R16.8), so the chat agent's original 12 model calls were used up by its sub-agents' work in the first scripted test.
+- **Local inference changes the time budget.** Three agents sharing one CPU-bound model serialise. Timeouts that suit a hosted model are too tight here, and the timeout that fires is the slowest component's.
+- **One adapter, two providers:** Ollama's OpenAI-compatible API means an OpenAI adapter, tested against the wire protocol, covers both.
+
+### Decisions & trade-offs
+
+- **Ollama in Docker, not the native app.** There's no Homebrew on this machine. The Compose profile is reproducible for anyone and leaves nothing installed. The cost: no Metal GPU on macOS, so it is several times slower than the native app.
+- **The chat agent's budgets are sized for its sub-agents and for local CPU models:** 40 model calls, 50 tool calls, a 600 s turn; 300 s per sub-agent. Hosted models finish far sooner.
+- **The scripted model streams only when asked** (`SCRIPTED_STREAMING`). Existing tests spy on its non-streaming path; the token tests turn streaming on.
+- **`retrieve` and ingest stay in phase 8** with the research corpus, as planned.
+
+### Bugs found by testing
+
+- **`return_result` rejected a plain JSON result** (`48`): found only by the live run. Now any JSON value is accepted (and is checked against `output_schema` once schemas exist).
+- **`make` couldn't pull a new image** because Docker's credential helper wasn't on `PATH` (Docker Desktop on macOS). The Makefile now puts the Docker binary's directory on `PATH`.
+- **`.env` parsing broke on unquoted JSON** (`MODEL_PRICES`), copied in by `make env`. The value is now quoted.
+- **The terminal chat's drain loop dropped every other final event:** found in review before it was ever run.
+- **The first AC37 test failed on the soft limit:** a real finding about budgets (above), not a bug; the chat agent's budgets were resized.

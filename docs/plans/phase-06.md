@@ -1,5 +1,7 @@
 # Phase 6 plan — Chat sessions + chat agent
 
+> **Status: delivered** (PRs 6a, 6b, 6c). Every success criterion passed; results are in [progress/phase-06.md](../progress/phase-06.md).
+
 **Goal:** a user chats with an agent across many sessions. Every message is durably in the transcript, live on the session stream, and safe across crashes. The agent runs on a **real model** behind the same guardrails as the scripted one, and it can delegate to sub-agents.
 
 **Done when:**

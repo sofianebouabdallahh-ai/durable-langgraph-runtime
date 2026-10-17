@@ -15,11 +15,15 @@ pytestmark = pytest.mark.integration
 BACKEND = Path(__file__).resolve().parents[2]
 
 
-def runtime(settings: Settings, *args: str) -> subprocess.CompletedProcess[str]:
+def runtime(
+    settings: Settings, *args: str, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "agent_runtime.cli", *args],
         cwd=BACKEND,
-        env=os.environ | {"POSTGRES_DB": settings.postgres_db, "LOG_LEVEL": "WARNING"},
+        env=os.environ
+        | {"POSTGRES_DB": settings.postgres_db, "LOG_LEVEL": "WARNING"}
+        | (env or {}),
         capture_output=True,
         text=True,
         timeout=60,
@@ -117,3 +121,14 @@ def test_supervisor_starts_n_workers_and_forwards_sigterm(
     finally:
         if proc.poll() is None:
             proc.kill()
+
+
+def test_chat_streams_a_turn_in_the_terminal(test_settings: Settings, test_db_url: str) -> None:
+    """`runtime chat --message …`: a session, a turn, tokens printed as they stream."""
+    out = runtime(test_settings, "chat", "--message", "hello there",
+                  env={"SCRIPTED_STREAMING": "true"})  # fmt: skip
+    assert out.returncode == 0, out.stderr
+    assert "with chat (provider: scripted)" in out.stdout
+    assert "you> hello there" in out.stdout
+    assert "chat> (script finished)" in out.stdout  # the streamed reply, live
+    assert "[completed · 1 model calls · 0 tools" in out.stdout

@@ -18,6 +18,19 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - CR-004 + ADR-0003 (accepted): agents defined as `backend/agents/*.agent.md` (name, max turns, prompt, tools, limits, hooks); hooks for session start/end, turn start/end and pre/post tool, built on LangChain middleware plus harness-owned session hooks.
 - CR-003 (accepted): harness guardrails. Run budgets with a soft→hard wrap-up, loop detection, ceilings that callers can only tighten, deny-by-default tool grants, least-privilege DB roles, untrusted-content handling, audit trail, kill switch.
 
+### Phase 6c — Real models & the chat agent
+#### Added
+- `ModelProvider` (R3.1): `MODEL_PROVIDER=scripted|openai|ollama`, model per role (`MODEL_CHAT`, …), `embed()`; one OpenAI-compatible adapter for OpenAI and Ollama; Ollama 0.34.4 as an opt-in Compose profile (`make llm-up`).
+- Live tokens on the session (or run) stream as transient `token` events; a reply cancelled mid-stream is kept, marked `interrupted` (R12.7).
+- Fixture `search` tool (R3.3) with 6 fixture topics.
+- The `chat` agent v2 with `researcher` and `data-analyst` sub-agents; sub-agent events carry the worker and reach the session stream (AC37).
+- `runtime chat` / `make chat`: chat in the terminal with tokens live; `make demo-chat-live` and `make test-live` on the real local model (never in CI).
+- E2E `chat-subagents` (AC37); provider contract tests against a fake OpenAI-compatible server.
+
+#### Fixed
+- `return_result` rejected a plain JSON `result` (e.g. `48`): a real model retried until its sub-agent timed out. Found in the first live run.
+- `make` couldn't pull images when Docker's credential helper wasn't on `PATH` (Docker Desktop on macOS).
+
 ### Phase 6b — Guardrails
 #### Added
 - Soft → hard budgets (R14.2): at 80 % of the model-call, tool-call, token or cost budget a main agent gets one wrap-up turn with no tools; its answer is stored (`budget_limited`) and the run ends `failed(budget:*)`.
