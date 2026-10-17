@@ -206,6 +206,7 @@ A **connection** is the user's own access to models:
 3. **Keys:** the workspace key by default (added by an admin), with quotas per tester; a user may add their own key. See [beta-platform §3.4](../architecture/beta-platform.md).
 4. **Sharing agents** (and skills, with admin approval) within a workspace: **yes**.
 5. **Order:** the Studio and the beta platform come **before** the research agent and Kubernetes.
+6. **Local first** (2026-10-17): a release people clone and run on their own machine (Docker; optional local Kubernetes), single-user, with the Studio and bring-your-own-model. Feedback from it shapes the hosted beta. Plan: [plans/local-release.md](../plans/local-release.md). G1–G3 below then apply to the hosted beta; locally there is one user and keys stay on the machine (encrypted with a local key).
 
 ### Gaps to close, each in a named phase
 

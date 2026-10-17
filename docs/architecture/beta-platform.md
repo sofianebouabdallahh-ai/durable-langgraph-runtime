@@ -1,6 +1,6 @@
 # Beta platform architecture
 
-**Status:** Proposed (2026-10-17) · **Implements:** [CR-006](../requirements/CR-006-agent-studio.md) · **Replaces:** the demo-oriented phases 7–13 of the roadmap (see §6)
+**Status:** Proposed, **deferred** (2026-10-17): it comes after the [local release](../plans/local-release.md) and its testers' feedback · **Implements:** [CR-006](../requirements/CR-006-agent-studio.md) · **Replaces:** phases 7–13 of the roadmap (see §6)
 
 The runtime built in phases 0–6 proves the hard guarantees: durable runs, fencing, crash and zombie safety, exactly-once events and transcripts, distributed fan-out, guardrails, real models. This document designs the **platform around it**, for a closed beta with real people that can grow into a product:
 - who the users are, and what they may do;
