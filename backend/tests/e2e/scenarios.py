@@ -367,6 +367,81 @@ async def approval_restart(c: Cluster) -> Report:
     return r
 
 
+# ---------------------------------------------------------- phase 5a: child runs
+
+
+async def _fanout_run(c: Cluster, **inp: Any) -> str:
+    resp = await c.client.post("/runs", json={"graph": "fanout", "input": {"topic": "e2e", **inp}})
+    resp.raise_for_status()
+    return str(resp.json()["run_id"])
+
+
+async def _children(c: Cluster, parent_id: str) -> list[dict[str, Any]]:
+    return await c.rows(
+        "SELECT id::text, child_key, status FROM runs WHERE parent_run_id = %s ORDER BY child_key",
+        parent_id,
+    )
+
+
+async def _executed_by(c: Cluster, run_id: str) -> list[str]:
+    """Owners that started or reclaimed the run, in order."""
+    return [
+        e["payload"]["owner"]
+        for e in await c.events(run_id)
+        if e["type"] in ("run.started", "run.reclaimed")
+    ]
+
+
+async def fanout(c: Cluster) -> Report:
+    """AC6 / SC1: a parent's children run on more than one worker."""
+    r = Report("fan-out across workers (AC6)")
+    parent_id = await _fanout_run(c, n=6, child_delay_s=0.4)
+    await c.wait(lambda: c.status_is(parent_id, "completed", "failed"), timeout_s=60,
+                 what="the parent completes")  # fmt: skip
+    parent, kids = await c.run(parent_id), await _children(c, parent_id)
+    owners = {o for k in kids for o in await _executed_by(c, k["id"])}
+    workers = {c.pid_of(o) for o in owners}
+    result = (await c.result(parent_id)).json()
+    r.check("parent completed", parent["status"] == "completed", parent["status"])
+    r.check("6 children, all completed", [k["status"] for k in kids] == ["completed"] * 6,
+            str([k["status"] for k in kids]))  # fmt: skip
+    r.check("children ran on more than one worker", len(workers) >= 2, f"pids {sorted(workers)}")
+    r.check("the parent got all 6 results", len(result["output"]["answers"]) == 6)
+    r.check("not partial", result["partial"] is False)
+    fanned_in = _count(await c.events(parent_id), "children.completed")
+    r.check("fanned in exactly once", fanned_in == 1, f"{fanned_in}")
+    return r
+
+
+async def child_crash(c: Cluster) -> Report:
+    """SC5: SIGKILL a worker running a child; the child is reclaimed, the parent fans in once."""
+    r = Report("a crashed child doesn't break the fan-in")
+    parent_id = await _fanout_run(c, n=4, child_delay_s=1.5)
+
+    async def a_child_is_running() -> bool:
+        return any(k["status"] == "running" for k in await _children(c, parent_id))
+
+    await c.wait(a_child_is_running, timeout_s=30, what="a child is running")
+    victim_run = next(k for k in await _children(c, parent_id) if k["status"] == "running")
+    owner = (await c.run(victim_run["id"]))["owner"]
+    victim = c.pid_of(owner)
+    c.process(victim).send_signal(signal.SIGKILL)
+    await c.wait(lambda: c.status_is(parent_id, "completed", "failed"), timeout_s=90,
+                 what="the parent completes")  # fmt: skip
+
+    parent, kids = await c.run(parent_id), await _children(c, parent_id)
+    victim_events = await c.events(victim_run["id"])
+    r.check("parent completed", parent["status"] == "completed", parent["status"])
+    r.check("every child completed", all(k["status"] == "completed" for k in kids),
+            str([k["status"] for k in kids]))  # fmt: skip
+    r.check("the killed child was reclaimed once", _count(victim_events, "run.reclaimed") == 1)
+    resumers = [o for o in await _executed_by(c, victim_run["id"]) if c.pid_of(o) != victim]
+    r.check("and finished on another worker", bool(resumers), str(resumers))
+    r.check("fanned in exactly once", _count(await c.events(parent_id), "children.completed") == 1)
+    r.check("child_done = child_total = 4", (parent["child_done"], parent["child_total"]) == (4, 4))
+    return r
+
+
 SCENARIOS: dict[str, tuple[Callable[[Cluster], Awaitable[Report]], dict[str, Any]]] = {
     "crash": (crash, {}),
     "zombie": (zombie, {}),
@@ -376,6 +451,8 @@ SCENARIOS: dict[str, tuple[Callable[[Cluster], Awaitable[Report]], dict[str, Any
     "api-shutdown": (api_shutdown, {"api_replicas": [{}, {}]}),
     "tool-crash": (tool_crash, {}),
     "approval-restart": (approval_restart, {}),
+    "fanout": (fanout, {}),
+    "child-crash": (child_crash, {}),
 }
 
 
