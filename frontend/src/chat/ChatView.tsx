@@ -122,19 +122,28 @@ function MessageList({
   sentCount: number;
 }) {
   const end = useRef<HTMLDivElement>(null);
-  const box = useRef<HTMLDivElement>(null);
+  // Follow new content while the reader is at the bottom; stop once they scroll up to
+  // read. Measured on scroll, before new content changes the height.
+  const pinned = useRef(true);
   const last = views.at(-1);
-  const signature = `${String(views.length)}:${String(last?.items.length ?? 0)}:${String(last?.draft?.length ?? 0)}`;
+  const signature = `${String(views.length)}:${String(last?.items.length ?? 0)}:${String(last?.draft?.length ?? 0)}:${String(last?.active)}`;
   useEffect(() => {
-    const el = box.current;
-    // Follow new content only if the reader is already at the bottom.
-    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 160) end.current?.scrollIntoView({ block: "end" });
+    if (pinned.current) end.current?.scrollIntoView({ block: "end" });
   }, [signature]);
   useEffect(() => {
-    if (sentCount > 0) end.current?.scrollIntoView({ block: "end" }); // you just sent: show it
+    if (sentCount === 0) return;
+    pinned.current = true; // you just sent: show it, and what follows
+    end.current?.scrollIntoView({ block: "end" });
   }, [sentCount]);
   return (
-    <div ref={box} className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-4 pt-8 pb-4" data-testid="messages">
+    <div
+      className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-4 pt-8 pb-4"
+      data-testid="messages"
+      onScroll={(e) => {
+        const el = e.currentTarget;
+        pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      }}
+    >
       <div className="mx-auto max-w-3xl space-y-10">
         {views.length === 0 && (
           <div className="py-24 text-center">

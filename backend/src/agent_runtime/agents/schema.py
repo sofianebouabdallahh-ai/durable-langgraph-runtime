@@ -98,6 +98,8 @@ class SubAgentFrontmatter(_AgentFields):
 
 class MainAgentFrontmatter(_AgentFields):
     max_session_turns: Annotated[int, Field(gt=0)] | None = None
+    # Test and example agents: served by the API, not offered to people in the UI.
+    hidden: bool = False
     hooks: MainAgentHooks = MainAgentHooks()
 
 

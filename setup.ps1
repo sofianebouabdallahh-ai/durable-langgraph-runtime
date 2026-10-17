@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Run the Durable Agent Runtime on this Windows machine. Only Docker Desktop (WSL 2) is needed.
+  Run Nuria on this Windows machine. Only Docker Desktop (WSL 2) is needed.
 
 .DESCRIPTION
   The Windows twin of setup.sh: checks, .env with generated secrets, the model,
@@ -225,7 +225,7 @@ if ($Update) {
 } else { Set-Model }
 Start-Stack; Test-Smoke
 Write-Host ""
-Say "Ready."
+Say "Nuria is ready."
 Write-Host "    Open the app:        http://localhost:$script:UiPortChosen" -ForegroundColor Green
 Write-Host "    API docs:            http://localhost:$script:UiPortChosen/docs"
 Write-Host "    Chat in a terminal:  .\setup.ps1 -Chat"

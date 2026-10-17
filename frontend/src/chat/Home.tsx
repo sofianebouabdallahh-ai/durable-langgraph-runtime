@@ -27,7 +27,7 @@ export function Home({ go }: { go: (route: Route) => void }) {
   const agents = useQuery({ queryKey: ["agents"], queryFn: () => unwrap(api.GET("/agents")) });
   const [agent, setAgent] = useState("chat");
   const [notice, setNotice] = useState<string | null>(null);
-  const choices = (agents.data ?? []).filter((a) => a.name !== "example");
+  const choices = (agents.data ?? []).filter((a) => !a.hidden);
 
   const start = async (text: string): Promise<boolean> => {
     setNotice(null);

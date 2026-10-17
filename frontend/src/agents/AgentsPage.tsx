@@ -17,11 +17,9 @@ import { agentLabel, limitLines, toolLabel, toolPurpose } from "../ui/words";
 
 type Helper = Schemas["HelperView"];
 
-const HIDDEN = new Set(["example"]); // a template, not an agent to chat with
-
 export function AgentsPage() {
   const agents = useQuery({ queryKey: ["agents"], queryFn: () => unwrap(api.GET("/agents")) });
-  const list = (agents.data ?? []).filter((a) => !HIDDEN.has(a.name));
+  const list = (agents.data ?? []).filter((a) => !a.hidden); // test and example agents stay out
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
       <h1 className="font-display text-4xl font-medium tracking-tight">Agents</h1>
@@ -120,7 +118,7 @@ export function AgentDetail({ name, go }: { name: string; go: (route: Route) => 
         <section className="rounded-2xl border border-stone-200 bg-white p-6 dark:border-stone-800 dark:bg-stone-900">
           <h2 className="text-[11px] font-semibold tracking-wider text-stone-400 uppercase">Instructions</h2>
           <div className="mt-3">
-            <Markdown text={a.prompt ?? ""} />
+            <Markdown text={showPlaceholders(a.prompt ?? "")} />
           </div>
         </section>
         <aside className="space-y-6">
@@ -196,7 +194,7 @@ function HelperCard({ helper }: { helper: Helper }) {
           </button>
           {open && (
             <div className="mt-2">
-              <Markdown text={helper.prompt} />
+              <Markdown text={showPlaceholders(helper.prompt)} />
             </div>
           )}
         </div>
@@ -251,6 +249,18 @@ function Panel({ title, icon, children }: { title: string; icon: React.ReactNode
       {children}
     </section>
   );
+}
+
+const PLACEHOLDER_LABELS: Record<string, string> = {
+  date: "today's date",
+  tools: "its tools",
+  "agent.name": "its name",
+  "session.title": "the chat's title",
+};
+
+/** `{{date}}` in instructions is filled in at run time: show what it becomes. */
+function showPlaceholders(prompt: string): string {
+  return prompt.replace(/\{\{\s*([a-zA-Z_.]+)\s*\}\}/g, (_, key: string) => `\`‹${PLACEHOLDER_LABELS[key] ?? key}›\``);
 }
 
 function hookMoment(when: string): string {

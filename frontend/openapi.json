@@ -128,6 +128,11 @@
             "title": "Helpers",
             "type": "array"
           },
+          "hidden": {
+            "description": "A test or example agent: not offered in the UI",
+            "title": "Hidden",
+            "type": "boolean"
+          },
           "hooks": {
             "additionalProperties": {
               "items": {
@@ -197,6 +202,7 @@
           "limits",
           "hooks",
           "subagents",
+          "hidden",
           "helpers"
         ],
         "title": "AgentView",

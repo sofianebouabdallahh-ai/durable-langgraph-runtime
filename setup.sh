@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup.sh: run the Durable Agent Runtime on this machine. Only Docker is needed.
+# setup.sh: run Nuria on this machine. Only Docker is needed.
 #
 #   ./setup.sh                      first run: checks, .env, model questions, start, smoke
 #                                   test, then opens the app (http://localhost:3000)
@@ -230,7 +230,7 @@ case "$ACTION" in
     make_env; choose_ports; configure_model
     start_stack; smoke
     echo
-    say "${G}Ready.${N}"
+    say "${G}Nuria is ready.${N}"
     echo "    Open the app:        ${G}http://localhost:$UI_PORT${N}"
     echo "    API docs:            http://localhost:$UI_PORT/docs"
     echo "    Chat in a terminal:  ./setup.sh --chat"

@@ -280,5 +280,6 @@ class AgentView(BaseModel):
     limits: dict[str, Any]
     hooks: dict[str, list[str]]
     subagents: list[str]
+    hidden: bool = Field(description="A test or example agent: not offered in the UI")
     helpers: list[HelperView] = Field(description="The sub-agents in detail")
     prompt: str | None = Field(default=None, description="GET /agents/{name} only")

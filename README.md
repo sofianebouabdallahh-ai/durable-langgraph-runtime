@@ -1,8 +1,10 @@
-# Durable, Distributed Runtime for LangGraph Agents
+# Nuria
+
+**Agents that finish what they start.** Nuria is a chat with AI agents that runs on your own machine, built on a durable, distributed runtime for LangGraph agents.
 
 [![ci](https://github.com/sofianebouabdallahh-ai/durable-langgraph-runtime/actions/workflows/ci.yml/badge.svg)](https://github.com/sofianebouabdallahh-ai/durable-langgraph-runtime/actions/workflows/ci.yml)
 
-A runtime that runs LangGraph agents across a pool of workers and makes them survive what distributed systems throw at them: crashed workers, paused "zombie" workers, restarts, human approvals that take hours, node drains and rolling upgrades. It survives all of these without losing or duplicating work.
+Under the hood, a runtime that runs LangGraph agents across a pool of workers and makes them survive what distributed systems throw at them: crashed workers, paused "zombie" workers, restarts, human approvals that take hours, node drains and rolling upgrades. It survives all of these without losing or duplicating work.
 
 > **Status: the local release is under way: one-command setup (L1) and the chat UI (L2) are done.** Clone, run `./setup.sh`, and chat in your browser; kill a worker or an API replica mid-reply and watch nothing get lost. The runtime core (phases 0–6) is complete. Every message is in a durable transcript written with each checkpoint, tokens stream live from any API replica, and a crash mid-turn duplicates nothing. The agent calls tools through one guarded pipeline (budgets with a wrap-up turn, loop detection, retries and a circuit breaker, approvals), delegates to sub-agents that resume after a crash, and fans out child runs across workers. See the [roadmap](docs/roadmap.md) and [phase summaries](docs/progress/).
 
@@ -18,7 +20,7 @@ Then open **http://localhost:3000** (setup opens it for you). Setup checks your 
 
 ![The chat: two helpers' results, then a notification waiting for approval](docs/images/chat-ui.png)
 
-**In the chat:** replies stream in; tool calls show as cards; helpers (sub-agents) show their progress live; anything that reaches the outside world waits for your **Approve**; **Stop** keeps what was written so far; **What happened?** tells each reply's story, including a worker that crashed and the one that took over. On the offline demo model, say *hello* to see what to try.
+**In Nuria:** replies stream in; tool calls show as cards; helpers (sub-agents) show their progress live; anything that reaches the outside world waits for your **Approve**; **Stop** keeps what was written so far; **What happened?** tells each reply's story, including a worker that crashed and the one that took over. **Agents** shows each agent's instructions, tools, limits and helpers (sub-agents); building your own comes next, with the Agent Studio. On the offline demo model, pick a suggestion or say *hello*.
 
 ## How it works (target design)
 

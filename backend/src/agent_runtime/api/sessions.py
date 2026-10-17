@@ -165,6 +165,7 @@ def _agent_view(graphs: GraphRegistry, name: str, *, prompt: bool) -> AgentView:
         limits=fm.limits.model_dump(exclude_none=True),
         hooks={k: v for k, v in fm.hooks.model_dump().items() if v},
         subagents=[s.frontmatter.name for s in a.subagents],
+        hidden=fm.hidden,
         helpers=[
             HelperView(
                 name=s.frontmatter.name, description=s.frontmatter.description,

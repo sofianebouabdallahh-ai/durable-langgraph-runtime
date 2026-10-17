@@ -512,6 +512,11 @@ export interface components {
              * @description The sub-agents in detail
              */
             helpers: components["schemas"]["HelperView"][];
+            /**
+             * Hidden
+             * @description A test or example agent: not offered in the UI
+             */
+            hidden: boolean;
             /** Hooks */
             hooks: {
                 [key: string]: string[];

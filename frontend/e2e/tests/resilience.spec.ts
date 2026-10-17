@@ -6,7 +6,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { containers, docker, expectScreenMatchesTranscript, getJson, newChat, restoreStack, send, servingReplica, waitTurnOver } from "./support";
+import { containers, docker, expectScreenMatchesTranscript, getJson, openEmptyChat, restoreStack, send, servingReplica, waitTurnOver, startChat } from "./support";
 
 const API_REPLICAS = Number(process.env.API_REPLICAS ?? 2);
 const WORKERS = Number(process.env.WORKERS ?? 2);
@@ -15,8 +15,7 @@ const WORKERS = Number(process.env.WORKERS ?? 2);
 test.afterEach(() => restoreStack(API_REPLICAS, WORKERS));
 
 test("reload in the middle of a reply", async ({ page, request }) => {
-  const sid = await newChat(page);
-  await send(page, "hello");
+  const sid = await startChat(page, "hello");
   await expect(page.getByTestId("draft")).toBeVisible();
   await page.reload();
   await expect(page.getByTestId("assistant-message")).toContainText("Notify the team");
@@ -26,8 +25,7 @@ test("reload in the middle of a reply", async ({ page, request }) => {
 
 for (const how of ["kill", "stop"] as const) {
   test(`the API replica serving the stream is ${how === "kill" ? "killed" : "stopped (it drains)"} mid-reply`, async ({ page, request }) => {
-    const sid = await newChat(page);
-    await send(page, "hello");
+    const sid = await startChat(page, "hello");
     await expect(page.getByTestId("draft")).toBeVisible();
     const replica = servingReplica(sid);
     docker(how, replica);
@@ -40,7 +38,7 @@ for (const how of ["kill", "stop"] as const) {
 }
 
 test("the worker running the turn is killed in the middle of a tool call", async ({ page, request }) => {
-  const sid = await newChat(page);
+  const sid = await openEmptyChat(page, request);
   // A slow side effect, sent through the API: the browser just watches the chat.
   const sent = await request.post(`/api/sessions/${sid}/messages`, {
     data: { content: "keep this", script: [

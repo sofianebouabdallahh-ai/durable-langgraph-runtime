@@ -2,7 +2,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-import { newChat, send, waitTurnOver } from "./support";
+import { openEmptyChat, send, waitTurnOver } from "./support";
 
 const EVIL = "evil.example";
 
@@ -16,7 +16,7 @@ test("model output can't run script, load images or phone home", async ({ page, 
     dialogs.push(d.message());
     void d.dismiss();
   });
-  const sid = await newChat(page);
+  const sid = await openEmptyChat(page, request);
   const payload = [
     "<script>window.pwned = 1</script>",
     "",
@@ -54,14 +54,12 @@ test("no serious accessibility problems, and it works from the keyboard", async 
   const welcome = await new AxeBuilder({ page }).analyze();
   expect(welcome.violations.filter((v) => v.impact === "serious" || v.impact === "critical")).toEqual([]);
 
-  await page.keyboard.press("Tab");
-  await expect(page.getByRole("button", { name: "+ New chat" })).toBeFocused();
+  // Home: the message box has the focus; type, Enter, and the chat starts.
+  await expect(page.getByRole("textbox", { name: "Message" })).toBeFocused();
+  await page.keyboard.type("Notify the team that lunch is here");
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/#\/s\//);
   const sid = decodeURIComponent(new URL(page.url()).hash.slice(4));
-  await page.getByRole("textbox", { name: "Message" }).focus();
-  await page.keyboard.type("Notify the team that lunch is here");
-  await page.keyboard.press("Enter");
   const approve = page.getByTestId("approval-card").getByRole("button", { name: "Approve" });
   await approve.focus();
   await page.keyboard.press("Enter");

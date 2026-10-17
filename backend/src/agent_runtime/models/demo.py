@@ -87,7 +87,7 @@ def _research(text: str) -> tuple[Script, SubScripts]:
         {"content": "Both helpers are done: the **researcher** searched the sample documents "
                     f"and the **data analyst** computed {expression} = "
                     f"**{_number(safe_eval(expression))}**. Their reports are in the cards "
-                    f"above.\n\n{DEMO_NOTE}"},
+                    f"above."},
     ]  # fmt: skip
     subs: SubScripts = {
         "researcher": [
@@ -114,8 +114,8 @@ def _notify(text: str) -> tuple[Script, SubScripts]:
     return [
         {"content": "This sends a message to people, so it waits for your approval.",
          "tool_calls": [{"name": "notify", "args": {"to": "the team", "message": text[:2000]}}]},
-        {"content": f"Done. If you approved, the notification is queued; if you rejected it, "
-                    f"nothing was sent.\n\n{DEMO_NOTE}"},
+        {"content": "Done. If you approved, the notification is queued; if you rejected it, "
+                    "nothing was sent."},
     ], {}  # fmt: skip
 
 
@@ -123,22 +123,22 @@ def _calculate(text: str) -> tuple[Script, SubScripts]:
     expression = _expression(text) or "0"
     return [
         {"tool_calls": [{"name": "calculator", "args": {"expression": expression}}]},
-        {"content": f"{expression} = **{_number(safe_eval(expression))}**\n\n{DEMO_NOTE}"},
+        {"content": f"{expression} = **{_number(safe_eval(expression))}**"},
     ], {}  # fmt: skip
 
 
 def _note(text: str) -> tuple[Script, SubScripts]:
     return [
         {"tool_calls": [{"name": "save_note", "args": {"text": text[:2000]}}]},
-        {"content": f"Saved it as a note.\n\n{DEMO_NOTE}"},
+        {"content": "Saved it as a note."},
     ], {}  # fmt: skip
 
 
 def _search(text: str) -> tuple[Script, SubScripts]:
     return [
         {"tool_calls": [{"name": "search", "args": {"query": text[:500], "k": 3}}]},
-        {"content": f"Here's what the sample documents have on that; the results are in the "
-                    f"card above.\n\n{DEMO_NOTE}"},
+        {"content": "Here's what the sample documents have on that; the results are in the "
+                    "card above."},
     ], {}  # fmt: skip
 
 

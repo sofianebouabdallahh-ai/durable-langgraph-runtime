@@ -1,13 +1,12 @@
 /** SC5 approvals, SC6 stop, SC7 helpers: the controls a person uses mid-reply. */
 import { expect, test } from "@playwright/test";
 
-import { expectScreenMatchesTranscript, newChat, send, transcript, waitTurnOver } from "./support";
+import { expectScreenMatchesTranscript, send, transcript, waitTurnOver, startChat } from "./support";
 
 test("approve a notification, after a reload", async ({ page, request }) => {
-  const sid = await newChat(page);
-  await send(page, "Notify the team that the build is green");
+  const sid = await startChat(page, "Notify the team that the build is green");
   const card = page.getByTestId("approval-card");
-  await expect(card).toContainText("wants to use: Notification");
+  await expect(card).toContainText("Nuria wants to use: Notification");
   await expect(page.getByText("Waiting for your approval")).toHaveCount(0); // the card says it
   await page.reload(); // a decision can wait: nothing is held meanwhile
   await expect(card).toContainText("the build is green");
@@ -20,8 +19,7 @@ test("approve a notification, after a reload", async ({ page, request }) => {
 });
 
 test("reject one, with a reason", async ({ page, request }) => {
-  const sid = await newChat(page);
-  await send(page, "Notify ops that we are down");
+  const sid = await startChat(page, "Notify ops that we are down");
   const card = page.getByTestId("approval-card");
   await card.getByPlaceholder("Reason (optional)").fill("not today");
   await card.getByRole("button", { name: "Reject" }).click();
@@ -32,8 +30,7 @@ test("reject one, with a reason", async ({ page, request }) => {
 });
 
 test("stop a reply: the partial reply stays, and the chat goes on", async ({ page, request }) => {
-  const sid = await newChat(page);
-  await send(page, "hello");
+  const sid = await startChat(page, "hello");
   await expect(page.getByTestId("draft")).toBeVisible();
   const stopped = Date.now();
   await page.getByRole("button", { name: "Stop the reply" }).click();
@@ -49,8 +46,7 @@ test("stop a reply: the partial reply stays, and the chat goes on", async ({ pag
 });
 
 test("two helpers work in parallel, with live progress, then the combined answer", async ({ page, request }) => {
-  const sid = await newChat(page);
-  await send(page, "Research Redis Streams and compute 12 * 4");
+  const sid = await startChat(page, "Research Redis Streams and compute 12 * 4");
   const cards = page.getByTestId("helper-card");
   await expect(cards).toHaveCount(2);
   await expect(page.getByText("Helper: researcher")).toBeVisible();

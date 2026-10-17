@@ -54,12 +54,28 @@ export async function waitForReplicas(service: string, count: number): Promise<v
   await expect.poll(() => containers(service).length, { timeout: 60_000 }).toBe(count);
 }
 
-export async function newChat(page: Page): Promise<string> {
+function chatId(page: Page): string {
+  return decodeURIComponent(new URL(page.url()).hash.slice("#/s/".length));
+}
+
+/** From the home screen: write the first message; the chat starts from it. */
+export async function startChat(page: Page, text: string): Promise<string> {
   await page.goto("/");
-  await page.getByRole("button", { name: "+ New chat" }).click();
+  const box = page.getByRole("textbox", { name: "Message" });
+  await box.fill(text);
+  await box.press("Enter");
   await expect(page).toHaveURL(/#\/s\//);
-  const id = decodeURIComponent(new URL(page.url()).hash.slice("#/s/".length));
   await expect(page.getByTestId("connection-banner")).toHaveCount(0); // stream open
+  return chatId(page);
+}
+
+/** An empty chat, for tests that drive the turn through the API (scripted replies). */
+export async function openEmptyChat(page: Page, request: APIRequestContext): Promise<string> {
+  const resp = await request.post("/api/sessions", { data: { agent: "chat", title: "e2e" } });
+  expect(resp.status()).toBe(201);
+  const id = ((await resp.json()) as { id: string }).id;
+  await page.goto(`/#/s/${id}`);
+  await expect(page.getByTestId("connection-banner")).toHaveCount(0);
   return id;
 }
 

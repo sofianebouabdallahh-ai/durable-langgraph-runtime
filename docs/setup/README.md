@@ -1,6 +1,6 @@
-# Run it on your machine
+# Run Nuria on your machine
 
-Everything runs in Docker on your computer: the database, the queue, the API and two workers. Your conversations, agents and keys stay on this machine. You need **only Docker**; no Python, Node or developer tools.
+Everything runs in Docker on your computer: the app, the database, the queue, two API servers and two workers. Your conversations, agents and keys stay on this machine. You need **only Docker**; no Python, Node or developer tools.
 
 | Your computer | Guide |
 |---|---|
@@ -26,7 +26,7 @@ The setup script:
 3. asks which model to use;
 4. starts everything, runs a real chat turn to prove it works, and opens the app.
 
-When it says **Ready**, the app is at **http://localhost:3000** (or the address it prints, if 3000 was taken). Click **New chat** and say hello. You can also chat in the terminal:
+When it says **Nuria is ready**, the app is at **http://localhost:3000** (or the address it prints, if 3000 was taken). Write your first message (or pick a suggestion). **Agents**, in the sidebar, shows each agent's instructions, tools and helpers. You can also chat in the terminal:
 
 ```bash
 ./setup.sh --chat     # type your messages; Ctrl-D to leave

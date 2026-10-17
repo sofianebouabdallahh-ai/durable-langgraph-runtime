@@ -5,15 +5,13 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { expectScreenMatchesTranscript, newChat, send, waitTurnOver } from "./support";
+import { expectScreenMatchesTranscript, send, waitTurnOver, startChat } from "./support";
 
 test.skip(!process.env.LIVE_MODEL, "needs a real model: LIVE_MODEL=1");
 test.setTimeout(300_000);
 
 test("a real model streams its reply and uses the calculator", async ({ page, request }) => {
-  const sid = await newChat(page);
-  await expect(page.getByText("Demo model")).toHaveCount(0);
-  await send(page, "In two sentences: what is a fencing token in distributed systems?");
+  const sid = await startChat(page, "In two sentences: what is a fencing token in distributed systems?");
   await expect(page.getByTestId("draft")).toBeVisible({ timeout: 120_000 }); // words before the end
   await expect(page.getByTestId("assistant-message")).toHaveCount(1, { timeout: 180_000 });
   await waitTurnOver(request, sid);
