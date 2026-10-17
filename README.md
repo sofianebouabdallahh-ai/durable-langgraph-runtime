@@ -16,6 +16,8 @@ cd durable-langgraph-runtime
 
 Then open **http://localhost:3000** (setup opens it for you). Setup checks your machine, generates private local passwords, asks which model to use (an offline demo, a free local model with Ollama, OpenAI, Azure AI Foundry, or any OpenAI-compatible service), starts everything in Docker, and proves it works with a real chat turn. Guides for each OS, models and troubleshooting: [docs/setup/](docs/setup/).
 
+![The chat: two helpers' results, then a notification waiting for approval](docs/images/chat-ui.png)
+
 **In the chat:** replies stream in; tool calls show as cards; helpers (sub-agents) show their progress live; anything that reaches the outside world waits for your **Approve**; **Stop** keeps what was written so far; **What happened?** tells each reply's story, including a worker that crashed and the one that took over. On the offline demo model, say *hello* to see what to try.
 
 ## How it works (target design)

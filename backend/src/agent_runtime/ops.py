@@ -75,6 +75,8 @@ async def smoke(
                 )
             await asyncio.sleep(0.5)
         messages = (await client.get(f"/sessions/{sid}/messages")).json()["messages"]
+        # Setup's check isn't a conversation of the user's: keep it out of the chat list.
+        await client.patch(f"/sessions/{sid}", json={"status": "archived"})
     kinds = [m["type"] for m in messages]
     if "error" in kinds:
         error = next(m["content"] for m in messages if m["type"] == "error")

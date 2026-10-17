@@ -1,5 +1,7 @@
 # Phase L2 plan — Chat UI (milestone M1: it works in the browser)
 
+> **Status: delivered.** Results: [progress/phase-L2.md](../progress/phase-L2.md).
+
 **Goal:** after `./setup.sh`, a person opens `http://localhost:3000` and chats with the built-in agent. They see:
 - replies stream in;
 - tool calls as cards, sub-agents with live progress;
