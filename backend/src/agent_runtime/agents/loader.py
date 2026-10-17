@@ -152,11 +152,75 @@ def _agent_dirs(parent: Path) -> list[Path]:
     return sorted(p for p in parent.iterdir() if p.is_dir() and not p.name.startswith((".", "_")))
 
 
+@dataclass(frozen=True)
+class RawDefinition:
+    """One agent or helper before validation, from any source (a folder, the Studio).
+
+    `name` is what the definition must be called (its folder, or the Studio's id);
+    `where` labels its issues ("chat/agent.md", or "helpers.researcher")."""
+
+    name: str
+    metadata: Mapping[str, Any]
+    prompt: str
+    where: str
+    name_of: str = "the folder name"  # what `name` is, in messages
+
+
+def validate_definition(
+    main: RawDefinition,
+    helpers: list[RawDefinition],
+    catalog: Catalog,
+    ceilings: Ceilings,
+) -> tuple[AgentDefinition | None, list[Issue]]:
+    """The one definition of "valid" (CR-006 R17.1): files and the Studio both come
+    through here. Pattern: Specification. Returns the definition, or every issue."""
+    issues: list[Issue] = []
+    subagents: list[SubAgentDefinition] = []
+    seen: set[str] = set()
+    for raw in helpers:
+        if raw.name in seen:
+            issues.append(Issue(raw.where, "name", f"two helpers are called {raw.name!r}"))
+            continue
+        seen.add(raw.name)
+        fm = _frontmatter(raw, SubAgentFrontmatter, issues)
+        if fm is None:
+            continue
+        _check_common(raw.where, fm, raw.prompt, SUB_PLACEHOLDERS, catalog, ceilings, issues)
+        for grant in fm.tools:
+            if catalog.tools.get(grant.name) == "external_side_effect":
+                message = f"{grant.name!r} needs human approval; sub-agents can't use it"
+                issues.append(Issue(raw.where, "tools", message))
+        subagents.append(SubAgentDefinition(id=f"{main.name}/{raw.name}", frontmatter=fm,
+                                            prompt=raw.prompt))  # fmt: skip
+    fm_main = _frontmatter(main, MainAgentFrontmatter, issues)
+    if fm_main is not None:
+        _check_common(main.where, fm_main, main.prompt, MAIN_PLACEHOLDERS, catalog, ceilings,
+                      issues)  # fmt: skip
+    if issues or fm_main is None:
+        return None, issues
+    return AgentDefinition(id=main.name, frontmatter=fm_main, prompt=main.prompt,
+                           subagents=tuple(subagents)), []  # fmt: skip
+
+
+def _frontmatter[F: (MainAgentFrontmatter, SubAgentFrontmatter)](
+    raw: RawDefinition, model: type[F], issues: list[Issue]
+) -> F | None:
+    try:
+        fm = model.model_validate(dict(raw.metadata))
+    except ValidationError as exc:
+        for err in exc.errors():
+            loc = ".".join(str(p) for p in err["loc"]) or None
+            issues.append(Issue(raw.where, loc, err["msg"]))
+        return None
+    if fm.name != raw.name:
+        issues.append(Issue(raw.where, "name", f"must match {raw.name_of} {raw.name!r}"))
+    return fm
+
+
 def _load_main(
     root: Path, main_dir: Path, catalog: Catalog, ceilings: Ceilings, issues: list[Issue]
 ) -> AgentDefinition | None:
-    parsed = _parse(root, main_dir, MainAgentFrontmatter, issues)
-    subagents: list[SubAgentDefinition] = []
+    helpers: list[RawDefinition] = []
     for sub_dir in _agent_dirs(main_dir):
         for nested in sub_dir.rglob(DEFINITION_FILE):
             if nested.parent == sub_dir:
@@ -164,38 +228,18 @@ def _load_main(
             issues.append(
                 Issue(_rel(root, nested), None, "sub-agents are leaf agents: no nested agents")
             )
-        sub = _parse(root, sub_dir, SubAgentFrontmatter, issues)
-        if sub is not None:
-            fm, prompt = sub
-            _check_common(root, sub_dir, fm, prompt, SUB_PLACEHOLDERS, catalog, ceilings, issues)
-            for grant in fm.tools:
-                if catalog.tools.get(grant.name) == "external_side_effect":
-                    issues.append(
-                        Issue(
-                            _rel(root, sub_dir / DEFINITION_FILE),
-                            "tools",
-                            f"{grant.name!r} needs human approval; sub-agents can't use it",
-                        )
-                    )
-            subagents.append(
-                SubAgentDefinition(
-                    id=f"{main_dir.name}/{sub_dir.name}", frontmatter=fm, prompt=prompt
-                )
-            )
-    if parsed is None:
+        if (raw := _read(root, sub_dir, issues)) is not None:
+            helpers.append(raw)
+    main = _read(root, main_dir, issues)
+    if main is None:
         return None
-    fm_main, prompt_main = parsed
-    _check_common(
-        root, main_dir, fm_main, prompt_main, MAIN_PLACEHOLDERS, catalog, ceilings, issues
-    )
-    return AgentDefinition(
-        id=main_dir.name, frontmatter=fm_main, prompt=prompt_main, subagents=tuple(subagents)
-    )
+    defn, problems = validate_definition(main, helpers, catalog, ceilings)
+    issues.extend(problems)
+    return defn
 
 
-def _parse[F: (MainAgentFrontmatter, SubAgentFrontmatter)](
-    root: Path, folder: Path, model: type[F], issues: list[Issue]
-) -> tuple[F, str] | None:
+def _read(root: Path, folder: Path, issues: list[Issue]) -> RawDefinition | None:
+    """A folder's agent.md as a RawDefinition (file problems are reported here)."""
     path = folder / DEFINITION_FILE
     rel = _rel(root, path)
     if not path.is_file():
@@ -206,21 +250,14 @@ def _parse[F: (MainAgentFrontmatter, SubAgentFrontmatter)](
     except yaml.YAMLError as exc:
         issues.append(Issue(rel, None, f"invalid YAML frontmatter: {exc}"))
         return None
-    try:
-        fm = model.model_validate(post.metadata)
-    except ValidationError as exc:
-        for err in exc.errors():
-            loc = ".".join(str(p) for p in err["loc"]) or None
-            issues.append(Issue(rel, loc, err["msg"]))
+    if not isinstance(post.metadata, dict):
+        issues.append(Issue(rel, None, "the frontmatter must be a mapping"))
         return None
-    if fm.name != folder.name:
-        issues.append(Issue(rel, "name", f"must match the folder name {folder.name!r}"))
-    return fm, post.content.strip()
+    return RawDefinition(folder.name, post.metadata, post.content.strip(), rel)
 
 
 def _check_common(
-    root: Path,
-    folder: Path,
+    rel: str,
     fm: MainAgentFrontmatter | SubAgentFrontmatter,
     prompt: str,
     placeholders: frozenset[str],
@@ -228,7 +265,6 @@ def _check_common(
     ceilings: Ceilings,
     issues: list[Issue],
 ) -> None:
-    rel = _rel(root, folder / DEFINITION_FILE)
 
     def bad(field_: str, message: str) -> None:
         issues.append(Issue(rel, field_, message))

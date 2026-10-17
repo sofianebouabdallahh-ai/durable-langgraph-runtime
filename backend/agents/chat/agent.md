@@ -1,5 +1,6 @@
 ---
 name: chat
+display_name: Nuria
 description: General chat assistant. Searches, computes, keeps notes, delegates research and number work to sub-agents, and notifies people (with human approval).
 version: 2
 model: chat
