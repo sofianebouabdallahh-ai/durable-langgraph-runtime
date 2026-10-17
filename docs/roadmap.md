@@ -2,7 +2,7 @@
 
 The delivery plan for **Durable, Distributed Runtime for LangGraph Agents**: what we build, in what order, and how we know each part is done.
 
-**Where we are (2026-10-17):** the runtime core is done (phases 0–6), and the **local release** has started. L1 (containers and one-command setup) is merged. **Next: L2, a chat UI**, so the whole system works end to end in the browser.
+**Where we are (2026-10-17):** the runtime core is done (phases 0–6). In the local release, L1 (one-command setup) and **L2 (the chat UI, now called _Nuria_)** are merged: milestone **M1** is reached. **Next: L3, the Agent Studio backend.**
 
 **Sources of truth for scope**
 - Base spec: [`Project_4_Detailed_Requirements_K8s.pdf`](requirements/Project_4_Detailed_Requirements_K8s.pdf). Requirements are `R<section>.<n>`; acceptance criteria are `AC<n>`.
@@ -49,8 +49,8 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 |---|---|---|---|
 | 0–6 | Runtime core (see [Done](#done-the-runtime-core-phases-06)) | ✅ Done | — |
 | **L1** | Containerise & one-command setup | ✅ Done ([plan](plans/phase-L1.md), [summary](progress/phase-L1.md)) | ~14–18 h |
-| **L2** | **Chat UI** → M1 | ⏳ Next | ~18–24 h |
-| L3 | Local Agent Studio backend | — | ~24–32 h |
+| **L2** | Chat UI (Nuria) → M1 | ✅ Done ([plan](plans/phase-L2.md), [summary](progress/phase-L2.md)) | ~18–24 h |
+| **L3** | **Local Agent Studio backend** | ⏳ Next | ~24–32 h |
 | L4 | Studio UI → M2 | — | ~22–28 h |
 | L5 | Dashboards & local Kubernetes | — | ~16–22 h |
 | L6 | Release v0.1 & feedback loop → M3 | — | ~10–14 h |
@@ -59,7 +59,7 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 
 Legend: ⏳ next · 🚧 in progress · ✅ done · ⏸ blocked
 
-**To M1: ~18–24 h.** **To M3 (v0.1): ~90–120 h.** Estimates are focused hours and rough; we correct them as we go.
+**M1 reached.** **To M2 (build your own agent): ~46–60 h.** **To M3 (v0.1): ~72–96 h.** Estimates are focused hours and rough; we correct them as we go.
 
 ---
 
@@ -74,7 +74,7 @@ The `runtime` image (non-root, read-only, tini); the Compose `app` profile (`mig
 **Done:** a fresh clone reaches a passing chat turn in 48 s cold on CI, using only Docker.
 **Open:** the first `v*` tag (multi-arch publish); a real Windows run of `setup.ps1`.
 
-### L2 — Chat UI · ~18–24 h → M1
+### L2 — Chat UI (Nuria) ✅ → M1
 **Goal:** open `http://localhost:<port>` after `./setup.sh` and chat.
 - **The app:** React + TypeScript strict + Vite + Tailwind + TanStack Query; an API client generated from the OpenAPI spec (R6.5).
 - **The chat view (R12.11):**
