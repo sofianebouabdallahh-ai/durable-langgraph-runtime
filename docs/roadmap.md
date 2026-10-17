@@ -143,7 +143,7 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 **Learn:** idempotency keys, the outbox-style "record, then act" pattern, durable pauses.
 **Done when:** **AC4** (approval survives restart) passes via `make demo-approval`, plus SC1–SC12 in the plan.
 
-### Phase 5 — Sub-runs, sub-agents & backpressure · ~10–14 h
+### Phase 5 — Sub-runs, sub-agents & backpressure · ~10–14 h (plan: [plans/phase-05.md](plans/phase-05.md); delivered as two PRs: 5a child runs & backpressure, 5b sub-agents)
 **Goal:** the research fan-out spreads across workers (child runs), and a main agent can orchestrate its sub-agents in-process (CR-005).
 - Parent/child protocol, `waiting_children`, atomic `child_done`, fan-in and `partial` (R2.8)
 - `max_children`, queue-depth metric, `429` with `Retry-After` (R2.9)

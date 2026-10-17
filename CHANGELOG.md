@@ -18,6 +18,16 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - CR-004 + ADR-0003 (accepted): agents defined as `backend/agents/*.agent.md` (name, max turns, prompt, tools, limits, hooks); hooks for session start/end, turn start/end and pre/post tool, built on LangChain middleware plus harness-owned session hooks.
 - CR-003 (accepted): harness guardrails. Run budgets with a soft→hard wrap-up, loop detection, ceilings that callers can only tighten, deny-by-default tool grants, least-privilege DB roles, untrusted-content handling, audit trail, kill switch.
 
+### Phase 5a — Child runs & backpressure
+#### Added
+- Child runs (R2.8): `spawn_children` from a workflow node (the `Spawner` port: `RunSpawner`, and `LocalSpawner` for `runtime run --local-fanout`); the fan-out runs in one fenced transaction; the parent waits in `waiting_children` holding no lease; an atomic fan-in counter re-queues it exactly once; it resumes with the children's results, `partial` when some failed, `failed(children_failed)` when all did.
+- Fan-out limits (R14.6): `max_children` (default 6, per-run option), depth ≤ 2, ≤ 20 descendants per root; a breach is an error the node handles.
+- Budget roll-up (R14.1): model and tool calls count for every ancestor, within each ancestor's limits.
+- Cancelling a run cancels its live descendants.
+- Backpressure (R2.9): `POST /runs` → `429` + `Retry-After` at `QUEUE_DEPTH_LIMIT`; queue depth in `/admin/state`; `RunView` shows the run tree.
+- Migration `0007` (`child_key`, `descendants`, queued index); `fanout` demo workflow; e2e `fanout` (AC6) and `child-crash`; `make demo-fanout`.
+- ADR-0005: child runs vs `Send` vs sub-agents.
+
 ### Phase 4 — Tools & human-in-the-loop
 #### Added
 - Tool registry (`@registry.tool`): strict, frozen argument models; risk classes; per-tool `max_calls`; isolation flag. Fixture tools `calculator`, `save_note`, `notify` (migration `0006`: `notes`, `outbox_notifications`, `runs.resume_value`).

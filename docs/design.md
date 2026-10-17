@@ -52,6 +52,11 @@ Every non-trivial component names the pattern it applies. If no pattern fits, th
 | **Fail closed** | `run_hooks` | A hook that raises or times out is a deny. A broken redaction hook withholds data; it never leaks it (R15.8). |
 | **Durable pause (no lease held)** | `RunExecutor._pause`, `RunRepository.decide_approval` | `interrupt()` → `waiting_approval` with the payload; the lease is released and the message acked, so a pause can last for days with no worker involved. Approval is a database transition (`waiting_approval → queued` + `resume_value`) and a fresh message; any worker resumes with `Command(resume=…)`. |
 | **Test double: scripted model** | [`models/scripted.py`](../backend/src/agent_runtime/models/scripted.py) | A real `BaseChatModel` replaying a script from the run input, chosen by turn number so it is replay-stable. Every test and e2e runs with no API key (R14.20). |
+| **Atomic fan-in counter** | `RunRepository.transition` → `_child_ended` | A child's terminal transition increments its parent's `child_done` in the same transaction; the parent's row lock serialises siblings, so exactly one re-queues the parent (R2.8). `transition` is the single choke point for terminal transitions, so the worker, the reaper and an API cancel all count. |
+| **Ports & Adapters** (spawning) | [`runs/fanout.py`](../backend/src/agent_runtime/runs/fanout.py) `Spawner` → `RunSpawner`, `LocalSpawner` | Workflow nodes ask for children and get results; whether those are durable runs on any worker or in-process tasks (`--local-fanout`) is the adapter's business. |
+| **Enqueue after commit** | `RunRepository.ready` → `RunExecutor._send`, `RunService._enqueue` | A run that became queued (a spawned child, a fanned-in parent) is sent to Redis only after its transaction commits; the relay sweep repairs a lost send. The same rule as publishing after commit. |
+| **Ordered locking** | Fan-out, fan-in, budget roll-up, cancel cascade | Every transaction that touches several runs of one tree locks them deepest first (child → parent → root), so sibling charges, fan-ins and cancels never deadlock. |
+| **Admission control (backpressure)** | `RunService.create_run` → `Overloaded` → `429` + `Retry-After` | When the queue depth (counted in Postgres) reaches the limit, new runs are refused; workers' own fan-outs are not (R2.9). |
 
 ## Spike: fencing LangGraph checkpoints (phase 1, task 1.4)
 
@@ -82,3 +87,8 @@ Tests: [`test_fenced_checkpointer.py`](../backend/tests/integration/test_fenced_
 - **In-process sub-agents vs child runs:** [CR-005 §1](requirements/CR-005-subagents.md).
 - **Configuration and secrets:** [ADR-0002](adr/0002-configuration-and-secrets.md).
 - **Live events (Pub/Sub vs LISTEN/NOTIFY vs Streams vs polling):** [ADR-0004](adr/0004-live-events-redis-pubsub.md).
+- **Fan-out (child runs vs `Send` vs sub-agents):** [ADR-0005](adr/0005-fan-out-child-runs.md).
+
+## Sub-runs vs. LangGraph `Send` (R2.8 design decision)
+
+`Send` fans out inside one superstep on one worker; it can't cross a process boundary. Modelling each researcher as a **child run** is what lets the fan-out spread across pods, and it gives every child its own checkpoint, lease and reclaim for free. The cost is a parent/child protocol: spawn in one fenced transaction, an atomic fan-in counter, re-enqueue, partial results, a cancel cascade and budget roll-up. Sub-agents (CR-005) are the third option: in-process delegation with live status, bounded by one worker. See [ADR-0005](adr/0005-fan-out-child-runs.md).
