@@ -272,6 +272,101 @@ async def api_shutdown(c: Cluster) -> Report:
     return r
 
 
+# ------------------------------------------------------ phase 4: tools & approval
+
+
+async def _assistant_run(c: Cluster, script: list[dict[str, Any]]) -> str:
+    resp = await c.client.post(
+        "/runs", json={"graph": "assistant", "input": {"message": "e2e", "script": script}}
+    )
+    resp.raise_for_status()
+    return str(resp.json()["run_id"])
+
+
+async def tool_crash(c: Cluster) -> Report:
+    """SC2, window (a): SIGKILL the worker after the tool's side effect but before the
+    ledger records the result. The new owner re-executes with the same idempotency key
+    and the tool dedupes. (Window (b), killed after the ledger recorded it, replays the
+    cached result: tests/integration/test_approval.py.)"""
+    r = Report("side effect once across a crash (R2.6)")
+    run_id = await _assistant_run(
+        c,
+        [
+            {"tool_calls": [{"name": "save_note", "args": {"text": "keep me", "linger_s": 4}}]},
+            {"content": "Saved."},
+        ],
+    )
+
+    async def note_written() -> bool:
+        return bool(await c.rows("SELECT 1 FROM notes WHERE run_id = %s", run_id))
+
+    await c.wait(note_written, timeout_s=30, what="the note is written")  # the effect happened …
+    owner = (await c.run(run_id))["owner"]
+    c.process(c.pid_of(owner)).send_signal(signal.SIGKILL)  # … and the worker dies mid-step
+    await c.wait(
+        lambda: c.status_is(run_id, "completed", "failed"), timeout_s=60, what="completion"
+    )
+
+    run, events = await c.run(run_id), await c.events(run_id)
+    notes = await c.rows("SELECT text FROM notes WHERE run_id = %s", run_id)
+    called = [e["payload"] for e in events if e["type"] == "tool.called"]
+    r.check("run completed on another worker", run["status"] == "completed", run["status"])
+    r.check("exactly one note (no duplicate side effect)", len(notes) == 1, f"{len(notes)} row(s)")
+    takeovers = [p["taken_over"] for p in called]
+    # [True], not [False, True]: the dead worker's tool.called was staged in its outbox,
+    # which commits only with the step's checkpoint, so it died with the worker.
+    r.check("the new owner took the call over", takeovers == [True], str(takeovers))
+    r.check("one reclaim", _count(events, "run.reclaimed") == 1)
+    calls = await c.rows("SELECT tool_calls_total FROM runs WHERE id = %s", run_id)
+    r.check("charged once against the tool budget", calls[0]["tool_calls_total"] == 1)
+    return r
+
+
+async def approval_restart(c: Cluster) -> Report:
+    """AC4 / SC8: a run waits for approval; EVERY worker is killed; the approval (with
+    edits) is given while no worker exists; fresh workers finish it with the edits."""
+    r = Report("approval survives a full restart (AC4)")
+    run_id = await _assistant_run(
+        c,
+        [
+            {"tool_calls": [{"name": "notify", "args": {"to": "ceo", "message": "draft"}}]},
+            {"content": "Notified."},
+        ],
+    )
+    await c.wait(lambda: c.status_is(run_id, "waiting_approval"), timeout_s=30, what="pause")
+    paused = await c.run(run_id)
+    for worker in c.workers:  # no worker survives
+        worker.send_signal(signal.SIGKILL)
+        worker.wait()
+
+    edits = {"args": {"to": "ops", "message": "final (edited by a human)"}}
+    resp = await c.client.post(
+        f"/runs/{run_id}/approve", json={"decision": "approve", "edits": edits}
+    )
+    approved_without_workers = resp.status_code == 202 and resp.json()["status"] == "queued"
+
+    c.start_worker("fresh-0")
+    c.start_worker("fresh-1")
+    await c.wait(
+        lambda: c.status_is(run_id, "completed", "failed"), timeout_s=60, what="completion"
+    )
+    run = await c.run(run_id)
+    sent = await c.rows(
+        "SELECT recipient, message FROM outbox_notifications WHERE run_id = %s", run_id
+    )
+    r.check(
+        "paused with no lease held",
+        paused["owner"] is None and paused["interrupt_payload"] is not None,
+    )
+    r.check(
+        "approved while no worker was alive", approved_without_workers, f"HTTP {resp.status_code}"
+    )
+    r.check("fresh workers completed it", run["status"] == "completed", run["status"])
+    expected = [{"recipient": "ops", "message": "final (edited by a human)"}]
+    r.check("exactly one notification, with the edits", sent == expected, str(sent))
+    return r
+
+
 SCENARIOS: dict[str, tuple[Callable[[Cluster], Awaitable[Report]], dict[str, Any]]] = {
     "crash": (crash, {}),
     "zombie": (zombie, {}),
@@ -279,6 +374,8 @@ SCENARIOS: dict[str, tuple[Callable[[Cluster], Awaitable[Report]], dict[str, Any
     "replicas": (replicas, {"api_replicas": [{}, {}]}),
     "stall": (stall, {"api_replicas": [{}, {}, {"STREAM_LIVE_ENABLED": "false"}]}),
     "api-shutdown": (api_shutdown, {"api_replicas": [{}, {}]}),
+    "tool-crash": (tool_crash, {}),
+    "approval-restart": (approval_restart, {}),
 }
 
 

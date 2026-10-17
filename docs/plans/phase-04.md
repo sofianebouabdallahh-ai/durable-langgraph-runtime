@@ -80,7 +80,7 @@
 | # | Criterion | Measured by | Pass when |
 |---|---|---|---|
 | SC1 | **Fixed pipeline order** (R15.7) | integration | a spy proves the order: schema → grant → pre_tool → re-validate → policy → budget → idempotency → execute → post_tool → truncate |
-| SC2 | **A side effect happens once, even across a crash** | e2e (SIGKILL) | a worker is killed after `save_note` executed but before its step's checkpoint → the run completes on another worker; **exactly one** `notes` row; the replayed call returns the stored result (`tool.completed {cached: true}`) |
+| SC2 | **A side effect happens once, even across a crash** | e2e (SIGKILL) | a worker is killed after `save_note`'s effect but before its step's checkpoint → the run completes on another worker; **exactly one** `notes` row; charged once. Two windows: (a) killed before the ledger recorded the result → the new owner takes the call over (`tool.called {taken_over: true}`) with the same key and the tool dedupes (e2e, SIGKILL); (b) killed after → the stored result is replayed (`tool.completed {cached: true}`, integration) |
 | SC3 | **Idempotency rules** (R2.6) | integration | same key → no second execution; different args → new key; `in_progress` at a lower epoch → re-executed under the new epoch; a stale-epoch write → rejected by the fence |
 | SC4 | **Deny by default** (R14.9) | integration | a tool not granted to the agent (including a hallucinated name) → `Deny(not_granted)` tool error to the model, `policy.decision` audited, run continues |
 | SC5 | **Strict arguments** (R14.11) | integration | an unknown field or wrong type → a tool error describing the problem; the model's corrected retry succeeds |

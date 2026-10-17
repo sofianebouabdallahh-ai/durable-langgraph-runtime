@@ -19,6 +19,7 @@ from typing import Any
 
 import httpx
 import psycopg
+import psycopg.rows
 from psycopg import sql
 
 from agent_runtime.config import get_settings
@@ -208,6 +209,16 @@ class Cluster:
                 raise TimeoutError(f"timed out after {timeout_s}s waiting for: {what}")
             await asyncio.sleep(0.1)
         return time.monotonic() - t0
+
+    async def rows(self, query: str, *params: Any) -> list[dict[str, Any]]:
+        """Read from this cluster's database (for rows the API doesn't expose)."""
+
+        def run() -> list[dict[str, Any]]:
+            url = self._admin_url.rsplit("/", 1)[0] + f"/{self.db}"
+            with psycopg.connect(url, row_factory=psycopg.rows.dict_row) as conn:
+                return list(conn.execute(query, params).fetchall())
+
+        return await asyncio.to_thread(run)
 
     async def node_completed(self, run_id: str, node: str) -> bool:
         return any(

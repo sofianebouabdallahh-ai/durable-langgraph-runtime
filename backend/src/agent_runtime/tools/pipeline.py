@@ -13,6 +13,7 @@ Pattern: Chain of Responsibility with a FIXED order (CR-004 R15.7):
     7+8 ledger    idempotency key = sha256(run · node · call_index · tool · canonical(args));
                   budgets checked and charged only when a key is first recorded (R14.1, R2.6)
                   done → cached result, no execution; in_progress at an older epoch → re-execute
+                  with the SAME key, which the tool uses to dedupe its own effect
     9 execute     in-process (phase 7 adds isolation: sandbox), with a timeout (R14.5)
    10 post_tool   hooks: continue · modify(result) · deny        (also for cached results)
    11 truncate    ≤ max_result_chars to the model, with a marker (R14.5)
@@ -217,7 +218,12 @@ class ToolPipeline:
             self._at("execute")
             ctx.emit(
                 EventType.TOOL_CALLED,
-                {"tool": spec.name, "call_id": call.id, "args": _summary(redact(args))},
+                {
+                    "tool": spec.name,
+                    "call_id": call.id,
+                    "args": _summary(redact(args)),
+                    "taken_over": begun.taken_over,  # re-executing a dead owner's call
+                },
             )
             status, result = await self._execute(
                 spec,
