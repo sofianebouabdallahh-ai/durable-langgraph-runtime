@@ -11,6 +11,7 @@ from agent_runtime.agents.loader import (
     content_hash,
     load_agents,
 )
+from agent_runtime.catalog import default_catalog
 
 SHIPPED_AGENTS = Path(__file__).resolve().parents[2] / "agents"
 CEILINGS = Ceilings(model_calls=100, tool_calls=100, tokens=1_000_000, cost_usd=2.0, timeout_s=1200)
@@ -45,7 +46,7 @@ def issues_for(root: Path, catalog: Catalog = CATALOG) -> list[str]:
 
 
 def test_shipped_agents_are_valid() -> None:
-    registry = load_agents(SHIPPED_AGENTS, Catalog(), CEILINGS)
+    registry = load_agents(SHIPPED_AGENTS, default_catalog(), CEILINGS)
     example = registry.get("example")
     assert [s.id for s in example.subagents] == ["example/summarizer"]
 
