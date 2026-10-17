@@ -79,7 +79,9 @@ profiles() { local p; p=$(env_get COMPOSE_PROFILES); p=${p:-app}; local out=""; 
 compose() { "$DOCKER" compose --file "$COMPOSE_FILE" --env-file "$ENV_FILE" $(profiles) "$@"; }
 
 port_in_use() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
-ours() { compose ps --format '{{.Service}} {{.Publishers}}' 2>/dev/null | grep -q "^$1 .*127.0.0.1:$2->"; }
+ours() {  # ours SERVICE CONTAINER_PORT HOST_PORT: is HOST_PORT this stack's own mapping?
+  compose port "$1" "$2" 2>/dev/null | grep -q ":$3\$"
+}
 
 # ------------------------------------------------------------------ steps
 make_env() {
@@ -98,15 +100,15 @@ make_env() {
   [ -n "$(env_get COMPOSE_PROFILES)" ] || env_set COMPOSE_PROFILES app
 }
 
-pick_port() {  # pick_port SERVICE ENV_KEY DEFAULT [WANTED]  → a port free for us, saved in .env
-  local service=$1 key=$2 default=$3 wanted=${4:-} current p
+pick_port() {  # pick_port SERVICE CONTAINER_PORT ENV_KEY DEFAULT [WANTED] → a host port, saved in .env
+  local service=$1 cport=$2 key=$3 default=$4 wanted=${5:-} current p
   current=$(env_get "$key")
   p=${wanted:-${current:-$default}}
-  if port_in_use "$p" && ! ours "$service" "$p"; then
+  if port_in_use "$p" && ! ours "$service" "$cport" "$p"; then
     [ -n "$wanted" ] && die "port $p is already used by another program." "Choose another one."
     local candidate found=""
     for candidate in "$default" $((default + 1)) $((default + 2)) $((default + 10000)) $((default + 20000)); do
-      if ! port_in_use "$candidate" || ours "$service" "$candidate"; then found=$candidate; break; fi
+      if ! port_in_use "$candidate" || ours "$service" "$cport" "$candidate"; then found=$candidate; break; fi
     done
     [ -n "$found" ] || die "no free port found for $service." "Free one, or set $key in .env."
     warn "port $p is used by another program; $service will use $found" >&2
@@ -117,10 +119,10 @@ pick_port() {  # pick_port SERVICE ENV_KEY DEFAULT [WANTED]  → a port free for
 }
 
 choose_ports() {
-  API_PORT=$(pick_port api API_PORT 8000 "$WANT_PORT")
+  API_PORT=$(pick_port api 8000 API_PORT 8000 "$WANT_PORT")
   local pg redis
-  pg=$(pick_port postgres POSTGRES_PORT 5432)
-  redis=$(pick_port redis REDIS_PORT 6379)
+  pg=$(pick_port postgres 5432 POSTGRES_PORT 5432)
+  redis=$(pick_port redis 6379 REDIS_PORT 6379)
   env_set REDIS_URL "redis://localhost:$redis/0"  # for tools on this machine; containers use redis:6379
   ok "ports: API $API_PORT, Postgres $pg, Redis $redis (all on 127.0.0.1 only)"
 }
