@@ -25,7 +25,17 @@ export function useAgentName(name: string | null): string {
   return agents.data?.find((a) => a.name === name)?.display_name ?? agentLabel(name);
 }
 
-export function ChatView({ sessionId, compact = false, agentName }: { sessionId: string; compact?: boolean; agentName?: string }) {
+export function ChatView({
+  sessionId,
+  compact = false,
+  agentName,
+  onTurnEnd,
+}: {
+  sessionId: string;
+  compact?: boolean;
+  agentName?: string;
+  onTurnEnd?: () => void; // e.g. the Studio: a finished test reply marks the draft tested
+}) {
   const { state, dispatch, connection } = useChat(sessionId);
   const [notice, setNotice] = useState<string | null>(null);
   const [sentCount, setSentCount] = useState(0); // the list follows a message you send
@@ -38,6 +48,11 @@ export function ChatView({ sessionId, compact = false, agentName }: { sessionId:
   const label = agentName ?? listedName;
   const busy = isBusy(state);
   const waiting = pendingApproval(state);
+  const ended = state.turn && !busy ? `${state.turn.runId}:${state.turn.status}` : null;
+  useEffect(() => {
+    if (ended) onTurnEnd?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per turn end
+  }, [ended]);
   const views = turns(state);
 
   const send = async (text: string): Promise<boolean> => {

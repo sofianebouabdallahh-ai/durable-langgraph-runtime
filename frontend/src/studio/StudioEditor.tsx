@@ -6,7 +6,6 @@
  * complete test-chat reply on exactly this draft (R17.3); the checklist says what's
  * missing. Publishing creates an immutable version (AC47).
  */
-import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeft, Check, CircleDashed, Download, History, Loader2, MessageSquarePlus, Pencil, RotateCcw, Send } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 
@@ -74,18 +73,12 @@ function Editor({ initial, catalog, go }: { initial: StudioAgent; catalog: NonNu
     }, AUTOSAVE_MS);
   };
 
-  // While a test chat is open and the draft isn't tested yet, watch for its first reply.
-  const watching = Boolean(testChat) && editable && !state.draft?.tested;
-  useQuery({
-    queryKey: ["studio", "tested", state.id],
-    queryFn: async () => {
-      const fresh = await unwrap(api.GET("/studio/agents/{agent_id}", { params: { path: { agent_id: state.id } } }));
+  // A finished test reply may have just made the draft "tested": ask the server.
+  const recheck = useCallback(() => {
+    void unwrap(api.GET("/studio/agents/{agent_id}", { params: { path: { agent_id: state.id } } })).then((fresh) => {
       refresh(fresh);
-      return fresh.draft?.tested ?? false;
-    },
-    enabled: watching,
-    refetchInterval: watching ? 2500 : false,
-  });
+    });
+  }, [refresh, state.id]);
 
   const run = useCallback(
     async (action: () => Promise<StudioAgent>, after?: (a: StudioAgent) => void) => {
@@ -225,7 +218,7 @@ function Editor({ initial, catalog, go }: { initial: StudioAgent; catalog: NonNu
           </div>
           {testChat ? (
             <div className="min-h-0 flex-1">
-              <ChatView key={testChat} sessionId={testChat} compact agentName={name} />
+              <ChatView key={testChat} sessionId={testChat} compact agentName={name} onTurnEnd={recheck} />
             </div>
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">

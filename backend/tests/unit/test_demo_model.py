@@ -71,3 +71,24 @@ def test_turn_status_is_only_for_a_turns_lifecycle_events() -> None:
         "turn.status", False, "failed", "r")  # fmt: skip
     assert turn_status(event("tool.called")) is None  # not a lifecycle event
     assert turn_status(event("run.completed", None)) is None  # not a chat turn
+
+
+def test_any_agents_helper_gets_the_task() -> None:
+    from agent_runtime.agents.document import AgentDocument, to_raw
+    from agent_runtime.agents.loader import Ceilings, validate_definition
+    from agent_runtime.catalog import default_catalog
+
+    doc = AgentDocument.model_validate({
+        "name": "trip-planner", "description": "Plans trips.", "instructions": "Plan trips.",
+        "helpers": [{"name": "place-finder", "display_name": "Place finder",
+                     "description": "Finds places.", "instructions": "Find places."}],
+    })  # fmt: skip
+    main, helpers = to_raw(doc, 1)
+    ceilings = Ceilings(model_calls=100, tool_calls=100, tokens=10**6, cost_usd=10, timeout_s=600)
+    agent, issues = validate_definition(main, helpers, default_catalog(), ceilings)
+    assert issues == [] and agent is not None
+    script, subs = demo_script("Plan a weekend in Lisbon", agent)
+    assert script[0]["tool_calls"][0]["args"]["agent"] == "place-finder"
+    assert set(subs) == {"place-finder"}
+    for turn in [*script, *subs["place-finder"]]:
+        ScriptTurn.model_validate(turn)

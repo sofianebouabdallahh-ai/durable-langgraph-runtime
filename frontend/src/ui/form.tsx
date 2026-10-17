@@ -113,12 +113,14 @@ export function Switch({
   label,
   description,
   disabled = false,
+  hideLabel = false,
 }: {
   checked: boolean;
   onChange: (on: boolean) => void;
   label: string;
   description?: ReactNode;
   disabled?: boolean;
+  hideLabel?: boolean; // the label is visible elsewhere (a card's title): screen readers only
 }) {
   const id = useId();
   return (
@@ -136,7 +138,7 @@ export function Switch({
       >
         <span className={`inline-block size-5 rounded-full bg-white shadow transition ${checked ? "translate-x-[18px]" : "translate-x-0.5"}`} />
       </button>
-      <label htmlFor={id} className="min-w-0 cursor-pointer text-sm">
+      <label htmlFor={id} className={hideLabel ? "sr-only" : "min-w-0 cursor-pointer text-sm"}>
         <span className="block font-medium text-stone-800 dark:text-stone-200">{label}</span>
         {description && <span className="block text-stone-500 dark:text-stone-400">{description}</span>}
       </label>

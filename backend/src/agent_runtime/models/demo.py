@@ -110,6 +110,28 @@ def _research(text: str) -> tuple[Script, SubScripts]:
     return script, subs
 
 
+def _delegate(text: str, helper: str, label: str) -> tuple[Script, SubScripts]:
+    """Any agent's helpers (Studio agents): hand the task to the first one."""
+    script: Script = [
+        {"tool_calls": [{"name": "spawn_subagent", "args": {"agent": helper, "task": text[:500]}}]},
+        {"tool_calls": [{"name": "wait_subagents",
+                         "args": {"handles": [_HANDLE % 0], "timeout_s": 120}}]},
+        {"content": f"My helper **{label}** worked on it; its report is in the card above."},
+    ]  # fmt: skip
+    subs: SubScripts = {
+        helper: [
+            {"tool_calls": [{"name": "report_progress",
+                             "args": {"message": "Working on it", "percent": 50}}]},
+            {"tool_calls": [{"name": "return_result",
+                             "args": {"summary": f"{label} looked into: {text[:200]}"}}]},
+        ]
+    }  # fmt: skip
+    return script, subs
+
+
+DELEGATE = re.compile(r"\b(research|investigate|find|plan|ask|look into|delegate)\b", re.IGNORECASE)
+
+
 def _notify(text: str) -> tuple[Script, SubScripts]:
     return [
         {"content": "This sends a message to people, so it waits for your approval.",
@@ -162,4 +184,12 @@ def demo_script(text: str, agent: AgentDefinition | None) -> tuple[Script, SubSc
     for rule in RULES:
         if all(n in available for n in rule.needs) and rule.match(text):
             return rule.script(text)
+        if (
+            rule.name == "research"
+            and agent is not None
+            and agent.subagents
+            and DELEGATE.search(text)
+        ):
+            first = agent.subagents[0].frontmatter  # an agent with its own helpers
+            return _delegate(text, first.name, first.display_name or first.name)
     return [{"content": HELP}], {}

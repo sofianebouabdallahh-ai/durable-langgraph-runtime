@@ -160,6 +160,7 @@ function ToolCards({
                     onToggle(t.name, on);
                   }}
                   label={`Use ${t.label}`}
+                  hideLabel
                 />
               </div>
               {chosen && onCap && (
