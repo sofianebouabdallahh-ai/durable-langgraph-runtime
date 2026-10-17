@@ -43,6 +43,7 @@ from agent_runtime.runs.executor import RunExecutor, default_owner
 from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.state import RunStatus
 from agent_runtime.runs.store import Run, RunNotFound, RunTerminal
+from agent_runtime.streaming.bus import EventBus
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +68,7 @@ class Worker:
         *,
         consumer: str | None = None,
         concurrency: int | None = None,
+        bus: EventBus | None = None,
     ) -> None:
         self._pool = pool
         self._queue = queue
@@ -75,6 +77,7 @@ class Worker:
         self.consumer = consumer or default_owner()
         self.concurrency = concurrency or settings.worker_concurrency
         self._relay = OutboxRelay(pool, queue, stale_s=settings.relay_stale_s)
+        self._bus = bus
         self._inflight: dict[str, asyncio.Task[None]] = {}
         self._draining = asyncio.Event()  # handed to executors as `release_requested`
         self._paused_cache: tuple[float, bool] = (0.0, False)
@@ -138,7 +141,7 @@ class Worker:
         executor = RunExecutor(
             self._pool, self._settings, self._graphs, owner=self.consumer,
             on_heartbeat=lambda: self._queue.touch(self.consumer, delivery.message_id),
-            release_requested=self._draining,
+            release_requested=self._draining, bus=self._bus,
         )  # fmt: skip
         try:
             run = await executor.execute(delivery.run_id)

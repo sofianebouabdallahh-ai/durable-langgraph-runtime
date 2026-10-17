@@ -18,6 +18,17 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - CR-004 + ADR-0003 (accepted): agents defined as `backend/agents/*.agent.md` (name, max turns, prompt, tools, limits, hooks); hooks for session start/end, turn start/end and pre/post tool, built on LangChain middleware plus harness-owned session hooks.
 - CR-003 (accepted): harness guardrails. Run budgets with a soft→hard wrap-up, loop detection, ceilings that callers can only tighten, deny-by-default tool grants, least-privilege DB roles, untrusted-content handling, audit trail, kill switch.
 
+### Phase 3 — Streaming across replicas
+#### Added
+- `EventBus` port: Redis Pub/Sub adapter + in-memory fake (one contract suite); wire format for persisted and transient events; `run:` / `session:` channels.
+- Publish after commit: events announced only once their transaction has committed (checkpointer `after_commit` hook, `RunRepository.emitted`).
+- `StreamMerger`: pure replay/live/dedup/back-fill algorithm with property-based tests (`hypothesis`).
+- Per-replica `Broker`: one Pub/Sub subscription multiplexed over all streams, reference-counted channels, bounded per-stream queues with catch-up.
+- `GET /runs/{id}/stream` (SSE): `Last-Event-ID` / `after_seq` resume, safety-net poll, `: ping` keep-alive, no-cache/no-buffering headers, closes after the terminal event.
+- Graceful API drain on SIGTERM (`DrainingServer`): `/readyz` 503, new streams 503 + `Retry-After`, `event: reconnect` to open streams.
+- E2E scenarios with multiple API replicas; `make demo-replicas` (AC3).
+- ADR-0004 (Redis Pub/Sub vs LISTEN/NOTIFY vs Streams vs polling).
+
 ### Phase 2 — Distributed workers
 #### Added
 - `WorkQueue` port with a Redis Streams adapter and an in-memory fake, verified by one contract suite.

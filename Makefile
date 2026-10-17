@@ -22,7 +22,7 @@ BACKEND     := cd backend && uv run --frozen
 BACKEND_ENV := cd backend && uv run --frozen --env-file $(ENV_FILE)
 
 .DEFAULT_GOAL := help
-.PHONY: help env hooks up down nuke ps logs migrate migration api worker run-toy demo-crash demo-zombie demo-release demo-e2e lint fmt typecheck agents-validate test test-unit test-integration coverage check
+.PHONY: help env hooks up down nuke ps logs migrate migration api worker run-toy demo-crash demo-zombie demo-release demo-replicas demo-e2e lint fmt typecheck agents-validate test test-unit test-integration coverage check
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -84,6 +84,10 @@ demo-zombie: env ## AC5: SIGSTOP the owner past its lease, then SIGCONT: its wri
 
 demo-release: env ## SIGTERM the owner: graceful hand-off in < 5 s, not a reclaim
 	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e release --repeat $(or $(REPEAT),1)
+
+demo-replicas: env ## AC3: stream from any replica; Pub/Sub off stalls; replica shutdown mid-stream
+	cd backend && for s in replicas stall api-shutdown; do \
+		uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e $$s --repeat $(or $(REPEAT),1) || exit 1; done
 
 demo-e2e: env ## All end-to-end scenarios
 	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e all --repeat $(or $(REPEAT),1)

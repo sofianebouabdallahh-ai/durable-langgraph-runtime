@@ -24,6 +24,10 @@ from agent_runtime.runs.store import RunNotFound, RunTerminal
 log = logging.getLogger(__name__)
 
 
+class ApiDraining(Exception):
+    """This replica is shutting down (R10.7); the client should use another one."""
+
+
 class ResultNotReady(Exception):
     def __init__(self, run_id: uuid.UUID) -> None:
         super().__init__(f"run {run_id} has no result yet")
@@ -50,6 +54,12 @@ def install(app: FastAPI) -> None:
     @app.exception_handler(RunNotFound)
     async def _run_not_found(_: Request, exc: RunNotFound) -> JSONResponse:
         return problem(404, "run-not-found", "Run not found", str(exc), run_id=str(exc.run_id))
+
+    @app.exception_handler(ApiDraining)
+    async def _draining(_: Request, exc: ApiDraining) -> JSONResponse:
+        response = problem(503, "draining", "Replica shutting down", "Retry on another replica.")
+        response.headers["Retry-After"] = "1"
+        return response
 
     @app.exception_handler(ResultNotReady)
     async def _no_result(_: Request, exc: ResultNotReady) -> JSONResponse:

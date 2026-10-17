@@ -40,11 +40,13 @@ from langgraph.checkpoint.serde.base import SerializerProtocol
 from agent_runtime.db import Conn, Pool
 from agent_runtime.fencing import Fence, FencedError, check_fence
 
-__all__ = ["Fence", "FencedCheckpointer", "FencedError", "OnCommit", "check_fence"]
+__all__ = ["AfterCommit", "Fence", "FencedCheckpointer", "FencedError", "OnCommit", "check_fence"]
 
 # Called inside the checkpoint's transaction, after LangGraph's write: whatever it
 # writes commits atomically with the checkpoint (Transactional Outbox, R1.5).
 OnCommit = Callable[[Conn, CheckpointMetadata], Awaitable[None]]
+# Called after that transaction has committed (e.g. publish its events).
+AfterCommit = Callable[[], Awaitable[None]]
 
 
 class FencedCheckpointer(AsyncPostgresSaver):
@@ -59,11 +61,13 @@ class FencedCheckpointer(AsyncPostgresSaver):
         fence: Fence,
         *,
         on_commit: OnCommit | None = None,
+        after_commit: AfterCommit | None = None,
         serde: SerializerProtocol | None = None,
     ) -> None:
         super().__init__(pool, serde=serde)
         self._pool = pool
         self._on_commit = on_commit
+        self._after_commit = after_commit
         self.fence = fence
 
     @asynccontextmanager
@@ -85,7 +89,10 @@ class FencedCheckpointer(AsyncPostgresSaver):
             next_config = await inner.aput(config, checkpoint, metadata, new_versions)
             if self._on_commit is not None:
                 await self._on_commit(conn, metadata)
-            return next_config
+        # Only reached if the transaction committed.
+        if self._after_commit is not None:
+            await self._after_commit()
+        return next_config
 
     async def aput_writes(
         self,

@@ -20,6 +20,7 @@ from agent_runtime.runs.limits import RunOptions, resolve_limits
 from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.state import RunStatus
 from agent_runtime.runs.store import Run, RunRepository, RunTerminal
+from agent_runtime.streaming.bus import EventBus, publish_events
 
 log = logging.getLogger(__name__)
 
@@ -39,11 +40,13 @@ class RunService:
         settings: Settings,
         graphs: GraphRegistry,
         relay: OutboxRelay | None = None,
+        bus: EventBus | None = None,
     ) -> None:
         self._pool = pool
         self._settings = settings
         self._graphs = graphs
         self._relay = relay
+        self._bus = bus
 
     async def create_run(
         self,
@@ -70,12 +73,14 @@ class RunService:
         run_options = RunOptions.model_validate(options or {})
         limits = resolve_limits(self._settings, run_options)
         async with self._pool.connection() as conn:
-            run = await RunRepository(conn).create(
+            repo = RunRepository(conn)
+            run = await repo.create(
                 graph_name=graph,
                 input=validated_input.model_dump(mode="json"),
                 options=run_options.model_dump(exclude_none=True),
                 limits=limits.model_dump(),
             )
+        await publish_events(self._bus, repo.emitted)  # after commit (R1.5)
         if enqueue and self._relay is not None:
             try:
                 await self._relay.enqueue(run.id)
@@ -88,7 +93,10 @@ class RunService:
         """R1.6: queued or waiting → cancelled now; running → its worker stops at the
         next node. Raises RunTerminal (→ 409) or RunNotFound (→ 404)."""
         async with self._pool.connection() as conn:
-            return await RunRepository(conn).request_cancel(run_id)
+            repo = RunRepository(conn)
+            run = await repo.request_cancel(run_id)
+        await publish_events(self._bus, repo.emitted)
+        return run
 
     async def resume(self, run_id: uuid.UUID) -> Run:
         """R1.3, idempotent: (re)send work for a run that needs it; do nothing for a

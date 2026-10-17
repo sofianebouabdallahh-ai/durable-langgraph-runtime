@@ -76,6 +76,13 @@ class Settings(AgentSettings):
     relay_interval_s: float = Field(default=10.0, gt=0)  # outbox relay sweep period
     relay_stale_s: float = Field(default=30.0, gt=0)  # re-send a queued run's message after this
 
+    # Streaming (R2.5, §5). Pub/Sub is only a wake-up hint; Postgres is the record.
+    stream_ping_s: float = Field(default=15.0, gt=0)  # SSE keep-alive comment (§5)
+    stream_poll_s: float = Field(default=15.0, gt=0)  # safety-net poll when no live event
+    stream_queue_size: int = Field(default=1000, gt=0)  # per stream; overflow → catch up from DB
+    stream_live_enabled: bool = True  # False = no Pub/Sub (AC3 demo: the stream stalls)
+    api_grace_s: float = Field(default=25.0, gt=0)  # drain open streams on SIGTERM (R10.7)
+
     # Kill switch / admin endpoints (R14.18): internal only, never routed by the Ingress.
     admin_api_enabled: bool = True
 

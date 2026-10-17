@@ -155,6 +155,10 @@ class RunRepository:
 
     def __init__(self, conn: Conn) -> None:
         self._conn = conn
+        # Every event this repository wrote. Callers publish them *after* their
+        # transaction commits (R1.5), never before: an event must exist in
+        # Postgres before anyone hears about it, and a rolled-back one never.
+        self.emitted: list[Event] = []
 
     async def create(
         self,
@@ -225,7 +229,9 @@ class RunRepository:
             (run_id, row["last_event_seq"], epoch, str(type), Jsonb(payload)),
         )
         event_row = _required(await cur.fetchone(), "INSERT INTO run_events … RETURNING")
-        return Event.from_row(event_row)
+        event = Event.from_row(event_row)
+        self.emitted.append(event)
+        return event
 
     async def transition(
         self,

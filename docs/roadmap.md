@@ -63,8 +63,8 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 | 0 | Foundations | ✅ Done — [summary](progress/phase-00.md) |
 | 1 | Durable single run | ✅ Done — [summary](progress/phase-01.md) |
 | 2 | Distributed workers | ✅ Done — [summary](progress/phase-02.md) |
-| 3 | Streaming across replicas | ⏳ Next |
-| 4 | Tools & human-in-the-loop | — |
+| 3 | Streaming across replicas | ✅ Done — [summary](progress/phase-03.md) |
+| 4 | Tools & human-in-the-loop | ⏳ Next |
 | 5 | Sub-runs, sub-agents & backpressure | — |
 | 6 | Chat sessions + chat agent | — |
 | 7 | Sandboxes | — |
@@ -122,14 +122,14 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 **Learn:** at-least-once delivery, leases, fencing tokens, zombies, the reasons for idempotency.
 **Done when:** **AC2** (crash-and-resume) and **AC5** (zombie safety) pass via `make demo-crash`.
 
-### Phase 3 — Streaming across replicas · ~6–8 h
+### Phase 3 — Streaming across replicas · ~6–8 h (actual ~12 h; plan: [plans/phase-03.md](plans/phase-03.md))
 **Goal:** any API replica can stream any run without losing events.
 - Redis Pub/Sub publish-after-persist; subscribe → replay → dedup → gap back-fill (R2.5). The code is generic over `run:{id}` and `session:{id}` channels (CR-001 amendment).
 - SSE with `Last-Event-ID` and a 15 s heartbeat (CR-001 D3)
-- Compose with 2 API and 2 worker replicas
+- Multiple API replicas + workers as local processes (Compose/containers in phase 12, as in phase 2)
 
 **Learn:** pub/sub vs. persistent logs, ordering, exactly-once *display* on top of at-least-once delivery.
-**Done when:** **AC3** passes via `make demo-replicas`.
+**Done when:** **AC3** passes via `make demo-replicas`, plus SC1–SC11 in the plan.
 
 ### Phase 4 — Tools & human-in-the-loop · ~8–10 h
 **Goal:** tools are safe to retry, and runs can pause for a human.

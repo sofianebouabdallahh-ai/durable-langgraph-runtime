@@ -14,17 +14,19 @@ the Ingress never routes `/admin` (phase 12).
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response, status
+from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request, Response, status
+from fastapi.responses import StreamingResponse
 
 from agent_runtime import __doc__ as package_doc
 from agent_runtime.admin import AdminRepository, AdminState
 from agent_runtime.api import problems
-from agent_runtime.api.problems import ResultNotReady
+from agent_runtime.api.problems import ApiDraining, ResultNotReady
 from agent_runtime.api.schemas import (
     CreateRunRequest,
     CreateRunResponse,
@@ -44,6 +46,9 @@ from agent_runtime.queue import RedisWorkQueue, WorkQueue, create_redis
 from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.service import RunService
 from agent_runtime.runs.store import RunRepository
+from agent_runtime.streaming.broker import Broker
+from agent_runtime.streaming.bus import EventBus, RedisEventBus
+from agent_runtime.streaming.session import RunStream
 
 # ----------------------------------------------------------------- dependencies
 
@@ -146,6 +151,44 @@ async def resume_run(run_id: uuid.UUID, service: ServiceDep) -> RunView:
     return RunView.of(await service.resume(run_id))
 
 
+@runs.get(
+    "/{run_id}/stream",
+    summary="Live event stream (SSE)",
+    description="Replays persisted events after `Last-Event-ID` (or `after_seq`), then streams "
+    "live ones from any replica (R2.5). Persisted events carry `id: <seq>`. A `: ping` comment "
+    "is sent when idle; the stream closes after the run's terminal event; on replica shutdown "
+    "an `event: reconnect` tells the client to reconnect with its Last-Event-ID.",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {}}}, 503: {"description": "Draining"}},
+)
+async def stream_run(
+    run_id: uuid.UUID,
+    request: Request,
+    pool: PoolDep,
+    after_seq: Annotated[int | None, Query(ge=0)] = None,
+    last_event_id: Annotated[str | None, Header()] = None,
+) -> StreamingResponse:
+    if request.app.state.draining.is_set():
+        raise ApiDraining
+    async with pool.connection() as conn:
+        await RunRepository(conn).get(run_id)  # 404 before opening a stream
+    start = after_seq or 0
+    if last_event_id is not None and last_event_id.isdigit():
+        start = int(last_event_id)  # a browser reconnect wins over the query parameter
+    stream = RunStream(
+        pool, request.app.state.broker, request.app.state.settings, run_id,
+        after_seq=start, draining=request.app.state.draining,
+    )  # fmt: skip
+    return StreamingResponse(
+        stream.events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",  # never cache a live stream
+            "X-Accel-Buffering": "no",  # nginx / Ingress: don't buffer (R10.3)
+        },
+    )
+
+
 graphs_router = APIRouter(prefix="/graphs", tags=["graphs"])
 
 
@@ -189,6 +232,9 @@ async def healthz() -> Health:
     responses={503: {"description": "Not ready"}},
 )
 async def readyz(request: Request, pool: PoolDep, response: Response) -> Health:
+    if request.app.state.draining.is_set():  # R10.7: stop receiving new traffic
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return Health(status="draining")
     try:
         async with pool.connection(timeout=2) as conn:
             await conn.execute("SELECT 1")
@@ -239,6 +285,7 @@ def create_app(
     *,
     pool: Pool | None = None,
     queue: WorkQueue | None = None,
+    bus: EventBus | None = None,
     graphs: GraphRegistry | None = None,
 ) -> FastAPI:
     """Build the app. Pass `pool` / `queue` to reuse open ones (tests); otherwise
@@ -249,27 +296,38 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         redis = None
-        work_queue = queue
-        if work_queue is None:
+        work_queue, event_bus = queue, bus
+        if work_queue is None or event_bus is None:
             redis = create_redis(settings.redis_url)
-            work_queue = RedisWorkQueue(redis, settings.work_stream, settings.work_group)
+            work_queue = work_queue or RedisWorkQueue(
+                redis, settings.work_stream, settings.work_group
+            )
+            event_bus = event_bus or RedisEventBus(redis)
         app.state.redis = redis
+        broker = Broker(
+            event_bus if settings.stream_live_enabled else None,
+            queue_size=settings.stream_queue_size,
+        )
+        await broker.start()
+        app.state.broker = broker
+        app.state.loop = asyncio.get_running_loop()  # for the signal handler (cli._api)
         try:
             if pool is not None:
-                _wire(app, pool, work_queue)
+                _wire(app, pool, work_queue, event_bus)
                 yield
                 return
             async with create_pool(settings) as owned:
-                _wire(app, owned, work_queue)
+                _wire(app, owned, work_queue, event_bus)
                 yield
         finally:
+            await broker.stop()
             if redis is not None:
                 await redis.aclose()
 
-    def _wire(app: FastAPI, p: Pool, q: WorkQueue) -> None:
+    def _wire(app: FastAPI, p: Pool, q: WorkQueue, b: EventBus) -> None:
         app.state.pool = p
         relay = OutboxRelay(p, q, stale_s=settings.relay_stale_s)
-        app.state.service = RunService(p, settings, graphs, relay)
+        app.state.service = RunService(p, settings, graphs, relay, b)
 
     app = FastAPI(
         title="Agent Runtime API",
@@ -278,7 +336,12 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.graphs = graphs
+    app.state.settings = settings
     app.state.redis = None
+    # Set when the server is asked to stop (R10.7): readyz fails, new streams are
+    # refused, open streams send `reconnect` and close.
+    app.state.draining = asyncio.Event()
+    app.state.loop = None
     problems.install(app)
     app.include_router(runs)
     app.include_router(graphs_router)

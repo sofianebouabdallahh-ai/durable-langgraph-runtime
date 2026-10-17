@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import os
 import signal
 import socket
@@ -33,6 +34,8 @@ TIMINGS = {
     "RELAY_INTERVAL_S": "2",
     "RELAY_STALE_S": "5",
     "WORKER_GRACE_S": "20",
+    "STREAM_POLL_S": "3",  # safety-net poll; visible as a "stall" when Pub/Sub is off
+    "API_GRACE_S": "10",
     "LOG_LEVEL": "INFO",
 }
 LEASE_TTL_S = float(TIMINGS["LEASE_TTL_S"])
@@ -46,11 +49,18 @@ def _free_port() -> int:
 
 
 class Cluster:
-    def __init__(self, *, workers: int = 2, concurrency: int = 2) -> None:
+    def __init__(
+        self,
+        *,
+        workers: int = 2,
+        concurrency: int = 2,
+        api_replicas: list[dict[str, str]] | None = None,
+    ) -> None:
         settings = get_settings()
         self._admin_url = settings.database_url(driver="postgresql")
         self.db = f"agent_runtime_e2e_{uuid.uuid4().hex[:8]}"
-        self.port = _free_port()
+        # One dict of extra environment per API replica (e.g. live streaming off).
+        self.replica_envs = api_replicas or [{}]
         self.workers_n = workers
         self.concurrency = concurrency
         self.logs = Path(tempfile.mkdtemp(prefix="e2e-"))
@@ -65,20 +75,31 @@ class Cluster:
             }
         )
         self._log_paths: dict[int, Path] = {}
-        self.api: subprocess.Popen[bytes] | None = None
+        self.apis: list[subprocess.Popen[bytes]] = []
+        self.clients: list[httpx.AsyncClient] = []
         self.workers: list[subprocess.Popen[bytes]] = []
-        self.client = httpx.AsyncClient(base_url=f"http://127.0.0.1:{self.port}", timeout=10)
 
     # --------------------------------------------------------------- lifecycle
 
     async def __aenter__(self) -> Cluster:
         # Blocking setup work runs in a thread so the event loop stays responsive.
         await asyncio.to_thread(self._prepare_database)
-        self.api = self._spawn("api", "api", "--port", str(self.port))
+        for i, extra in enumerate(self.replica_envs):
+            port = _free_port()
+            self.apis.append(self._spawn(f"api-{i}", "api", "--port", str(port), extra_env=extra))
+            self.clients.append(httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", timeout=10))
         for i in range(self.workers_n):
             self.start_worker(f"worker-{i}")
-        await self.wait(self._api_ready, timeout_s=30, what="API ready")
+        for client in self.clients:
+            await self.wait(
+                functools.partial(self._api_ready, client), timeout_s=30, what="API ready"
+            )
         return self
+
+    @property
+    def client(self) -> httpx.AsyncClient:
+        """Replica 0, for scenarios that don't care which replica they use."""
+        return self.clients[0]
 
     async def __aexit__(
         self,
@@ -86,7 +107,8 @@ class Cluster:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
-        await self.client.aclose()
+        for client in self.clients:
+            await client.aclose()
         await asyncio.to_thread(self._teardown)
 
     def _prepare_database(self) -> None:
@@ -98,7 +120,7 @@ class Cluster:
                 raise RuntimeError(f"runtime {' '.join(cmd)} failed: {done.stderr.decode()}")
 
     def _teardown(self) -> None:
-        procs = [p for p in [self.api, *self.workers] if p is not None]
+        procs = [*self.apis, *self.workers]
         for p in procs:
             if p.poll() is None:
                 try:
@@ -126,19 +148,23 @@ class Cluster:
     def _cmd(self, *args: str) -> list[str]:
         return [sys.executable, "-m", "agent_runtime.cli", *args]
 
-    def _spawn(self, name: str, *args: str) -> subprocess.Popen[bytes]:
+    def _spawn(
+        self, name: str, *args: str, extra_env: dict[str, str] | None = None
+    ) -> subprocess.Popen[bytes]:
         path = self.logs / f"{name}.log"
         log = path.open("wb")
-        proc = subprocess.Popen(self._cmd(*args), cwd=BACKEND, env=self.env, stdout=log, stderr=log)
+        env = self.env | (extra_env or {})
+        proc = subprocess.Popen(self._cmd(*args), cwd=BACKEND, env=env, stdout=log, stderr=log)
         self._log_paths[proc.pid] = path
         return proc
 
     def log_of(self, pid: int) -> str:
         return self._log_paths[pid].read_text(errors="replace")
 
-    async def _api_ready(self) -> bool:
+    @staticmethod
+    async def _api_ready(client: httpx.AsyncClient) -> bool:
         try:
-            return (await self.client.get("/readyz")).status_code == 200
+            return (await client.get("/readyz")).status_code == 200
         except httpx.TransportError:
             return False
 
