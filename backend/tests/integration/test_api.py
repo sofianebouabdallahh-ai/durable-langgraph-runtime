@@ -194,3 +194,18 @@ async def test_admin_routes_can_be_disabled(
         httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c,
     ):
         assert (await c.post("/admin/pause", json={})).status_code == 404
+
+
+async def test_ac28_tool_call_ceiling_via_post_runs(client: httpx.AsyncClient) -> None:
+    """CR-003 AC28: above the ceiling → 422 naming the field and its maximum; a lower
+    value is honoured."""
+    body = {"graph": "assistant", "input": {"message": "m"}}
+    too_many = await client.post("/runs", json=body | {"options": {"max_tool_calls": 1000}})
+    assert too_many.status_code == 422
+    problem = too_many.json()
+    assert problem["type"].endswith("/limit-above-ceiling")
+    assert (problem["field"], problem["maximum"]) == ("options.max_tool_calls", 100)
+    ok = await client.post("/runs", json=body | {"options": {"max_tool_calls": 3}})
+    assert ok.status_code == 202
+    run = (await client.get(f"/runs/{ok.json()['run_id']}")).json()
+    assert run["limits"]["max_tool_calls"] == 3

@@ -35,10 +35,18 @@ class Outbox:
     counts_steps: bool = True
     transcript: TranscriptWriter | None = None  # chat turns: the transcript, same txn
     pending: list[tuple[EventType, dict[str, Any]]] = field(default_factory=list)
+    # Tokens and cost of this step's model calls: counted when the step commits, so the
+    # run's totals are exactly the sum of its committed steps (AC26), across reclaims.
+    tokens: int = 0
+    cost: float = 0.0
     _just_written: list[Event] = field(default_factory=list)
 
     def stage(self, type: EventType, payload: dict[str, Any]) -> None:
         self.pending.append((type, payload))
+
+    def add_usage(self, tokens: int, cost: float) -> None:
+        self.tokens += tokens
+        self.cost += cost
 
     async def flush(self, repo: RunRepository) -> None:
         for type, payload in self.pending:
@@ -58,6 +66,9 @@ class Outbox:
         if self.counts_steps and loop_step:
             self.committed_steps = await repo.add_steps(self.run_id, 1)
         await self.flush(repo)
+        if self.tokens or self.cost:
+            await repo.add_usage(self.run_id, self.tokens, self.cost)
+            self.tokens, self.cost = 0, 0.0
         self._just_written = repo.emitted  # replaced, not appended: a rollback discards it
 
     async def after_commit(self) -> None:

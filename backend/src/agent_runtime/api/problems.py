@@ -90,8 +90,8 @@ def install(app: FastAPI) -> None:
     @app.exception_handler(Overloaded)
     async def _overloaded(_: Request, exc: Overloaded) -> JSONResponse:
         response = problem(
-            429, "overloaded", "Too many runs waiting", str(exc),
-            queue_depth=exc.depth, limit=exc.limit,
+            429, "overloaded", "Too many requests", str(exc),
+            reason=exc.reason, queue_depth=exc.depth, limit=exc.limit,
         )  # fmt: skip
         response.headers["Retry-After"] = str(exc.retry_after_s)
         return response

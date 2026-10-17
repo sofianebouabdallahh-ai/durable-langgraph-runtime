@@ -109,6 +109,7 @@ class ScriptedChatModel(BaseChatModel):
                 }
                 for i, c in enumerate(step.tool_calls)
             ],
+            response_metadata={"model_name": "scripted"},
             usage_metadata={
                 "input_tokens": prompt_tokens,
                 "output_tokens": len(step.content) // 4 + 1,

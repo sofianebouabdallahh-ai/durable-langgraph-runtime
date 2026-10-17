@@ -169,6 +169,7 @@ class SessionService:
                 locked = await repo.lock(session_id)
                 if locked.status != "active":
                     raise SessionArchived(session_id)
+                await self._check_rate(repo, session_id)
                 if locked.active_run_id is not None:
                     raise TurnActive(session_id, locked.active_run_id,
                                      str(locked.active_run_status))  # fmt: skip
@@ -231,6 +232,17 @@ class SessionService:
                     )  # fmt: skip
             await publish_messages(self._bus, repo.created)
         return run
+
+    async def _check_rate(self, repo: SessionRepository, session_id: uuid.UUID) -> None:
+        """R14.8: at most N user messages per session per minute (under the session lock,
+        so concurrent senders can't both slip through)."""
+        limit = self._settings.session_messages_per_minute
+        recent = await repo.recent_user_messages(session_id, within_s=60)
+        if recent >= limit:
+            raise Overloaded(
+                recent, limit, retry_after_s=60, reason="rate_limited",
+                detail=f"at most {limit} messages per minute in a session",
+            )  # fmt: skip
 
     async def _active(self, session_id: uuid.UUID) -> uuid.UUID:
         session = await self.get(session_id)

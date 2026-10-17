@@ -39,6 +39,7 @@ from agent_runtime.sessions.store import Message, MessageType, NewMessage, Sessi
 from agent_runtime.sessions.store import message_id as make_id
 from agent_runtime.sessions.turns import REPAIR_PREFIX, baseline
 from agent_runtime.streaming.bus import EventBus, StreamEvent, session_channel
+from agent_runtime.tools.hooks import redact
 
 log = logging.getLogger(__name__)
 
@@ -70,7 +71,14 @@ def _result(message: ToolMessage) -> dict[str, Any]:
 
 
 def transcript_of(messages: list[BaseMessage], run_id: uuid.UUID) -> list[NewMessage]:
-    """What this turn contributes to the transcript, given the thread's messages."""
+    """What this turn contributes to the transcript, given the thread's messages.
+    Secret-looking strings are redacted (R14.12): the model's own tool-call args are
+    recorded as it produced them, before any pre_tool hook ran."""
+    return [NewMessage(m.message_id, m.type, redact(m.content))
+            for m in _transcript_of(messages, run_id)]  # fmt: skip
+
+
+def _transcript_of(messages: list[BaseMessage], run_id: uuid.UUID) -> list[NewMessage]:
     start = baseline(messages, run_id)
     if start is None:
         return []
@@ -85,10 +93,14 @@ def transcript_of(messages: list[BaseMessage], run_id: uuid.UUID) -> list[NewMes
             text = _text(m.content)
             if text:
                 usage: dict[str, Any] = dict(m.usage_metadata or {})
-                out.append(NewMessage(make_id(run_id, "messages", i, "assistant"), "assistant", {
+                content: dict[str, Any] = {
                     "text": text, "model": m.response_metadata.get("model_name"),
                     "tokens": usage.get("total_tokens"),
-                }))  # fmt: skip
+                }  # fmt: skip
+                if m.additional_kwargs.get("budget_limited"):  # R14.2: "stopped early"
+                    content["budget_limited"] = True
+                out.append(NewMessage(make_id(run_id, "messages", i, "assistant"), "assistant",
+                                      content))  # fmt: skip
             for j, tc in enumerate(m.tool_calls):
                 out.append(NewMessage(make_id(run_id, "messages", f"{i}.{j}", "tool_call"),
                                       "tool_call", {"tool_call_id": tc["id"], "tool": tc["name"],

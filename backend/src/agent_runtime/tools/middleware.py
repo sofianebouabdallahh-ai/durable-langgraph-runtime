@@ -40,6 +40,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langgraph.runtime import Runtime
 from langgraph.types import Command
 
+from agent_runtime.models.retry import ModelCaller
 from agent_runtime.models.scripted import ScriptedChatModel, ScriptTurn
 from agent_runtime.sessions.turns import script_offset
 from agent_runtime.tools.hooks import (
@@ -49,10 +50,11 @@ from agent_runtime.tools.hooks import (
     TurnHookInput,
     run_context_hooks,
 )
-from agent_runtime.tools.invocations import charge_model_call
+from agent_runtime.tools.invocations import LoopDetected, charge_model_call
 from agent_runtime.tools.pipeline import ToolCall, ToolPipeline, ToolRunContext
 
 if TYPE_CHECKING:
+    from agent_runtime.runs.limits import RunLimits
     from agent_runtime.subagents.orchestrator import SubagentOrchestrator, SubagentRuntime
 
 
@@ -91,6 +93,32 @@ class RunContext:
     orchestrator: SubagentOrchestrator | None = None  # a main agent with sub-agents
     subagent: SubagentRuntime | None = None  # this graph IS a sub-agent
     turn: TurnInfo | None = None  # main agents: session and turn hooks
+    caller: ModelCaller = field(default_factory=ModelCaller)  # retries + breaker (R14.7)
+    limits: RunLimits | None = None  # the run's budgets, for the soft limit (R14.2)
+    soft_limit_ratio: float = 0.8
+    record_usage: Callable[[str, int, int], None] | None = None  # (model, in, out tokens)
+
+    async def soft_limit(self) -> str | None:
+        """The first budget at ≥ soft_limit_ratio of its limit, as a failure reason."""
+        if self.limits is None:
+            return None
+        async with self.tools.pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT model_calls, tool_calls_total, tokens, cost FROM runs WHERE id = %s",
+                (self.tools.fence.run_id,),
+            )
+            row = await cur.fetchone()
+        if row is None:
+            return None
+        for reason, used, limit in (
+            ("budget:model_calls", row["model_calls"], self.max_model_calls),
+            ("budget:tool_calls", row["tool_calls_total"], self.limits.max_tool_calls),
+            ("budget:tokens", row["tokens"], self.limits.max_tokens),
+            ("budget:cost", float(row["cost"]), self.limits.max_cost_usd),
+        ):
+            if limit and used >= self.soft_limit_ratio * limit:
+                return reason
+        return None
 
 
 def call_index(messages: list[Any], tool_call_id: str) -> int:
@@ -147,24 +175,44 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
         request: ModelRequest[RunContext],
         handler: Callable[[ModelRequest[RunContext]], Awaitable[ModelResponse[Any]]],
     ) -> ModelResponse[Any]:
+        """One model step, with every guardrail around it:
+
+        charge (before each attempt, R14.7) → soft limit (R14.2: main agents get one
+        wrap-up call with no tools; sub-agents a note) → call, with retries and the
+        breaker → usage (tokens, cost) staged with the step → no-progress check
+        (R14.4) → turn guard (R16.9)."""
         ctx = request.runtime.context
         sub = ctx.subagent
-        if sub is not None:
-            if sub.returned is not None:  # return_result was called: end the loop here
-                return ModelResponse(result=[AIMessage(content=str(sub.returned["summary"]))])
-            await sub.before_model()
-            if sub.orchestrator.wrap_up:
-                from agent_runtime.subagents.orchestrator import WRAP_UP_NOTE
-
-                request = request.override(
-                    messages=[*request.messages, HumanMessage(content=WRAP_UP_NOTE)]
-                )
-        else:
-            await self._charge(ctx)
+        if sub is not None and sub.returned is not None:  # return_result: end the loop here
+            return ModelResponse(result=[AIMessage(content=str(sub.returned["summary"]))])
         model = ScriptedChatModel(
             script=ctx.script, offset=script_offset(request.state.get("messages", []))
         )
-        response = await handler(request.override(model=model))
+        wrap_up: list[str | None] = [None]
+
+        async def charge() -> None:
+            if sub is not None:
+                await sub.before_model()  # cancel check + its own and the run's budget
+            else:
+                await self._charge(ctx)
+
+        async def attempt() -> ModelResponse[Any]:
+            req = request.override(model=model)
+            if sub is not None and sub.orchestrator.wrap_up:
+                from agent_runtime.subagents.orchestrator import WRAP_UP_NOTE
+
+                req = req.override(messages=[*req.messages, HumanMessage(content=WRAP_UP_NOTE)])
+            elif sub is None and (kind := await ctx.soft_limit()):
+                wrap_up[0] = kind  # R14.2: one wrap-up call, with no tools
+                req = req.override(tools=[], messages=[*req.messages, SystemMessage(
+                    content=WRAP_UP_TURN.format(kind=kind.removeprefix("budget:")))])  # fmt: skip
+            return await handler(req)
+
+        response = await ctx.caller.call(attempt, charge=charge)
+        self._account(ctx, response)
+        _check_progress(request.state.get("messages", []), response)
+        if wrap_up[0] is not None:
+            return _budget_limited(response, wrap_up[0])
         orchestrator = ctx.orchestrator
         if orchestrator is not None and _is_final(response) and orchestrator.running():
             outcomes = await orchestrator.wait_all()
@@ -172,15 +220,37 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
                 content="[runtime] Your sub-agents were still running, so the runtime waited "
                 "for them before you finish. Their results: " + json.dumps(outcomes, default=str)
             )
-            await self._charge(ctx)
             messages: list[Any] = [*request.messages, *response.result, note]
-            response = await handler(request.override(model=model, messages=messages))
+
+            async def guarded() -> ModelResponse[Any]:
+                return await handler(request.override(model=model, messages=messages))
+
+            response = await ctx.caller.call(guarded, charge=charge)
+            self._account(ctx, response)
         return response
 
     @staticmethod
     async def _charge(ctx: RunContext) -> None:
+        limits = ctx.limits
         async with ctx.tools.pool.connection() as conn:
-            await charge_model_call(conn, fence=ctx.tools.fence, max_calls=ctx.max_model_calls)
+            await charge_model_call(
+                conn, fence=ctx.tools.fence, max_calls=ctx.max_model_calls,
+                max_tokens=limits.max_tokens if limits else None,
+                max_cost_usd=limits.max_cost_usd if limits else None,
+            )  # fmt: skip
+
+    @staticmethod
+    def _account(ctx: RunContext, response: ModelResponse[Any]) -> None:
+        """Tokens and cost, staged with the step (counted when it commits, R14.1)."""
+        if ctx.record_usage is None:
+            return
+        for m in response.result:
+            if isinstance(m, AIMessage) and m.usage_metadata:
+                u = m.usage_metadata
+                model = str(m.response_metadata.get("model_name", "scripted"))
+                ctx.record_usage(
+                    model, int(u.get("input_tokens", 0)), int(u.get("output_tokens", 0))
+                )
 
     async def awrap_tool_call(
         self,
@@ -208,3 +278,50 @@ def _is_final(response: ModelResponse[Any]) -> bool:
     """The model answered without asking for a tool: the agent would stop here."""
     ai = [m for m in response.result if isinstance(m, AIMessage)]
     return bool(ai) and not ai[-1].tool_calls
+
+
+WRAP_UP_TURN = (
+    "[runtime] This run has used most of its {kind} budget. Tools are no longer "
+    "available. Give your best final answer now with what you already have, and say "
+    "briefly what is left undone."
+)
+STOPPED_EARLY = "I had to stop early: this run reached its budget before I could finish."
+NO_PROGRESS_LIMIT = 5
+
+
+def _budget_limited(response: ModelResponse[Any], reason: str) -> ModelResponse[Any]:
+    """The wrap-up answer (R14.2): never a tool call, whatever the model returned, and
+    marked so the run ends `failed(budget:*)` with this answer stored."""
+    out: list[Any] = []
+    for m in response.result:
+        if isinstance(m, AIMessage):
+            text = m.content if isinstance(m.content, str) and m.content else STOPPED_EARLY
+            m = AIMessage(
+                content=text, id=m.id, usage_metadata=m.usage_metadata,
+                response_metadata=m.response_metadata,
+                additional_kwargs={**m.additional_kwargs, "budget_limited": reason},
+            )  # fmt: skip
+        out.append(m)
+    return ModelResponse(result=out, structured_response=response.structured_response)
+
+
+def _signature(m: AIMessage) -> str:
+    calls = [(tc["name"], tc["args"]) for tc in m.tool_calls]
+    return json.dumps([str(m.content), calls], sort_keys=True, default=str)
+
+
+def _check_progress(state_messages: list[Any], response: ModelResponse[Any]) -> None:
+    """R14.4 no-progress: 5 consecutive model outputs that are identical (the same text
+    and the same tool calls, e.g. polling a sub-agent forever) end the run."""
+    new = next((m for m in response.result if isinstance(m, AIMessage)), None)
+    if new is None:
+        return
+    signature, same = _signature(new), 1
+    for m in reversed(state_messages):
+        if isinstance(m, ToolMessage):
+            continue
+        if not isinstance(m, AIMessage) or _signature(m) != signature:
+            break
+        same += 1
+    if same >= NO_PROGRESS_LIMIT:
+        raise LoopDetected(f"no progress: {same} identical model outputs in a row")

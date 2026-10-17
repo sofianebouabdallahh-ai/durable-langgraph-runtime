@@ -116,7 +116,10 @@ class SubagentRuntime:
                 o.fence, self.handle, model_calls=1,
                 max_model_calls=self.defn.frontmatter.max_turns, max_tool_calls=None,
             )  # fmt: skip
-            await charge_model_call(conn, fence=o.fence, max_calls=o.run_limits.max_model_calls)
+            await charge_model_call(
+                conn, fence=o.fence, max_calls=o.run_limits.max_model_calls,
+                max_tokens=o.run_limits.max_tokens, max_cost_usd=o.run_limits.max_cost_usd,
+            )  # fmt: skip
             await o.check_soft_limit(conn)
 
     async def before_tool(self) -> None:
@@ -170,6 +173,8 @@ class SubagentOrchestrator:
         deadline: float,  # the main run's timeout, as a time.time() value
         scripts: dict[str, list[ScriptTurn]] | None = None,
         limits: SubagentLimits | None = None,
+        model_caller: Callable[[], Any] | None = None,  # retries + breaker (R14.7)
+        usage_recorder: Callable[[Outbox], Callable[[str, int, int], None]] | None = None,
     ) -> None:
         self.pool = pool
         self.fence = fence
@@ -183,6 +188,8 @@ class SubagentOrchestrator:
         self._policy = policy
         self._deadline = deadline
         self._scripts = scripts or {}
+        self._model_caller = model_caller
+        self._usage_recorder = usage_recorder
         self._tasks: dict[uuid.UUID, asyncio.Task[None]] = {}
         self._sem = asyncio.Semaphore(self.limits.max_parallel)
         self.wrap_up = False  # the soft limit was reached (R16.8)
@@ -390,9 +397,14 @@ class SubagentOrchestrator:
             extra_charge=runtime.charge_tool,
         )
         pipeline = ToolPipeline(self._tools, self._policy, interrupt=_no_interrupt)
+        extras: dict[str, Any] = {}
+        if self._model_caller is not None:
+            extras["caller"] = self._model_caller()
+        if self._usage_recorder is not None:  # its tokens and cost roll up into the run
+            extras["record_usage"] = self._usage_recorder(outbox)
         return RunContext(
             tools, pipeline, max_model_calls=self.run_limits.max_model_calls,
-            script=self._scripts.get(inv.name, []), subagent=runtime,
+            script=self._scripts.get(inv.name, []), subagent=runtime, **extras,
         )  # fmt: skip
 
     async def _limit_result(self, inv: Invocation, reason: str) -> dict[str, Any]:

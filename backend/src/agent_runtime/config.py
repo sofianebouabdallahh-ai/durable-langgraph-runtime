@@ -13,7 +13,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
 
-from pydantic import Field, SecretStr, ValidationError, model_validator
+from pydantic import BaseModel, Field, SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ENV_ONLY = SettingsConfigDict(
@@ -21,6 +21,14 @@ _ENV_ONLY = SettingsConfigDict(
     case_sensitive=False,
     extra="ignore",
 )
+
+
+class ModelPrice(BaseModel):
+    input_per_mtok: float = Field(ge=0)
+    output_per_mtok: float = Field(ge=0)
+
+    def cost(self, input_tokens: int, output_tokens: int) -> float:
+        return (input_tokens * self.input_per_mtok + output_tokens * self.output_per_mtok) / 1e6
 
 
 class AgentSettings(BaseSettings):
@@ -48,6 +56,8 @@ class AgentSettings(BaseSettings):
     ceiling_tool_calls: int = Field(default=100, gt=0)
     ceiling_tokens: int = Field(default=1_000_000, gt=0)
     ceiling_cost_usd: float = Field(default=2.0, gt=0)
+    # R14.2: at this share of any budget the agent gets one wrap-up turn.
+    soft_limit_ratio: float = Field(default=0.8, gt=0, lt=1)
 
     # Agent definitions (R15.1): one folder per agent, relative to the working directory.
     agents_dir: Path = Path("agents")
@@ -91,6 +101,22 @@ class Settings(AgentSettings):
 
     # Kill switch / admin endpoints (R14.18): internal only, never routed by the Ingress.
     admin_api_enabled: bool = True
+
+    # Models (R3.1, R14.1, R14.7)
+    # USD per million tokens, by model name; models not listed cost 0.
+    model_prices: dict[str, ModelPrice] = Field(
+        default_factory=lambda: {"scripted": ModelPrice(input_per_mtok=0, output_per_mtok=0)}
+    )
+    model_retry_attempts: int = Field(default=3, ge=1, le=5)  # every attempt is charged
+    model_retry_base_s: float = Field(default=1.0, gt=0)
+    model_retry_cap_s: float = Field(default=20.0, gt=0)
+    breaker_failures: int = Field(default=5, gt=0)  # this many in breaker_window_s → open
+    breaker_window_s: float = Field(default=30.0, gt=0)
+    breaker_open_s: float = Field(default=30.0, gt=0)
+
+    # Admission control (R14.8)
+    session_messages_per_minute: int = Field(default=10, gt=0)
+    global_daily_cost_usd: float | None = Field(default=None, gt=0)  # None: no ceiling
 
     # Sub-agents per run (CR-005 R16.3): configurable down only (R14.3)
     subagent_max_parallel: int = Field(default=4, gt=0, le=4)

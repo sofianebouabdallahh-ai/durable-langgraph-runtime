@@ -65,6 +65,8 @@ class ToolSpec:
     max_calls: int | None = None  # per run, across all executions (R14.1)
     isolation: Isolation = "in_process"  # "sandbox" executes in sandboxd (phase 7, CR-002)
     timeout_s: float | None = None  # overrides the pipeline's default (e.g. wait_subagents)
+    # Polling tools (status, wait) legitimately repeat: exempt from repeat detection.
+    repeatable: bool = False
 
     def json_schema(self) -> dict[str, Any]:
         return self.args_model.model_json_schema()
@@ -97,6 +99,7 @@ class ToolRegistry:
         max_calls: int | None = None,
         isolation: Isolation = "in_process",
         timeout_s: float | None = None,
+        repeatable: bool = False,
     ) -> Callable[[ToolFn], ToolFn]:
         """Decorator: declare a tool next to its implementation."""
 
@@ -113,6 +116,7 @@ class ToolRegistry:
                     max_calls=max_calls,
                     isolation=isolation,
                     timeout_s=timeout_s,
+                    repeatable=repeatable,
                 )
             )
             return fn

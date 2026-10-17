@@ -94,6 +94,12 @@ class ToolResult:
     stage: str = "execute"  # where the call ended (tests and audits)
 
 
+def repeat_hash(call: ToolCall, args: dict[str, Any]) -> str:
+    """R14.4: the same call regardless of its position (node · tool · canonical args)."""
+    canonical = json.dumps(args, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(f"{call.node}·{call.name}·{canonical}".encode()).hexdigest()
+
+
 def idempotency_key(run_id: uuid.UUID, call: ToolCall, args: dict[str, Any]) -> str:
     """R2.6. Deliberately excludes the epoch: a retry after reclaim finds the same key."""
     canonical = json.dumps(args, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -210,6 +216,7 @@ class ToolPipeline:
         # 7+8 ledger: budgets + idempotency
         self._at("ledger")
         key = idempotency_key(ctx.fence.run_id, call, args)
+        repeat = None if spec.repeatable else repeat_hash(call, args)
         grant = ctx.grants[spec.name]
         caps = [c for c in (grant.max_calls, spec.max_calls) if c is not None]
         async with ctx.pool.connection() as conn:
@@ -221,7 +228,8 @@ class ToolPipeline:
                 max_total=ctx.max_tool_calls,
                 max_for_tool=min(caps) if caps else None,
                 extra_charge=ctx.extra_charge,
-            )  # BudgetExceeded propagates: the run fails (R14.1)
+                args_hash=repeat,
+            )  # BudgetExceeded / LoopDetected propagate: the run fails (R14.1, R14.4)
 
         cached = isinstance(begun, invocations.Cached)
         t0 = time.monotonic()

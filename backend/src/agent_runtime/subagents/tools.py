@@ -88,7 +88,8 @@ def register(registry: ToolRegistry) -> ToolRegistry:
         inv = await _orchestrator(ctx).spawn(ctx.key, args.agent, args.task, args.context)
         return {"handle": str(inv.handle), "agent": inv.name, "status": inv.status}
 
-    @registry.tool("subagent_status", args=StatusArgs, risk_class="read", side_effect=False)
+    @registry.tool("subagent_status", args=StatusArgs, risk_class="read", side_effect=False,
+                   repeatable=True)  # fmt: skip
     async def subagent_status(args: StatusArgs, ctx: ToolContext) -> list[dict[str, Any]]:
         """Live status, latest progress message and usage of some or all sub-agents."""
         handles = _handles(args.handles) if args.handles is not None else None
@@ -96,7 +97,7 @@ def register(registry: ToolRegistry) -> ToolRegistry:
         return result
 
     @registry.tool("wait_subagents", args=WaitArgs, risk_class="read", side_effect=False,
-                   timeout_s=WAIT_MAX_S + 5)  # fmt: skip
+                   timeout_s=WAIT_MAX_S + 5, repeatable=True)  # fmt: skip
     async def wait_subagents(args: WaitArgs, ctx: ToolContext) -> dict[str, Any]:
         """Wait up to `timeout_s` for the given sub-agents. Returns the results of those
         that finished and the status of those still running."""
@@ -114,7 +115,7 @@ def register(registry: ToolRegistry) -> ToolRegistry:
         return {"handle": args.handle, "cancel_requested": requested}
 
     @registry.tool("report_progress", args=ProgressArgs, risk_class="write_internal",
-                   side_effect=False)  # fmt: skip
+                   side_effect=False, repeatable=True)  # fmt: skip
     async def report_progress(args: ProgressArgs, ctx: ToolContext) -> dict[str, Any]:
         """Tell the main agent how far you are. At most one update per 2 seconds."""
         dropped = await _subagent(ctx).report_progress(args.message, args.percent)
