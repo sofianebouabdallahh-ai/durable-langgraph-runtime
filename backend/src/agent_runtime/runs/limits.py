@@ -107,3 +107,18 @@ def profile_of(spec: GraphSpec) -> Profile | None:
         max_tokens=fm.limits.max_tokens,
         max_cost_usd=fm.limits.max_cost_usd,
     )
+
+
+def playground_limits(limits: dict[str, Any], settings: AgentSettings) -> dict[str, Any]:
+    """A test chat's limits (CR-006 R17.3): the draft's own, tightened to the test
+    budget. Only ever lower: a test can't buy more than the agent would get."""
+    caps: dict[str, float] = {
+        "timeout_s": settings.playground_timeout_s,
+        "max_model_calls": settings.playground_model_calls,
+        "max_tool_calls": settings.playground_tool_calls,
+        "max_cost_usd": settings.playground_cost_usd,
+    }
+    out = dict(limits)
+    for key, cap in caps.items():
+        out[key] = min(out[key], cap) if out.get(key) is not None else cap
+    return out

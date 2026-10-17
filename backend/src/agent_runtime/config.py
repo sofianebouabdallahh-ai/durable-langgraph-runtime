@@ -56,6 +56,11 @@ class AgentSettings(BaseSettings):
     ceiling_tool_calls: int = Field(default=100, gt=0)
     ceiling_tokens: int = Field(default=1_000_000, gt=0)
     ceiling_cost_usd: float = Field(default=2.0, gt=0)
+    # A Studio test chat's budget (CR-006 R17.3): the draft's own limits, tightened to these.
+    playground_timeout_s: int = Field(default=180, gt=0)
+    playground_model_calls: int = Field(default=20, gt=0)
+    playground_tool_calls: int = Field(default=20, gt=0)
+    playground_cost_usd: float = Field(default=0.25, gt=0)
     # R14.2: at this share of any budget the agent gets one wrap-up turn.
     soft_limit_ratio: float = Field(default=0.8, gt=0, lt=1)
 

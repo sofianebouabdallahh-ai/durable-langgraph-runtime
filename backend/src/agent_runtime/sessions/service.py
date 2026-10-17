@@ -22,11 +22,15 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from psycopg.errors import UniqueViolation
+
+from agent_runtime.agents.schema import AgentDefinition
 from agent_runtime.config import Settings
 from agent_runtime.db import Pool
 from agent_runtime.graphs import GraphRegistry, UnknownGraph
+from agent_runtime.runs.limits import playground_limits
 from agent_runtime.runs.relay import OutboxRelay
-from agent_runtime.runs.service import Overloaded, RunService, prepare
+from agent_runtime.runs.service import Overloaded, RunService, prepare_spec
 from agent_runtime.runs.state import RunStatus
 from agent_runtime.runs.store import Run, RunRepository
 from agent_runtime.sessions.store import (
@@ -43,6 +47,10 @@ from agent_runtime.sessions.transcript import event_message, publish_messages
 from agent_runtime.streaming.bus import EventBus, publish_events
 
 log = logging.getLogger(__name__)
+
+
+class DuplicateSend(Exception):
+    """Two attempts of one send (same idempotency key) raced; retry to get the turn."""
 
 
 class NotAnAgent(Exception):
@@ -71,18 +79,27 @@ class SessionService:
         self._settings = settings
         self._graphs = graphs
         self._runs = runs
+        self._agents = runs.agents
         self._relay = relay
         self._bus = bus
 
     # ---------------------------------------------------------------- sessions
 
-    async def create(self, agent: str, title: str | None = None) -> Session:
-        spec = self._graphs.get(agent)  # UnknownGraph → 404
-        if spec.agent is None:
-            raise NotAnAgent(agent)
+    async def create(
+        self, agent: str, title: str | None = None, *, playground_of: uuid.UUID | None = None
+    ) -> Session:
+        """A chat with a built-in or published agent; or, with `playground_of`, a test
+        chat with that user agent's draft (hidden from the chat list)."""
+        if playground_of is None:
+            try:
+                if self._graphs.get(agent).agent is None:
+                    raise NotAnAgent(agent)
+            except UnknownGraph:
+                if not await self._agents.exists(agent):
+                    raise
         async with self._pool.connection() as conn, conn.transaction():
             return await SessionRepository(conn).create(
-                graph_name=agent, agent_name=agent, title=title
+                graph_name=agent, agent_name=agent, title=title, playground_of=playground_of
             )
 
     async def get(self, session_id: uuid.UUID) -> Session:
@@ -122,10 +139,20 @@ class SessionService:
                 session = await repo.lock(session_id)
                 if not await repo.archive(session_id):
                     return None
+                # session_end runs the hooks of the version the chat last ran (R15.4)
+                cur = await conn.execute(
+                    "SELECT agent_hash, agent_name, agent_version FROM runs "
+                    "WHERE session_id = %s AND agent_hash IS NOT NULL "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (session_id,),
+                )
+                last = await cur.fetchone()
                 run = await runs.create(
                     graph_name=session.graph_name, kind="session_end",
                     input={"session_id": str(session_id)},
                     limits={"timeout_s": 60, "max_steps": 1},
+                    agent=(last["agent_hash"], last["agent_name"], last["agent_version"])
+                    if last else None,
                 )  # fmt: skip
         await publish_events(self._bus, runs.emitted)
         await self._enqueue(run.id)
@@ -151,18 +178,32 @@ class SessionService:
         *,
         script: list[dict[str, Any]] | None = None,
         subagent_scripts: dict[str, list[dict[str, Any]]] | None = None,
+        idempotency_key: str | None = None,
     ) -> Turn:
         """R12.2. Raises SessionNotFound, SessionArchived, TurnActive (→ 409),
-        AdmissionPaused, Overloaded, pydantic.ValidationError, LimitAboveCeiling."""
+        AdmissionPaused, Overloaded, pydantic.ValidationError, LimitAboveCeiling,
+        AgentUnavailable.
+
+        The turn pins its agent: the definition is resolved and snapshotted now, and
+        the run stores the bundle hash (R15.4, AC47). With an `idempotency_key`, a
+        retried send returns the turn the first attempt created."""
         session = await self.get(session_id)
+        if idempotency_key and (done := await self._sent(session_id, idempotency_key)):
+            return done
+        async with self._pool.connection() as conn:
+            pinned = await self._agents.resolve(conn, session.graph_name,
+                                                draft_of=session.playground_of)  # fmt: skip
         if script is None and self._settings.model_provider == "scripted":
-            script, subagent_scripts = self._demo(session.graph_name, content)
+            script, subagent_scripts = self._demo(pinned.definition, content)
         inp: dict[str, Any] = {"message": content}
         if script is not None:
             inp["script"] = script
         if subagent_scripts is not None:
             inp["subagent_scripts"] = subagent_scripts
-        prepared = prepare(self._graphs, self._settings, session.graph_name, inp, options)
+        prepared = prepare_spec(self._agents.spec_of(pinned), self._settings, inp, options)
+        limits = prepared.limits
+        if session.playground_of is not None:  # a test chat: the small test budget (R17.3)
+            limits = playground_limits(limits, self._settings)
         await self._runs.admit()
         async with self._pool.connection() as conn:
             runs = RunRepository(conn)
@@ -175,10 +216,15 @@ class SessionService:
                 if locked.active_run_id is not None:
                     raise TurnActive(session_id, locked.active_run_id,
                                      str(locked.active_run_status))  # fmt: skip
-                run = await runs.create(
-                    graph_name=prepared.graph_name, kind="turn", input=prepared.input,
-                    options=prepared.options, limits=prepared.limits, session_id=session_id,
-                )  # fmt: skip
+                try:
+                    run = await runs.create(
+                        graph_name=prepared.graph_name, kind="turn", input=prepared.input,
+                        options=prepared.options, limits=limits, session_id=session_id,
+                        agent=(pinned.bundle_hash, pinned.definition.id, pinned.version),
+                        idempotency_key=idempotency_key,
+                    )  # fmt: skip
+                except UniqueViolation:  # the same send, raced: the other attempt won
+                    raise DuplicateSend from None
                 (message,) = await repo.append(
                     session_id,
                     [NewMessage(message_id(run.id, "user", 0, "user"), "user", {"text": content})],
@@ -189,14 +235,31 @@ class SessionService:
         await self._enqueue(run.id)
         return Turn(message, run)
 
+    async def _sent(self, session_id: uuid.UUID, key: str) -> Turn | None:
+        """The turn an earlier attempt of this send created, if any."""
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT id FROM runs WHERE session_id = %s AND idempotency_key = %s",
+                (session_id, key),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                return None
+            run = await RunRepository(conn).get(row["id"])
+            message = await SessionRepository(conn).message(
+                session_id, message_id(run.id, "user", 0, "user")
+            )
+        return Turn(message, run) if message else None
+
+    @staticmethod
     def _demo(
-        self, graph: str, content: str
+        agent: AgentDefinition, content: str
     ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]] | None]:
         """The offline demo model's reply to free text (models/demo.py). Stored in the
         run's input like a sent script, so replays read it back."""
         from agent_runtime.models.demo import demo_script
 
-        script, subs = demo_script(content, self._graphs.get(graph).agent)
+        script, subs = demo_script(content, agent)
         return script, subs or None
 
     async def approve(
