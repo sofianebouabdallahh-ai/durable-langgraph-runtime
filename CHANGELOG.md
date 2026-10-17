@@ -18,6 +18,18 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - CR-004 + ADR-0003 (accepted): agents defined as `backend/agents/*.agent.md` (name, max turns, prompt, tools, limits, hooks); hooks for session start/end, turn start/end and pre/post tool, built on LangChain middleware plus harness-owned session hooks.
 - CR-003 (accepted): harness guardrails. Run budgets with a soft→hard wrap-up, loop detection, ceilings that callers can only tighten, deny-by-default tool grants, least-privilege DB roles, untrusted-content handling, audit trail, kill switch.
 
+### Phase 6a — Chat sessions
+#### Added
+- Sessions (CR-001): `POST/GET/PATCH /sessions`, `GET /sessions/{id}/messages`, `POST /sessions/{id}/messages` (one active turn: `409`), `/approve`, `/cancel`, `GET /sessions/{id}/stream` (SSE, any replica, `Last-Event-ID`).
+- A session is a LangGraph thread and a turn is a run; the transcript (`session_messages`) is written in each checkpoint's transaction, with deterministic ids, gap-free `seq` and epoch fencing; `interrupt` / `approval` / `error` messages.
+- Session and turn hooks (CR-004 R15.5, R15.6): `session_start` once per session, `turn_start` (context or deny → `failed(turn_denied)`), `turn_end`, `session_end` as a durable run that stores a summary; idle sessions archived by the workers. Built-ins `session_clock`, `summarize_session`.
+- `GET /agents`, `GET /agents/{name}` (R15.11); the `chat` agent definition.
+- E2E `chat-sessions` (AC18) and `chat-crash` (AC19); `make demo-chat`, `make demo-chat-crash`.
+
+#### Fixed
+- A run treated any existing checkpoint on its thread as its own and "resumed" it: a second chat turn would have lost its message. Runs now resume only checkpoints stamped with their own `run_id`.
+- Child runs were stored with kind `workflow`; they are `child`.
+
 ### Phase 5b — Sub-agents
 #### Added
 - Sub-agent orchestrator (CR-005 R16.3): sub-agents run as concurrent tasks in the main run's worker, each with its own checkpoint thread under the main run's fence; at most 4 in parallel and 10 per run, a timeout each; one recovery path (stop → recover from checkpoints) for pauses, releases and crashes.
