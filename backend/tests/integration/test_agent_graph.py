@@ -123,3 +123,24 @@ async def test_agent_limits_come_from_the_definition(
         "timeout_s": 300, "max_steps": 200, "max_model_calls": 10, "max_tool_calls": 3,
         "max_children": 6,
     }  # fmt: skip
+
+
+async def test_parallel_tool_calls_in_one_turn_do_not_deadlock(
+    pool: Pool, test_settings: Settings, checkpoint_tables: None
+) -> None:
+    """Regression (found in phase 5b): LangGraph runs a turn's tool calls concurrently.
+    Each ledger transaction used to take the run row FOR SHARE (check_fence) and then
+    upgrade it, so two of them deadlocked. check_fence now takes FOR NO KEY UPDATE."""
+    script = [
+        {
+            "tool_calls": [
+                {"name": "calculator", "args": {"expression": f"{i}*2"}} for i in range(4)
+            ]
+        },
+        turn("done"),
+    ]
+    done = await run_assistant(pool, test_settings, script)
+    assert done.status is S.COMPLETED
+    async with pool.connection() as conn:
+        cur = await conn.execute("SELECT tool_calls_total FROM runs WHERE id = %s", (done.id,))
+        assert await cur.fetchone() == {"tool_calls_total": 4}

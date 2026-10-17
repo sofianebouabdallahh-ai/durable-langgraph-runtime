@@ -447,7 +447,7 @@ class RunRepository:
             # Lock order everywhere is deepest first (child → parent → root): here the
             # parent holds its fence lock, then the root.
             cur = await self._conn.execute(
-                "SELECT descendants FROM runs WHERE id = %s FOR UPDATE", (parent.root_id,)
+                "SELECT descendants FROM runs WHERE id = %s FOR NO KEY UPDATE", (parent.root_id,)
             )
             root = _required(await cur.fetchone(), "SELECT root")
             if root["descendants"] + n > limits.max_descendants:
@@ -532,7 +532,7 @@ class RunRepository:
                 SELECT r.id, r.depth FROM runs r JOIN tree USING (id)
                 WHERE r.status NOT IN ('completed', 'failed', 'cancelled')
                 ORDER BY r.depth DESC, r.id
-                FOR UPDATE OF r
+                FOR NO KEY UPDATE OF r
                 """,
                 {"id": run_id},
             )
@@ -583,7 +583,7 @@ class RunRepository:
         Raises NotWaitingForApproval (→ 409) unless the run is waiting_approval."""
         async with self._conn.transaction():
             cur = await self._conn.execute(
-                f"SELECT {_RUN_COLUMNS} FROM runs WHERE id = %s FOR UPDATE", (run_id,)
+                f"SELECT {_RUN_COLUMNS} FROM runs WHERE id = %s FOR NO KEY UPDATE", (run_id,)
             )
             row = await cur.fetchone()
             if row is None:
