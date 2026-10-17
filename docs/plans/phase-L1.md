@@ -1,5 +1,7 @@
 # Phase L1 plan — Containerise & one-command setup
 
+> **Status: delivered.** Results: [progress/phase-L1.md](../progress/phase-L1.md).
+
 **Goal:** a person with only Docker installed clones the repository, runs `./setup.sh` (or `.\setup.ps1`), and has the whole system running: API, two workers, Postgres, Redis, and a model of their choice. It is proven by an automatic end-to-end check. No Python, uv, Node or make on their machine; no file edited by hand.
 
 **Part of:** the [local release](local-release.md) (L1 of L1–L5). **Decisions used** (local-release §7, the recommended defaults): pre-built images on GitHub Container Registry; feedback through GitHub issues (L5); the licence stays MIT; kind for local Kubernetes (L4).

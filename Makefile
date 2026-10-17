@@ -25,7 +25,7 @@ BACKEND     := cd backend && uv run --frozen
 BACKEND_ENV := cd backend && uv run --frozen --env-file $(ENV_FILE)
 
 .DEFAULT_GOAL := help
-.PHONY: help env hooks up down nuke ps logs llm-up llm-down migrate migration api worker run-toy demo-crash demo-zombie demo-release demo-replicas demo-tools demo-approval demo-fanout demo-subagents demo-chat demo-chat-crash demo-chat-live chat demo-e2e lint fmt typecheck agents-validate test test-unit test-integration test-live coverage check
+.PHONY: help env hooks up down nuke ps logs setup image app-stop doctor demo-compose llm-up llm-down migrate migration api worker run-toy demo-crash demo-zombie demo-release demo-replicas demo-tools demo-approval demo-fanout demo-subagents demo-chat demo-chat-crash demo-chat-live chat demo-e2e lint fmt typecheck agents-validate test test-unit test-integration test-live coverage check
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -56,6 +56,22 @@ ps: ## Show service status
 
 logs: ## Follow service logs
 	$(COMPOSE) logs -f
+
+# ------------------------------------------------- the product in containers (L1)
+setup: ## The tester path: checks, .env, model, start everything in Docker, smoke test
+	./setup.sh
+
+image: ## Build the runtime image (API, workers, CLI) locally
+	$(DOCKER) build -t ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/runtime:latest backend
+
+app-stop: ## Stop the containerised stack (data kept)
+	./setup.sh --stop
+
+doctor: ## Diagnostics bundle, secrets redacted (attach it to an issue)
+	./setup.sh --doctor
+
+demo-compose: ## Container e2e: kill / stop a worker container mid-turn; least privilege
+	cd backend && API_PORT=$$(awk -F= '$$1=="API_PORT"{print $$2}' ../$(ENV_FILE)) uv run --frozen python -m tests.e2e.compose_e2e all --repeat $(or $(REPEAT),1)
 
 llm-up: env ## Start the local model server (Ollama, profile llm) and pull OLLAMA_MODEL
 	$(COMPOSE) --profile llm up -d --wait ollama

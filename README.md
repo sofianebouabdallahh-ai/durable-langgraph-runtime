@@ -6,6 +6,17 @@ A runtime that runs LangGraph agents across a pool of workers and makes them sur
 
 > **Status: Phase 6 (chat sessions + chat agent) complete.** Chat with an agent across many sessions, on a scripted model or a real one (OpenAI, or Ollama locally: `make llm-up && make chat`). Every message is in a durable transcript written with each checkpoint, tokens stream live from any API replica, and a crash mid-turn duplicates nothing. The agent calls tools through one guarded pipeline (budgets with a wrap-up turn, loop detection, retries and a circuit breaker, approvals), delegates to sub-agents that resume after a crash, and fans out child runs across workers. Sandboxes come next. See the [roadmap](docs/roadmap.md) and [phase summaries](docs/progress/).
 
+## Try it (only Docker needed)
+
+```bash
+git clone https://github.com/sofianebouabdallahh-ai/durable-langgraph-runtime.git
+cd durable-langgraph-runtime
+./setup.sh            # Windows: .\setup.ps1
+./setup.sh --chat     # chat with an agent in your terminal
+```
+
+Setup checks your machine, generates private local passwords, asks which model to use (offline demo, a free local model with Ollama, OpenAI, Azure AI Foundry, or any OpenAI-compatible service), starts everything in Docker, and proves it works with a real chat turn. Guides for each OS, models and troubleshooting: [docs/setup/](docs/setup/).
+
 ## How it works (target design)
 
 - **Postgres is the only source of truth.** Run status, events, transcripts, tool results and LangGraph checkpoints all live there.
@@ -17,7 +28,7 @@ A runtime that runs LangGraph agents across a pool of workers and makes them sur
 
 The full design is in the [spec](docs/requirements/Project_4_Detailed_Requirements_K8s.pdf) and the change requests in [docs/requirements/](docs/requirements/).
 
-## Quickstart
+## Developer quickstart
 
 Requirements: [uv](https://docs.astral.sh/uv/), Docker (Desktop or OrbStack), GNU make.
 

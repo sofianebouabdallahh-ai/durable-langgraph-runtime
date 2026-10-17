@@ -34,3 +34,8 @@ kubeconfig*
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# setup.sh output (L1)
+diagnostics-*.tar.gz
+diagnostics-*.zip
+backups/
