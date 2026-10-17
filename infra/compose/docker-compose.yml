@@ -40,6 +40,25 @@ services:
       timeout: 3s
       retries: 30
 
+  # Local model server (R3.1), opt-in: `make llm-up` (profile `llm`). In Docker on
+  # macOS it runs on the CPU (no Metal): fine for demos, slower than the native app.
+  # Pinned to a release at least two weeks old (supply-chain cooldown, as in uv.lock).
+  ollama:
+    image: ollama/ollama:0.34.4
+    profiles: ["llm"]
+    ports:
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: "30m" # keep the model loaded between demo turns
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
 volumes:
   postgres-data:
   redis-data:
+  ollama-models:

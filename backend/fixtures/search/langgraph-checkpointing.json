@@ -1,0 +1,21 @@
+{
+  "query": "langgraph checkpointing",
+  "aliases": [
+    "langgraph checkpoints",
+    "langgraph postgres checkpointer"
+  ],
+  "results": [
+    {
+      "title": "Persistence in LangGraph",
+      "url": "https://docs.example.org/langgraph/persistence",
+      "snippet": "A checkpointer saves the graph's state after every super-step, per thread.",
+      "content": "With a checkpointer, every super-step writes a checkpoint for the thread (thread_id). Invoking the graph again on the same thread continues from the latest checkpoint; interrupt() pauses a node and Command(resume=...) continues it. The Postgres checkpointer stores checkpoints and pending writes in its own tables."
+    },
+    {
+      "title": "Durability modes",
+      "url": "https://docs.example.org/langgraph/durability",
+      "snippet": "durability='sync' writes each checkpoint before the next step starts.",
+      "content": "'exit' saves only at the end; 'async' saves while the next step runs; 'sync' saves before it. Sync is the safest for crash recovery: a resumed run never re-executes a committed step."
+    }
+  ]
+}

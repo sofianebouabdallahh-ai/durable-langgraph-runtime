@@ -154,7 +154,7 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 **Learn:** distributed fan-out/fan-in, atomic counters, backpressure.
 **Done when:** **AC6** (children run on more than one worker), **AC40** (status, return, cancel, timeout), **AC41** (crash resume) and **AC42** (budget roll-up) pass.
 
-### Phase 6 — Chat sessions + chat agent · ~12–16 h
+### Phase 6 — Chat sessions + chat agent · ~12–16 h (plan: [plans/phase-06.md](plans/phase-06.md); summary: [progress/phase-06.md](progress/phase-06.md); three PRs: 6a sessions, 6b guardrails, 6c real models & chat agent)
 **Goal:** chat with an agent across many sessions, with a durable transcript.
 - Sessions, turns, the one-active-turn rule (R12.1, R12.2); transcript with deterministic ids and fencing (R12.3, R12.4)
 - Session SSE stream (R12.5); HITL and cancel in chat (R12.6, R12.7); session API (R12.10)

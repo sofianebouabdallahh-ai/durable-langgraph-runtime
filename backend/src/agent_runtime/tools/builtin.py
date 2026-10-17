@@ -101,11 +101,27 @@ async def notify(args: NotifyArgs, ctx: ToolContext) -> dict[str, Any]:
     return {"queued": True, "notification_id": ctx.key[:16]}
 
 
+class SearchArgs(ToolArgs):
+    query: Annotated[str, Field(min_length=1, max_length=500)]
+    k: Annotated[int, Field(ge=1, le=10)] = 5
+
+
+async def search(args: SearchArgs, ctx: ToolContext) -> dict[str, Any]:
+    """Search the web for a query. Returns titles, URLs, snippets and page content.
+    Cite the URLs you use."""
+    from agent_runtime.config import get_agent_settings
+    from agent_runtime.tools import search as fixtures
+
+    found = fixtures.search(get_agent_settings().search_fixtures_dir, args.query, args.k)
+    return {"query": args.query, "results": found}
+
+
 def default_tools() -> ToolRegistry:
     registry = ToolRegistry()
     registry.tool("calculator", args=CalculatorArgs, risk_class="read", side_effect=False)(
         calculator
     )
+    registry.tool("search", args=SearchArgs, risk_class="read", side_effect=False)(search)
     registry.tool(
         "save_note", args=SaveNoteArgs, risk_class="write_internal", side_effect=True, max_calls=20
     )(save_note)

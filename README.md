@@ -4,7 +4,7 @@
 
 A runtime that runs LangGraph agents across a pool of workers and makes them survive what distributed systems throw at them: crashed workers, paused "zombie" workers, restarts, human approvals that take hours, node drains and rolling upgrades. It survives all of these without losing or duplicating work.
 
-> **Status: Phase 5 (sub-runs, sub-agents & backpressure) complete.** Runs execute on a pool of workers that survives crashes and zombies; any API replica streams any run live. Agents call tools through one fixed-order pipeline, so a crash never repeats a side effect, and runs can pause for human approval with no worker holding them. A workflow can fan out to child runs on any worker and fan back in exactly once; an agent can delegate to sub-agents that run in parallel in its own worker and resume from their own checkpoints after a crash. Budgets roll up, and the API pushes back when the queue is too deep. Chat sessions come next. See the [roadmap](docs/roadmap.md) and [phase summaries](docs/progress/).
+> **Status: Phase 6 (chat sessions + chat agent) complete.** Chat with an agent across many sessions, on a scripted model or a real one (OpenAI, or Ollama locally: `make llm-up && make chat`). Every message is in a durable transcript written with each checkpoint, tokens stream live from any API replica, and a crash mid-turn duplicates nothing. The agent calls tools through one guarded pipeline (budgets with a wrap-up turn, loop detection, retries and a circuit breaker, approvals), delegates to sub-agents that resume after a crash, and fans out child runs across workers. Sandboxes come next. See the [roadmap](docs/roadmap.md) and [phase summaries](docs/progress/).
 
 ## How it works (target design)
 

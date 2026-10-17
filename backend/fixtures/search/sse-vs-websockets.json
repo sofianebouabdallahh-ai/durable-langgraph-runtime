@@ -1,0 +1,21 @@
+{
+  "query": "server sent events vs websockets",
+  "aliases": [
+    "sse vs websocket",
+    "websockets vs sse"
+  ],
+  "results": [
+    {
+      "title": "Server-Sent Events",
+      "url": "https://docs.example.org/web/sse",
+      "snippet": "A one-way stream over plain HTTP, with automatic reconnect and Last-Event-ID.",
+      "content": "SSE sends text events from server to client over a normal HTTP response. Browsers reconnect automatically and send the last event id, so a server can resume the stream. It passes through proxies easily, but it is server-to-client only."
+    },
+    {
+      "title": "WebSockets",
+      "url": "https://docs.example.org/web/websockets",
+      "snippet": "A full-duplex connection after an HTTP upgrade.",
+      "content": "WebSockets carry messages both ways with low overhead, which suits games and collaborative editors. Resuming after a disconnect and getting through some proxies are left to the application."
+    }
+  ]
+}

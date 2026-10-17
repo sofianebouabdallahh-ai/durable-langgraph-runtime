@@ -15,6 +15,7 @@ import sys
 import uuid
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any
 
 from agent_runtime.agents.loader import (
     AgentValidationError,
@@ -147,6 +148,94 @@ def _run(args: argparse.Namespace) -> int:
         return 2
     print(f"created run {run_id}", file=sys.stderr)
     return asyncio.run(_execute_and_report(settings, run_id, local_fanout=args.local_fanout))
+
+
+def _chat(args: argparse.Namespace) -> int:
+    """Chat with an agent in this terminal: a session, one in-process run per turn, the
+    model's tokens printed as they stream (CR-001). `--message` (repeatable) makes it
+    non-interactive; otherwise it reads lines until EOF or `/quit`."""
+    settings = get_settings()
+    logging.basicConfig(level=logging.WARNING)
+    return asyncio.run(_chat_session(settings, args.agent, args.message))
+
+
+async def _chat_session(settings: Settings, agent: str, messages: list[str] | None) -> int:
+    import time
+
+    from agent_runtime.db import create_pool
+    from agent_runtime.graphs import default_registry
+    from agent_runtime.runs.executor import RunExecutor
+    from agent_runtime.runs.service import RunService
+    from agent_runtime.sessions.service import SessionService
+    from agent_runtime.streaming.bus import InMemoryEventBus, session_channel
+
+    graphs = default_registry()
+    bus = InMemoryEventBus()
+    async with create_pool(settings) as pool:
+        runs = RunService(pool, settings, graphs)
+        sessions = SessionService(pool, settings, graphs, runs, bus=bus)
+        session = await sessions.create(agent)
+        print(f"session {session.id} with {agent} (provider: {settings.model_provider})\n")
+        queue = list(messages) if messages else None
+        while True:
+            if queue is not None:
+                if not queue:
+                    break
+                text = queue.pop(0)
+                print(f"you> {text}")
+            else:
+                try:
+                    text = (await asyncio.to_thread(input, "you> ")).strip()
+                except EOFError:
+                    break
+                if text in ("/quit", "/exit"):
+                    break
+                if not text:
+                    continue
+            sub = bus.subscription()
+            await sub.subscribe(session_channel(session.id))
+            started = time.monotonic()
+            turn = await sessions.send(session.id, text)
+            task = asyncio.create_task(
+                RunExecutor(pool, settings, graphs, bus=bus).execute(turn.run.id)
+            )
+            print(f"{agent}> ", end="", flush=True)
+            while True:  # print live events until the turn is over and none are left
+                got = await sub.get(0.05)
+                if got is not None:
+                    _print_live(got[1].type, got[1].payload)
+                elif task.done():
+                    break
+            run = task.result()
+            async with pool.connection() as conn:
+                cur = await conn.execute(
+                    "SELECT tokens, cost, model_calls, tool_calls_total FROM runs WHERE id = %s",
+                    (run.id,),
+                )
+                usage = await cur.fetchone()
+            assert usage is not None
+            print(f"\n  [{run.status}{f' {run.reason}' if run.reason else ''}"
+                  f" · {usage['model_calls']} model calls · {usage['tool_calls_total']} tools"
+                  f" · {usage['tokens']} tokens · ${float(usage['cost']):.4f}"
+                  f" · {time.monotonic() - started:.1f}s]\n")  # fmt: skip
+            await sub.close()
+    return 0
+
+
+def _print_live(type_: str, payload: dict[str, Any]) -> None:
+    if type_ == "token":
+        print(payload["text"], end="", flush=True)
+    elif type_ == "message.created":
+        kind, content = payload["type"], payload["content"]
+        if kind == "tool_call":
+            print(f"\n  ⚙ {content['tool']}({json.dumps(content['args'])[:120]})", flush=True)
+        elif kind == "tool_result":
+            body = content.get("result", content.get("error"))
+            print(f"  ↳ {json.dumps(body, default=str)[:160]}", flush=True)
+    elif type_.startswith("subagent."):
+        agent = payload.get("agent", "")
+        detail = payload.get("message") or payload.get("status") or ""
+        print(f"\n  ◇ {type_.removeprefix('subagent.')} {agent} {detail}", flush=True)
 
 
 def _execute(args: argparse.Namespace) -> int:
@@ -342,6 +431,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     worker.add_argument("--workers", type=int, default=1, help="number of worker processes")
     worker.set_defaults(handler=_worker)
+
+    chat = commands.add_parser("chat", help="chat with an agent in this terminal")
+    chat.add_argument("--agent", default="chat")
+    chat.add_argument("--message", action="append", help="send this (repeatable); no prompt")
+    chat.set_defaults(handler=_chat)
 
     execute = commands.add_parser(
         "execute", aliases=["resume"], help="execute a queued run or resume a crashed one"

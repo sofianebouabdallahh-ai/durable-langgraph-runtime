@@ -125,6 +125,7 @@ class SubagentRepository:
         task: str,
         context: str | None,
         max_total: int,
+        worker: str | None = None,
     ) -> tuple[Invocation, bool]:
         """Insert the invocation, or return the existing one for this key. Returns
         (invocation, created). Raises SpawnRefused past `max_total` per run."""
@@ -156,7 +157,8 @@ class SubagentRepository:
             assert created is not None
             await self.runs.append_event(
                 fence.run_id, epoch=fence.epoch, type=EventType.SUBAGENT_SPAWNED,
-                payload={"handle": str(handle), "agent": agent, "task": task[:500]},
+                payload={"handle": str(handle), "agent": agent, "task": task[:500],
+                         "worker": worker},  # AC37: they run in the main run's worker
             )  # fmt: skip
             return Invocation.from_row(created), True
 

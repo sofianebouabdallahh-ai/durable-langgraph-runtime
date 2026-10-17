@@ -1,0 +1,15 @@
+{
+  "query": "fencing tokens distributed locks",
+  "aliases": [
+    "fencing token",
+    "fencing tokens"
+  ],
+  "results": [
+    {
+      "title": "How to do distributed locking",
+      "url": "https://blog.example.org/distributed-locking",
+      "snippet": "A lease alone can't stop a paused process from writing after its lease expired: fence the writes.",
+      "content": "Give every lock acquisition a monotonically increasing token, and make the storage reject writes carrying an older token. A process that froze (GC pause, network partition) and woke up still believing it holds the lock is then harmless: its writes are refused."
+    }
+  ]
+}

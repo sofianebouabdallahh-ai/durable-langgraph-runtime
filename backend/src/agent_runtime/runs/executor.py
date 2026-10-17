@@ -42,6 +42,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
 from langchain_core.callbacks import AsyncCallbackHandler
+from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphRecursionError
 from langgraph.types import Command, interrupt
@@ -52,7 +53,9 @@ from agent_runtime.db import Conn, Pool
 from agent_runtime.fencing import Fence, FencedError, check_fence
 from agent_runtime.graphs import GraphRegistry, GraphSpec
 from agent_runtime.graphs.assistant import AgentInput, granted_tools, subagent_graph
+from agent_runtime.models.provider import configured_provider
 from agent_runtime.models.retry import CircuitOpen, ModelCaller, breaker_for
+from agent_runtime.models.scripted import ScriptTurn
 from agent_runtime.runs.events import EventType
 from agent_runtime.runs.fanout import (
     ChildResult,
@@ -79,7 +82,8 @@ from agent_runtime.runs.store import (
 from agent_runtime.sessions.store import SessionRepository
 from agent_runtime.sessions.transcript import TranscriptWriter
 from agent_runtime.sessions.turns import turn_input
-from agent_runtime.streaming.bus import EventBus, publish_events
+from agent_runtime.streaming.bus import EventBus, publish_events, run_channel, session_channel
+from agent_runtime.streaming.tokens import TokenRelay
 from agent_runtime.subagents.orchestrator import SubagentLimits, SubagentOrchestrator
 from agent_runtime.tools.builtin import default_tools
 from agent_runtime.tools.hooks import (
@@ -250,6 +254,7 @@ class RunExecutor:
         self._enqueue = enqueue  # send a run that became queued (children, fanned-in parent)
         self._orchestrator: SubagentOrchestrator | None = None  # set for agents with sub-agents
         self._transcript: TranscriptWriter | None = None  # set for chat turns
+        self._tokens: TokenRelay | None = None  # set for agent graphs
         # A release the worker must NOT re-send at once (an open circuit breaker): the
         # outbox relay re-sends it once its message is stale, which is the backoff.
         self.deferred = False
@@ -337,7 +342,8 @@ class RunExecutor:
         config: RunnableConfig = {
             "configurable": {"thread_id": run.thread_id},
             "callbacks": [
-                _NodeRecorder(outbox, limits.max_steps, lambda: self._check_interrupts(run.id))
+                _NodeRecorder(outbox, limits.max_steps, lambda: self._check_interrupts(run.id)),
+                *self._token_relay(spec, run),
             ],
             # Our step budget governs; LangGraph's recursion limit is only a backstop.
             "recursion_limit": limits.max_steps + 5,
@@ -528,8 +534,10 @@ class RunExecutor:
                     max_total=self._settings.subagent_max_total,
                     default_timeout_s=self._settings.subagent_timeout_s,
                 ),
+                worker=self.owner, session_id=run.session_id,
                 model_caller=self._model_caller,
                 usage_recorder=self._usage_recorder,
+                chat_model=self._chat_model,
             )  # fmt: skip
         caps = {t.name: t.max_calls for t in fm.tools}
         tools = ToolRunContext(
@@ -553,14 +561,26 @@ class RunExecutor:
             orchestrator=self._orchestrator, turn=turn, caller=self._model_caller(),
             limits=limits, soft_limit_ratio=self._settings.soft_limit_ratio,
             record_usage=self._usage_recorder(outbox),
+            chat_model=self._chat_model(fm.model, fm.temperature, inp.script),
         )  # fmt: skip
+
+    def _chat_model(
+        self, role: str, temperature: float, script: list[ScriptTurn]
+    ) -> Callable[[int], BaseChatModel]:
+        """The configured provider's model for this agent's role (R3.1)."""
+        provider = configured_provider(self._settings)
+
+        def model(offset: int) -> BaseChatModel:
+            return provider.chat(role, temperature=temperature, script=script, offset=offset)
+
+        return model
 
     def _model_caller(self) -> ModelCaller:
         s = self._settings
         return ModelCaller(
             attempts=s.model_retry_attempts, base_s=s.model_retry_base_s,
             cap_s=s.model_retry_cap_s,
-            breaker=breaker_for("scripted", failures=s.breaker_failures,
+            breaker=breaker_for(configured_provider(s).name, failures=s.breaker_failures,
                                 window_s=s.breaker_window_s, open_s=s.breaker_open_s),
         )  # fmt: skip
 
@@ -737,6 +757,23 @@ class RunExecutor:
                 log.warning("run %s is queued but not sent; the relay will send it", run_id,
                             exc_info=True)  # fmt: skip
 
+    def _token_relay(self, spec: GraphSpec, run: Run) -> list[TokenRelay]:
+        """Agent graphs stream their model's tokens live (R12.5): on the session's
+        channel for a chat turn, else on the run's."""
+        if spec.agent is None:
+            return []
+        channel = session_channel(run.session_id) if run.session_id else run_channel(run.id)
+        self._tokens = TokenRelay(
+            self._bus, channel, run.id, flush_ms=self._settings.token_flush_ms,
+            cancel_check=lambda: self._check_cancel(run.id),
+        )  # fmt: skip
+        return [self._tokens]
+
+    async def _check_cancel(self, run_id: uuid.UUID) -> None:
+        async with self._pool.connection() as conn:
+            if await RunRepository(conn).is_cancel_requested(run_id):
+                raise CancelRequested
+
     async def _check_interrupts(self, run_id: uuid.UUID) -> None:
         if self._release_requested.is_set():
             raise ReleaseRequested
@@ -807,6 +844,10 @@ class RunExecutor:
             if outbox is not None:
                 await outbox.flush(repo)  # e.g. node.failed for the failing node
             if self._transcript is not None:  # R12.3: the turn failed / was cancelled
+                if self._tokens is not None and self._tokens.partial:
+                    # R12.7: a reply cut off mid-stream is kept, marked as interrupted.
+                    await self._transcript.write_event(repo.conn, "assistant", {
+                        "text": self._tokens.partial, "interrupted": True})  # fmt: skip
                 await self._transcript.write_event(repo.conn, "error", payload)
             return await repo.transition(
                 fence.run_id, target, event=event,

@@ -14,6 +14,9 @@ ENV_FILE := $(CURDIR)/.env
 # /usr/local/bin. Resolve the binary explicitly: make 3.81 (macOS default)
 # ignores an exported PATH when it looks up commands.
 DOCKER  := $(shell command -v docker 2>/dev/null || echo $(HOME)/.docker/bin/docker)
+# Docker runs its credential helpers (docker-credential-desktop) from PATH; they sit
+# next to the docker binary, which may not be on PATH itself (Docker Desktop on macOS).
+export PATH := $(dir $(DOCKER)):$(PATH)
 COMPOSE := $(DOCKER) compose --file infra/compose/docker-compose.yml --env-file $(ENV_FILE)
 
 # Python commands run inside backend/ with the locked environment (--frozen: never
@@ -22,7 +25,7 @@ BACKEND     := cd backend && uv run --frozen
 BACKEND_ENV := cd backend && uv run --frozen --env-file $(ENV_FILE)
 
 .DEFAULT_GOAL := help
-.PHONY: help env hooks up down nuke ps logs migrate migration api worker run-toy demo-crash demo-zombie demo-release demo-replicas demo-tools demo-approval demo-fanout demo-subagents demo-chat demo-chat-crash demo-e2e lint fmt typecheck agents-validate test test-unit test-integration coverage check
+.PHONY: help env hooks up down nuke ps logs llm-up llm-down migrate migration api worker run-toy demo-crash demo-zombie demo-release demo-replicas demo-tools demo-approval demo-fanout demo-subagents demo-chat demo-chat-crash demo-chat-live chat demo-e2e lint fmt typecheck agents-validate test test-unit test-integration test-live coverage check
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -53,6 +56,13 @@ ps: ## Show service status
 
 logs: ## Follow service logs
 	$(COMPOSE) logs -f
+
+llm-up: env ## Start the local model server (Ollama, profile llm) and pull OLLAMA_MODEL
+	$(COMPOSE) --profile llm up -d --wait ollama
+	$(COMPOSE) --profile llm exec ollama ollama pull $(or $(OLLAMA_MODEL),qwen2.5:7b)
+
+llm-down: ## Stop the local model server (downloaded models are kept)
+	$(COMPOSE) --profile llm stop ollama
 
 # --------------------------------------------------------- backend: migrations
 migrate: env ## Migrate our schema (Alembic) and LangGraph's checkpoint tables
@@ -99,7 +109,8 @@ demo-fanout: env ## AC6: child runs spread over workers; a crashed child doesn't
 	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e fanout --repeat $(or $(REPEAT),1)
 	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e child-crash --repeat $(or $(REPEAT),1)
 
-demo-subagents: env ## AC41: SIGKILL mid sub-agent task; everything resumes from its checkpoints
+demo-subagents: env ## AC37 + AC41: parallel sub-agents in a chat; SIGKILL mid sub-agent task
+	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e chat-subagents --repeat $(or $(REPEAT),1)
 	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e subagents-crash --repeat $(or $(REPEAT),1)
 
 demo-chat: env ## AC18: 3 chat sessions x 3 turns over 2 workers; context carries; any replica streams
@@ -107,6 +118,15 @@ demo-chat: env ## AC18: 3 chat sessions x 3 turns over 2 workers; context carrie
 
 demo-chat-crash: env ## AC19: SIGKILL mid chat turn; zero duplicate messages
 	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e chat-crash --repeat $(or $(REPEAT),1)
+
+demo-chat-live: env ## Chat on the REAL local model (needs `make llm-up`): context, tools, sub-agents
+	cd backend && MODEL_PROVIDER=ollama uv run --frozen --env-file $(ENV_FILE) runtime chat \
+	  --message "What is 1234 * 5678? Use the calculator." \
+	  --message "Now add 1000 to that result." \
+	  --message "In parallel: have your researcher find what Redis Streams are used for (search 'redis streams vs kafka') and your data-analyst compute 12 workers times 4 slots. Then combine their answers."
+
+chat: env ## Chat with an agent in this terminal (MODEL_PROVIDER=ollama for the real model)
+	cd backend && uv run --frozen --env-file $(ENV_FILE) runtime chat --agent $(or $(AGENT),chat)
 
 demo-e2e: env ## All end-to-end scenarios
 	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e all --repeat $(or $(REPEAT),1)
@@ -137,6 +157,9 @@ test-integration: env ## Integration tests (needs `make up`)
 coverage: env ## All tests with branch coverage; fails under the floor (needs `make up`)
 	cd backend && REQUIRE_SERVICES=1 uv run --frozen --env-file $(ENV_FILE) pytest --cov --cov-report=term --cov-report=html
 	@echo "HTML report: backend/htmlcov/index.html"
+
+test-live: env ## Tests against the real local model (needs `make llm-up`); never in CI
+	cd backend && MODEL_PROVIDER=ollama uv run --frozen --env-file $(ENV_FILE) pytest -m live
 
 test: env ## All tests (needs `make up`)
 	cd backend && REQUIRE_SERVICES=1 uv run --frozen --env-file $(ENV_FILE) pytest

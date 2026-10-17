@@ -17,15 +17,16 @@ reference is resolved from the messages, so it is replay-stable too.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 from langchain_core.callbacks import AsyncCallbackManagerForLLMRun, CallbackManagerForLLMRun
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
-from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, ToolMessage
+from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -81,6 +82,8 @@ def _resolve(value: Any, messages: list[BaseMessage]) -> Any:
 
 class ScriptedChatModel(BaseChatModel):
     script: list[ScriptTurn] = Field(default_factory=list)
+    streaming: bool = False  # True: stream word by word (token events), like a real model
+    stream_delay_s: float = 0.0  # per word when streaming: lets tests cancel mid-reply
     # AI messages of earlier turns in the thread: a chat turn's script starts at 0.
     offset: int = 0
 
@@ -134,3 +137,32 @@ class ScriptedChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         return self._generate(messages, stop)
+
+    async def _astream(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: AsyncCallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatGenerationChunk]:
+        """Streams like a real provider: the text word by word (each a token callback),
+        then the tool calls and the usage in a final chunk. Used when `streaming=True`."""
+        reply = self._reply(messages)
+        words = str(reply.content).split(" ") if reply.content else []
+        for i, word in enumerate(words):
+            text = word if i == 0 else " " + word
+            chunk = ChatGenerationChunk(message=AIMessageChunk(content=text))
+            if self.stream_delay_s:
+                await asyncio.sleep(self.stream_delay_s)
+            if run_manager is not None:
+                await run_manager.on_llm_new_token(text, chunk=chunk)
+            yield chunk
+        yield ChatGenerationChunk(message=AIMessageChunk(
+            content="",
+            tool_call_chunks=[
+                {"name": tc["name"], "args": json.dumps(tc["args"]), "id": tc["id"], "index": i}
+                for i, tc in enumerate(reply.tool_calls)
+            ],
+            usage_metadata=reply.usage_metadata,
+            response_metadata=reply.response_metadata,
+        ))  # fmt: skip
