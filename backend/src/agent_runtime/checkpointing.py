@@ -44,8 +44,9 @@ from agent_runtime.fencing import Fence, FencedError, check_fence
 __all__ = ["AfterCommit", "Fence", "FencedCheckpointer", "FencedError", "OnCommit", "check_fence"]
 
 # Called inside the checkpoint's transaction, after LangGraph's write: whatever it
-# writes commits atomically with the checkpoint (Transactional Outbox, R1.5).
-OnCommit = Callable[[Conn, CheckpointMetadata], Awaitable[None]]
+# writes commits atomically with the checkpoint (Transactional Outbox, R1.5; the
+# chat transcript, R12.3).
+OnCommit = Callable[[Conn, Checkpoint, CheckpointMetadata], Awaitable[None]]
 # Called after that transaction has committed (e.g. publish its events).
 AfterCommit = Callable[[], Awaitable[None]]
 
@@ -89,7 +90,7 @@ class FencedCheckpointer(AsyncPostgresSaver):
         async with self._fenced() as (conn, inner):
             next_config = await inner.aput(config, checkpoint, metadata, new_versions)
             if self._on_commit is not None:
-                await self._on_commit(conn, metadata)
+                await self._on_commit(conn, checkpoint, metadata)
         # Only reached if the transaction committed.
         if self._after_commit is not None:
             await self._after_commit()

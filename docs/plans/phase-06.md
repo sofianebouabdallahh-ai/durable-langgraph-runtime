@@ -104,7 +104,7 @@ Patterns:
 - **Token streaming.** Model tokens become transient `token` events on the session stream (pub/sub only). The assistant message is written once, when complete. A cancel mid-reply persists the partial text (`interrupted: true`, R12.7).
 - **Fixture `SearchTool`** (R3.3): `fixtures/search/*.json`, normalised query with fuzzy fallback. It is deterministic and keyless.
 - **`agents/chat`** with `researcher` (search) and `data-analyst` (calculator) sub-agents (CR-005), and `make demo-subagents`.
-- **Live demo** (`make demo-chat-live`): opt-in, needs a provider. CI stays keyless.
+- **Live demo** (`make demo-chat-live`): opt-in, on **Ollama, local** (decided 2026-10-16: free and keyless; a tool-calling model such as `qwen2.5:7b`). The OpenAI adapter is built and contract-tested too. CI stays keyless.
 
 ## 3. Tasks
 

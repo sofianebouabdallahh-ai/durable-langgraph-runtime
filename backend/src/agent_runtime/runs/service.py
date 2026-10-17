@@ -111,16 +111,9 @@ class RunService:
         The run is durable once created. Sending its work message is best
         effort: if Redis is unavailable, the outbox relay sends it later.
         """
-        async with self._pool.connection() as conn:
-            state = await AdminRepository(conn).get()
-        if state.paused:
-            raise AdmissionPaused(state.reason)
+        await self._check_paused()
         prepared = prepare(self._graphs, self._settings, graph, input, options)
-        depth = await self.queue_depth()
-        if depth >= self._settings.queue_depth_limit:
-            raise Overloaded(
-                depth, self._settings.queue_depth_limit, self._settings.overload_retry_after_s
-            )
+        await self.admit()
         async with self._pool.connection() as conn:
             repo = RunRepository(conn)
             run = await repo.create(
@@ -137,6 +130,22 @@ class RunService:
                 log.warning("run %s created but not enqueued; the relay will send it", run.id,
                             exc_info=True)  # fmt: skip
         return run
+
+    async def _check_paused(self) -> None:
+        async with self._pool.connection() as conn:
+            state = await AdminRepository(conn).get()
+        if state.paused:
+            raise AdmissionPaused(state.reason)
+
+    async def admit(self) -> None:
+        """Admission control for new work from outside (runs, chat turns): the kill
+        switch (R14.18) and backpressure (R2.9). Workers' own fan-outs skip it."""
+        await self._check_paused()
+        depth = await self.queue_depth()
+        if depth >= self._settings.queue_depth_limit:
+            raise Overloaded(
+                depth, self._settings.queue_depth_limit, self._settings.overload_retry_after_s
+            )
 
     async def queue_depth(self) -> int:
         """Runs waiting for a worker (R2.9), cached for `queue_depth_cache_s` so a

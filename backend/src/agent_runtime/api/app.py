@@ -41,6 +41,8 @@ from agent_runtime.api.schemas import (
     ResultView,
     RunView,
 )
+from agent_runtime.api.sessions import agents as agents_router
+from agent_runtime.api.sessions import sessions as sessions_router
 from agent_runtime.config import Settings, get_settings
 from agent_runtime.db import Pool, create_pool
 from agent_runtime.graphs import GraphRegistry, GraphSpec, default_registry
@@ -48,6 +50,7 @@ from agent_runtime.queue import RedisWorkQueue, WorkQueue, create_redis
 from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.service import RunService
 from agent_runtime.runs.store import RunRepository
+from agent_runtime.sessions.service import SessionService
 from agent_runtime.streaming.broker import Broker
 from agent_runtime.streaming.bus import EventBus, RedisEventBus
 from agent_runtime.streaming.session import RunStream
@@ -351,6 +354,7 @@ def create_app(
         app.state.pool = p
         relay = OutboxRelay(p, q, stale_s=settings.relay_stale_s)
         app.state.service = RunService(p, settings, graphs, relay, b)
+        app.state.sessions = SessionService(p, settings, graphs, app.state.service, relay, b)
 
     app = FastAPI(
         title="Agent Runtime API",
@@ -367,6 +371,8 @@ def create_app(
     app.state.loop = None
     problems.install(app)
     app.include_router(runs)
+    app.include_router(sessions_router)
+    app.include_router(agents_router)
     app.include_router(graphs_router)
     app.include_router(health)
     if settings.admin_api_enabled:

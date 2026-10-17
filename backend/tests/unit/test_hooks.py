@@ -91,6 +91,8 @@ def test_registry_rules() -> None:
     assert reg.catalog() == {
         "redact_secrets_in_args": "pre_tool",
         "redact_secrets_in_result": "post_tool",
+        "session_clock": "session_start",
+        "summarize_session": "session_end",
     }
     with pytest.raises(UnknownHook):
         reg.get("nope")
@@ -131,3 +133,31 @@ async def test_builtin_redaction_hooks() -> None:
     assert isinstance(out.decision, Continue) and out.input.result == {"token": REDACTED}
     clean = await run_hooks([reg.get("redact_secrets_in_args")], ToolHookInput("t", {"x": "fine"}))
     assert clean.audit == []  # nothing to redact: not even audited
+
+
+async def test_context_hooks_accumulate_and_fail_closed() -> None:
+    from agent_runtime.tools.hooks import Context, run_context_hooks, run_observers
+
+    reg = HookRegistry()
+
+    @reg.hook("a", point="turn_start")
+    async def a(inp: object) -> Context:
+        return Context(["one"])
+
+    @reg.hook("b", point="turn_start")
+    async def b(inp: object) -> Context:
+        return Context(["two"])
+
+    @reg.hook("boom", point="turn_start")
+    async def boom(inp: object) -> Context:
+        raise RuntimeError("x")
+
+    @reg.hook("watch", point="turn_end")
+    async def watch(inp: object) -> str:
+        raise RuntimeError("observers never fail the turn")
+
+    ok = await run_context_hooks([reg.get("a"), reg.get("b")], None)
+    assert isinstance(ok, Context) and ok.texts == ["one", "two"]
+    bad = await run_context_hooks([reg.get("a"), reg.get("boom")], None)
+    assert isinstance(bad, Deny) and bad.reason == "hook_error:boom:RuntimeError"
+    assert await run_observers([reg.get("watch")], None) == []

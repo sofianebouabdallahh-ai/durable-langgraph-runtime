@@ -41,8 +41,10 @@ from agent_runtime.graphs import GraphRegistry
 from agent_runtime.queue import Delivery, WorkQueue
 from agent_runtime.runs.executor import RunExecutor, default_owner
 from agent_runtime.runs.relay import OutboxRelay
+from agent_runtime.runs.service import RunService
 from agent_runtime.runs.state import RunStatus
 from agent_runtime.runs.store import Run, RunNotFound, RunTerminal
+from agent_runtime.sessions.service import SessionService
 from agent_runtime.streaming.bus import EventBus
 
 log = logging.getLogger(__name__)
@@ -92,6 +94,7 @@ class Worker:
         background = [
             asyncio.create_task(self._every(self._settings.reaper_interval_s, self._reap)),
             asyncio.create_task(self._every(self._settings.relay_interval_s, self._relay.sweep)),
+            asyncio.create_task(self._every(self._settings.session_sweep_s, self._archive_idle)),
         ]
         log.info("worker %s up (concurrency %d)", self.consumer, self.concurrency)
         try:
@@ -136,6 +139,14 @@ class Worker:
         self._inflight[delivery.message_id] = task
         task.add_done_callback(lambda _: self._inflight.pop(delivery.message_id, None))
         self.peak_inflight = max(self.peak_inflight, len(self._inflight))
+
+    async def _archive_idle(self) -> int:
+        """R15.6: archive sessions idle past the TTL; each gets one session_end run.
+        Safe on every worker at once: archiving is a conditional UPDATE."""
+        runs = RunService(self._pool, self._settings, self._graphs, self._relay, self._bus)
+        sessions = SessionService(self._pool, self._settings, self._graphs, runs, self._relay,
+                                  self._bus)  # fmt: skip
+        return await sessions.archive_idle(self._settings.session_idle_ttl_s)
 
     async def _handle(self, delivery: Delivery) -> None:
         executor = RunExecutor(

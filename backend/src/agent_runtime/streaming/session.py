@@ -19,15 +19,21 @@ import asyncio
 import json
 import time
 import uuid
+from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 
 from fastapi.sse import format_sse_event
 
 from agent_runtime.config import Settings
-from agent_runtime.db import Pool
+from agent_runtime.db import Conn, Pool
 from agent_runtime.runs.store import RunRepository
 from agent_runtime.streaming.broker import Broker
-from agent_runtime.streaming.bus import StreamEvent, run_channel, to_stream_event
+from agent_runtime.streaming.bus import (
+    StreamEvent,
+    run_channel,
+    session_channel,
+    to_stream_event,
+)
 from agent_runtime.streaming.merger import StreamMerger
 
 RETRY_MS = 2000  # browser reconnect delay after a dropped connection
@@ -43,13 +49,15 @@ def encode(event: StreamEvent) -> bytes:
     )
 
 
-class RunStream:
+class PersistedStream(ABC):
+    """Pattern: Template Method. The algorithm above, for any persisted, seq-ordered
+    log with a Pub/Sub channel. Subclasses say which channel and how to read a page."""
+
     def __init__(
         self,
         pool: Pool,
         broker: Broker,
         settings: Settings,
-        run_id: uuid.UUID,
         *,
         after_seq: int,
         draining: asyncio.Event,
@@ -57,13 +65,19 @@ class RunStream:
         self._pool = pool
         self._broker = broker
         self._settings = settings
-        self._run_id = run_id
         self._merger = StreamMerger(after_seq, max_buffer=settings.stream_queue_size)
         self._draining = draining
 
+    @abstractmethod
+    def channel(self) -> str: ...
+
+    @abstractmethod
+    async def page(self, conn: Conn, *, after: int, limit: int) -> list[StreamEvent]:
+        """Persisted items with seq > after, in order."""
+
     async def events(self) -> AsyncIterator[bytes]:
         yield format_sse_event(retry=RETRY_MS, comment="stream open")
-        async with self._broker.listen(run_channel(self._run_id)) as listener:
+        async with self._broker.listen(self.channel()) as listener:
             for chunk in await self._catch_up():
                 yield chunk
             now = time.monotonic()
@@ -151,5 +165,44 @@ class RunStream:
         if through is not None:
             limit = max(1, through - after)
         async with self._pool.connection() as conn:
-            rows = await RunRepository(conn).list_events(self._run_id, after_seq=after, limit=limit)
+            return await self.page(conn, after=after, limit=limit)
+
+
+class RunStream(PersistedStream):
+    """`GET /runs/{id}/stream`: the run's events; closes after its terminal event."""
+
+    def __init__(self, pool: Pool, broker: Broker, settings: Settings, run_id: uuid.UUID,
+                 *, after_seq: int, draining: asyncio.Event) -> None:  # fmt: skip
+        super().__init__(pool, broker, settings, after_seq=after_seq, draining=draining)
+        self._run_id = run_id
+
+    def channel(self) -> str:
+        return run_channel(self._run_id)
+
+    async def page(self, conn: Conn, *, after: int, limit: int) -> list[StreamEvent]:
+        rows = await RunRepository(conn).list_events(self._run_id, after_seq=after, limit=limit)
         return [to_stream_event(r) for r in rows]
+
+
+class SessionStream(PersistedStream):
+    """`GET /sessions/{id}/stream` (R12.5): the session's transcript, across all its
+    turns, plus transient events of the active turn. It never ends on its own: the
+    client closes it (or a drain asks it to reconnect)."""
+
+    def __init__(self, pool: Pool, broker: Broker, settings: Settings,
+                 session_id: uuid.UUID, *, after_seq: int,
+                 draining: asyncio.Event) -> None:  # fmt: skip
+        super().__init__(pool, broker, settings, after_seq=after_seq, draining=draining)
+        self._session_id = session_id
+
+    def channel(self) -> str:
+        return session_channel(self._session_id)
+
+    async def page(self, conn: Conn, *, after: int, limit: int) -> list[StreamEvent]:
+        from agent_runtime.sessions.store import SessionRepository
+        from agent_runtime.sessions.transcript import to_stream_event as message_event
+
+        rows = await SessionRepository(conn).messages(
+            self._session_id, after_seq=after, limit=limit
+        )
+        return [message_event(m) for m in rows]

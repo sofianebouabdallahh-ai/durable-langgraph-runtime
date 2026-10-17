@@ -45,26 +45,44 @@ class ScriptTurn(BaseModel):
     tool_calls: list[ScriptedToolCall] = Field(default_factory=list)
 
 
-_REF = re.compile(r"^\$\{(?P<tool>[a-z_]+)\[(?P<i>\d+)\]\.(?P<field>[a-z_]+)\}$")
+_REF = re.compile(r"\$\{(?P<tool>[a-z_]+)\[(?P<i>\d+)\]\.(?P<field>[a-z_]+)\}")
+_MISSING = object()
 
 
-def _resolve(value: Any, messages: list[BaseMessage]) -> Any:
-    """Replace `${tool[i].field}` references with values from earlier tool results."""
-    if isinstance(value, list):
-        return [_resolve(v, messages) for v in value]
-    if isinstance(value, dict):
-        return {k: _resolve(v, messages) for k, v in value.items()}
-    if not isinstance(value, str) or not (m := _REF.match(value)):
-        return value
+def _lookup(m: re.Match[str], messages: list[BaseMessage]) -> Any:
     results = [msg for msg in messages if isinstance(msg, ToolMessage) and msg.name == m["tool"]]
     try:
         return json.loads(str(results[int(m["i"])].content))[m["field"]]
     except (IndexError, KeyError, ValueError, TypeError):
-        return value  # unresolved: the tool's validation reports it to the "model"
+        return _MISSING
+
+
+def _resolve(value: Any, messages: list[BaseMessage]) -> Any:
+    """Replace `${tool[i].field}` references with values from earlier tool results:
+    a whole-string reference keeps the value's type; one inside a string is
+    interpolated. An unresolved reference stays as written (the tool's validation
+    then reports it to the "model")."""
+    if isinstance(value, list):
+        return [_resolve(v, messages) for v in value]
+    if isinstance(value, dict):
+        return {k: _resolve(v, messages) for k, v in value.items()}
+    if not isinstance(value, str):
+        return value
+    if (whole := _REF.fullmatch(value)) is not None:
+        found = _lookup(whole, messages)
+        return value if found is _MISSING else found
+
+    def interpolate(m: re.Match[str]) -> str:
+        found = _lookup(m, messages)
+        return m.group(0) if found is _MISSING else str(found)
+
+    return _REF.sub(interpolate, value)
 
 
 class ScriptedChatModel(BaseChatModel):
     script: list[ScriptTurn] = Field(default_factory=list)
+    # AI messages of earlier turns in the thread: a chat turn's script starts at 0.
+    offset: int = 0
 
     @property
     def _llm_type(self) -> str:
@@ -74,7 +92,7 @@ class ScriptedChatModel(BaseChatModel):
         return self  # the script decides which tools are called
 
     def _reply(self, messages: list[BaseMessage]) -> AIMessage:
-        turn = sum(isinstance(m, AIMessage) for m in messages)
+        turn = sum(isinstance(m, AIMessage) for m in messages) - self.offset
         if turn >= len(self.script):
             step = ScriptTurn(content="(script finished)")
         else:
@@ -86,7 +104,7 @@ class ScriptedChatModel(BaseChatModel):
                 {
                     "name": c.name,
                     "args": _resolve(c.args, messages),
-                    "id": f"call_{turn}_{i}",
+                    "id": f"call_{turn + self.offset}_{i}",  # unique across a session's turns
                     "type": "tool_call",
                 }
                 for i, c in enumerate(step.tool_calls)

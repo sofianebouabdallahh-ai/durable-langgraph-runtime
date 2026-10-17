@@ -48,7 +48,7 @@ from langgraph.types import Command, interrupt
 
 from agent_runtime.checkpointing import FencedCheckpointer
 from agent_runtime.config import Settings
-from agent_runtime.db import Pool
+from agent_runtime.db import Conn, Pool
 from agent_runtime.fencing import Fence, FencedError, check_fence
 from agent_runtime.graphs import GraphRegistry, GraphSpec
 from agent_runtime.graphs.assistant import AgentInput, granted_tools, subagent_graph
@@ -75,12 +75,22 @@ from agent_runtime.runs.store import (
     RunRepository,
     RunTerminal,
 )
+from agent_runtime.sessions.store import SessionRepository
+from agent_runtime.sessions.transcript import TranscriptWriter
+from agent_runtime.sessions.turns import turn_input
 from agent_runtime.streaming.bus import EventBus, publish_events
 from agent_runtime.subagents.orchestrator import SubagentLimits, SubagentOrchestrator
 from agent_runtime.tools.builtin import default_tools
-from agent_runtime.tools.hooks import HookRegistry, default_hooks
+from agent_runtime.tools.hooks import (
+    HookRegistry,
+    SessionEndInput,
+    Summary,
+    TurnEndInput,
+    default_hooks,
+    run_observers,
+)
 from agent_runtime.tools.invocations import BudgetExceeded
-from agent_runtime.tools.middleware import RunContext
+from agent_runtime.tools.middleware import RunContext, TurnDenied, TurnInfo
 from agent_runtime.tools.pipeline import Grant, ToolPipeline, ToolRunContext
 from agent_runtime.tools.policy import RiskClassPolicy, ToolPolicy
 from agent_runtime.tools.spec import ToolRegistry
@@ -163,6 +173,29 @@ class _NodeRecorder(AsyncCallbackHandler):
             )
 
 
+async def _transcript_stats(conn: Conn, session_id: uuid.UUID) -> tuple[dict[str, int], str | None]:
+    cur = await conn.execute(
+        "SELECT type, count(*) AS n FROM session_messages WHERE session_id = %s GROUP BY type",
+        (session_id,),
+    )
+    stats = {r["type"]: int(r["n"]) for r in await cur.fetchall()}
+    stats["turns"] = stats.get("user", 0)
+    cur = await conn.execute(
+        "SELECT content->>'text' AS text FROM session_messages WHERE session_id = %s "
+        "AND type = 'assistant' ORDER BY seq DESC LIMIT 1",
+        (session_id,),
+    )
+    row = await cur.fetchone()
+    return stats, row["text"] if row else None
+
+
+def _written_by(metadata: Any, run: Run) -> bool:
+    """Is the thread's latest checkpoint this run's own (so: resume it)?"""
+    if "run_id" in metadata:
+        return bool(metadata["run_id"] == str(run.id))
+    return run.thread_id == str(run.id)  # written before checkpoints carried run_id
+
+
 def _ms(t0: float) -> int:
     return round((time.monotonic() - t0) * 1000)
 
@@ -207,6 +240,7 @@ class RunExecutor:
         self._policy = policy or RiskClassPolicy()
         self._enqueue = enqueue  # send a run that became queued (children, fanned-in parent)
         self._orchestrator: SubagentOrchestrator | None = None  # set for agents with sub-agents
+        self._transcript: TranscriptWriter | None = None  # set for chat turns
         self._spawner: Spawner = (
             LocalSpawner(graphs, settings.run_max_children) if local_fanout else RunSpawner()
         )
@@ -253,7 +287,11 @@ class RunExecutor:
 
     async def _drive(self, run: Run, fence: Fence) -> Run:
         try:
-            return await self._drive_graph(run, fence)
+            if run.kind == "session_end":
+                return await self._session_end(run, fence)
+            ended = await self._drive_graph(run, fence)
+            await self._turn_end(run, ended)
+            return ended
         finally:
             # Whatever happened (including this task being cancelled, which is how a
             # test simulates a crash), no sub-agent task outlives this execution.
@@ -274,6 +312,11 @@ class RunExecutor:
         except Exception as exc:
             return await self._fail(fence, FailureReason.ERROR, None, detail=repr(exc))
         outbox = Outbox(run.id, fence, committed_steps=run.steps, bus=self._bus)
+        if run.session_id is not None:
+            # A chat turn: its transcript is written in each checkpoint's transaction.
+            self._transcript = outbox.transcript = TranscriptWriter(
+                run.session_id, run.id, fence, bus=self._bus
+            )
         checkpointer = FencedCheckpointer(
             self._pool, fence, on_commit=outbox.on_commit, after_commit=outbox.after_commit
         )
@@ -286,6 +329,9 @@ class RunExecutor:
             ],
             # Our step budget governs; LangGraph's recursion limit is only a backstop.
             "recursion_limit": limits.max_steps + 5,
+            # Stamped on every checkpoint: tells "resume this run" from "a new turn on a
+            # session thread that already has checkpoints" (phase 6 research).
+            "metadata": {"run_id": str(run.id)},
         }
         if run.started_at is None:  # set by the queued → running transition
             raise RuntimeError(f"run {run.id} is running without started_at")
@@ -299,9 +345,15 @@ class RunExecutor:
 
         graph_input: Any = None
         pending: Any = None  # the interrupt this run stopped on, if any
-        if await checkpointer.aget_tuple(config) is not None:
+        latest = await checkpointer.aget_tuple(config)
+        if latest is not None and _written_by(latest.metadata, run):
             state = await graph.aget_state(config)
             pending = state.interrupts[0].value if state.interrupts else None
+        elif spec.agent is not None:
+            # A new turn: on a session thread, earlier turns' messages are already there.
+            prior = (await graph.aget_state(config)).values.get("messages", []) if latest else []
+            text = AgentInput.model_validate(run.input).message
+            graph_input = turn_input(prior, text, run.id)
         else:
             graph_input = spec.to_graph_input(spec.input_model.model_validate(run.input))
 
@@ -337,6 +389,8 @@ class RunExecutor:
             )  # fmt: skip
         except (StepLimitReached, GraphRecursionError):
             return await self._fail(fence, FailureReason.STEP_LIMIT, outbox)
+        except TurnDenied as exc:  # a turn_start / session_start hook said no (R15.5)
+            return await self._fail(fence, FailureReason.TURN_DENIED, outbox, detail=exc.reason)
         except BudgetExceeded as exc:  # a hard limit (R14.1)
             return await self._fail(fence, FailureReason(exc.reason), outbox, detail=str(exc))
         except TimeoutError:
@@ -463,10 +517,64 @@ class RunExecutor:
             orchestrator=self._orchestrator,
         )
         pipeline = ToolPipeline(self._tools, self._policy, interrupt=interrupt)
+        turn = TurnInfo(
+            run_id=run.id, session_id=run.session_id, agent=agent.id, message=inp.message,
+            session_start=[self._hooks.get(h) for h in fm.hooks.session_start],
+            turn_start=[self._hooks.get(h) for h in fm.hooks.turn_start],
+        )  # fmt: skip
         return RunContext(
             tools, pipeline, max_model_calls=limits.max_model_calls, script=inp.script,
-            orchestrator=self._orchestrator,
+            orchestrator=self._orchestrator, turn=turn,
         )  # fmt: skip
+
+    # ------------------------------------------------------- sessions (R15.6)
+
+    async def _turn_end(self, run: Run, ended: Run) -> None:
+        """turn_end hooks: observe-only, after the turn's outcome is committed."""
+        if not ended.status.is_terminal or run.kind == "session_end":
+            return
+        try:
+            spec = self._graphs.get(run.graph_name)
+        except Exception:
+            return
+        if spec.agent is None or not spec.agent.frontmatter.hooks.turn_end:
+            return
+        hooks = [self._hooks.get(h) for h in spec.agent.frontmatter.hooks.turn_end]
+        await run_observers(hooks, TurnEndInput(
+            run_id=str(run.id), session_id=str(run.session_id) if run.session_id else None,
+            agent=spec.agent.id, status=str(ended.status), reason=ended.reason,
+        ))  # fmt: skip
+
+    async def _session_end(self, run: Run, fence: Fence) -> Run:
+        """A `session_end` run (R15.6): run the agent's session_end hooks once and
+        store the summary. It has a lease, fencing and reclaim like any run."""
+        session_id = uuid.UUID(str(run.input["session_id"]))
+        summary: str | None = None
+        try:
+            spec = self._graphs.get(run.graph_name)
+            async with self._pool.connection() as conn:
+                session = await SessionRepository(conn).get(session_id)
+                stats, last = await _transcript_stats(conn, session_id)
+            if spec.agent is not None:
+                hooks = [self._hooks.get(h) for h in spec.agent.frontmatter.hooks.session_end]
+                results = await run_observers(hooks, SessionEndInput(
+                    session_id=str(session.id), agent=spec.agent.id, stats=stats,
+                    last_answer=last,
+                ))  # fmt: skip
+                summary = next((r.text for r in results if isinstance(r, Summary)), None)
+        except Exception as exc:
+            return await self._fail(fence, FailureReason.ERROR, None, detail=repr(exc))
+
+        async def work(repo: RunRepository) -> Run:
+            if summary is not None:
+                await SessionRepository(repo.conn).set_summary(session_id, summary)
+            await repo.save_result(fence.run_id, {"summary": summary})
+            return await repo.transition(
+                fence.run_id, RunStatus.COMPLETED, event=EventType.RUN_COMPLETED, fence=fence,
+                payload={"session_id": str(session_id)},
+            )  # fmt: skip
+
+        return await self._fenced_then_publish(fence, work)
 
     async def _settle_subagents(self, ending: str | None) -> None:
         """Before the run leaves `running`: the fence only compares epochs, and a pause
@@ -546,6 +654,8 @@ class RunExecutor:
                     await check_fence(conn, fence)
                     run = await work(repo)
                 await publish_events(self._bus, repo.emitted)
+                if self._transcript is not None:
+                    await self._transcript.publish()
             await self._send(repo.ready)
             return run
         except FencedError:
@@ -578,6 +688,11 @@ class RunExecutor:
 
         async def work(repo: RunRepository) -> Run:
             await outbox.flush(repo)
+            if self._transcript is not None:
+                await self._transcript.write_event(
+                    repo.conn, "interrupt",
+                    {"interrupt_type": value.get("type"), "payload": value},
+                )  # fmt: skip
             await repo.set_interrupt(fence.run_id, value)
             return await repo.transition(
                 fence.run_id, RunStatus.WAITING_APPROVAL, event=EventType.INTERRUPT_RAISED,
@@ -627,6 +742,8 @@ class RunExecutor:
         async def work(repo: RunRepository) -> Run:
             if outbox is not None:
                 await outbox.flush(repo)  # e.g. node.failed for the failing node
+            if self._transcript is not None:  # R12.3: the turn failed / was cancelled
+                await self._transcript.write_event(repo.conn, "error", payload)
             return await repo.transition(
                 fence.run_id, target, event=event,
                 fence=fence, reason=str(reason), payload=payload,
