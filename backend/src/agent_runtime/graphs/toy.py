@@ -72,7 +72,7 @@ def build() -> StateGraph[ToyState, None, ToyState, ToyState]:
     return g
 
 
-SPEC = GraphSpec(
+SPEC = GraphSpec.of_state_graph(
     name="toy",
     description="Deterministic plan → research → answer graph for exercising the runtime.",
     input_model=ToyInput,

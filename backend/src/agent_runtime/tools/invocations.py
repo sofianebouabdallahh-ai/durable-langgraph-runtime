@@ -104,3 +104,23 @@ async def finish(
             "WHERE key = %s AND epoch = %s",
             (status, Jsonb(result), key, fence.epoch),
         )
+
+
+async def charge_model_call(conn: Conn, *, fence: Fence, max_calls: int | None) -> int:
+    """Count one model call against the run's budget (R14.1), durably, BEFORE the call.
+
+    Charged immediately (not with the step's checkpoint): a model call costs money
+    the moment it is made, even if the step that made it is later replayed.
+    """
+    async with conn.transaction():
+        await check_fence(conn, fence)
+        cur = await conn.execute(
+            "UPDATE runs SET model_calls = model_calls + 1 "
+            "WHERE id = %(id)s AND (%(max)s::int IS NULL OR model_calls < %(max)s) "
+            "RETURNING model_calls",
+            {"id": fence.run_id, "max": max_calls},
+        )
+        row = await cur.fetchone()
+    if row is None:
+        raise BudgetExceeded("budget:model_calls", f"max_model_calls={max_calls} reached")
+    return int(row["model_calls"])

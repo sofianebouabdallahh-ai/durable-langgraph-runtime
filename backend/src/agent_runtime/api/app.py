@@ -193,7 +193,7 @@ graphs_router = APIRouter(prefix="/graphs", tags=["graphs"])
 
 
 def _describe(spec: GraphSpec) -> GraphView:
-    drawable = spec.build().compile().get_graph()
+    drawable = spec.compile(None).get_graph()
     return GraphView(
         name=spec.name,
         description=spec.description,
