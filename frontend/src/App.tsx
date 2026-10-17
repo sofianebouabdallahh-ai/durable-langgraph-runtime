@@ -1,11 +1,16 @@
 import { Menu, X } from "lucide-react";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 
-import { AgentDetail, AgentsPage } from "./agents/AgentsPage";
 import { useRoute } from "./app/route";
 import { ChatView } from "./chat/ChatView";
 import { Home } from "./chat/Home";
 import { Sidebar } from "./sessions/Sidebar";
+import { Spinner } from "./ui/primitives";
+
+// The Agents pages and the Studio load when first opened: most visits are chats.
+const AgentsPage = lazy(() => import("./agents/AgentsPage").then((m) => ({ default: m.AgentsPage })));
+const AgentDetail = lazy(() => import("./agents/AgentsPage").then((m) => ({ default: m.AgentDetail })));
+const StudioEditor = lazy(() => import("./studio/StudioEditor").then((m) => ({ default: m.StudioEditor })));
 import { Logo } from "./ui/Logo";
 
 export function App() {
@@ -52,8 +57,11 @@ export function App() {
         <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
           {route.page === "chat" && <ChatView key={route.sessionId} sessionId={route.sessionId} />}
           {route.page === "home" && <Home go={go} />}
-          {route.page === "agents" && <AgentsPage />}
-          {route.page === "agent" && <AgentDetail key={route.name} name={route.name} go={go} />}
+          <Suspense fallback={<Spinner className="m-10" label="Loading…" />}>
+            {route.page === "agents" && <AgentsPage go={go} />}
+            {route.page === "studio" && <StudioEditor key={route.agentId} agentId={route.agentId} go={go} />}
+            {route.page === "agent" && <AgentDetail key={route.name} name={route.name} go={go} />}
+          </Suspense>
         </div>
       </main>
     </div>

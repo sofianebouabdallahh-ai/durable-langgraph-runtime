@@ -19,7 +19,13 @@ import { WhatHappened } from "./WhatHappened";
 
 type Decide = (decision: "approve" | "reject", reason: string | null) => void;
 
-export function ChatView({ sessionId }: { sessionId: string }) {
+/** An agent's display name: from the agents list ("Nuria", "Trip planner"), else its id. */
+export function useAgentName(name: string | null): string {
+  const agents = useQuery({ queryKey: ["agents"], queryFn: () => unwrap(api.GET("/agents")), staleTime: 30_000 });
+  return agents.data?.find((a) => a.name === name)?.display_name ?? agentLabel(name);
+}
+
+export function ChatView({ sessionId, compact = false, agentName }: { sessionId: string; compact?: boolean; agentName?: string }) {
   const { state, dispatch, connection } = useChat(sessionId);
   const [notice, setNotice] = useState<string | null>(null);
   const [sentCount, setSentCount] = useState(0); // the list follows a message you send
@@ -27,7 +33,9 @@ export function ChatView({ sessionId }: { sessionId: string }) {
     queryKey: ["session", sessionId],
     queryFn: () => unwrap(api.GET("/sessions/{session_id}", { params: { path: { session_id: sessionId } } })),
   });
-  const agent = session.data?.agent ?? null;
+  const agentId = session.data?.agent ?? null;
+  const listedName = useAgentName(agentId);
+  const label = agentName ?? listedName;
   const busy = isBusy(state);
   const waiting = pendingApproval(state);
   const views = turns(state);
@@ -67,19 +75,20 @@ export function ChatView({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-stone-200/70 bg-stone-50/80 px-5 backdrop-blur dark:border-stone-800/70 dark:bg-stone-950/80">
+      <header className={`${compact ? "hidden" : "flex"} h-14 shrink-0 items-center gap-3 border-b border-stone-200/70 bg-stone-50/80 px-5 backdrop-blur dark:border-stone-800/70 dark:bg-stone-950/80`}>
         <h1 className="truncate text-[15px] font-medium">{session.data?.title ?? "New chat"}</h1>
-        {agent && (
+        {agentId && (
           <span className="flex items-center gap-1.5 rounded-full bg-white py-0.5 pr-2.5 pl-0.5 text-xs text-stone-600 ring-1 ring-stone-200 dark:bg-stone-900 dark:text-stone-300 dark:ring-stone-800">
-            <Avatar name={agentLabel(agent)} size="sm" brand={agent === "chat"} />
-            {agentLabel(agent)}
+            <Avatar name={label} size="sm" brand={agentId === "chat"} />
+            {label}
           </span>
         )}
       </header>
       <ConnectionBanner state={connection} />
       <MessageList
         views={views}
-        agent={agent}
+        agent={label}
+        brand={agentId === "chat"}
         waitingId={waiting?.messageId ?? null}
         onDecide={(decision, reason) => void decide(decision, reason)}
         status={state.turn?.status}
@@ -97,8 +106,8 @@ export function ChatView({ sessionId }: { sessionId: string }) {
             waitingApproval={waiting !== null}
             onSend={send}
             onStop={stop}
-            placeholder={`Message ${agentLabel(agent)}…`}
-            leading={<span className="px-2 text-xs text-stone-500">Enter to send · Shift+Enter for a new line</span>}
+            placeholder={`Message ${label}…`}
+            leading={compact ? undefined : <span className="px-2 text-xs text-stone-500">Enter to send · Shift+Enter for a new line</span>}
           />
         </div>
       </div>
@@ -109,13 +118,15 @@ export function ChatView({ sessionId }: { sessionId: string }) {
 function MessageList({
   views,
   agent,
+  brand,
   waitingId,
   onDecide,
   status,
   sentCount,
 }: {
   views: TurnView[];
-  agent: string | null;
+  agent: string;
+  brand: boolean;
   waitingId: string | null;
   onDecide: Decide;
   status: TurnStatus | undefined;
@@ -148,11 +159,11 @@ function MessageList({
         {views.length === 0 && (
           <div className="py-24 text-center">
             <div className="font-display text-2xl">Start the conversation</div>
-            <div className="mt-2 text-sm text-stone-500">Ask a question, or say hello to see what {agentLabel(agent)} can do.</div>
+            <div className="mt-2 text-sm text-stone-500">Ask a question, or say hello to see what {agent} can do.</div>
           </div>
         )}
         {views.map((v) => (
-          <TurnBlock key={v.runId} view={v} agent={agent} waitingId={waitingId} onDecide={onDecide} status={v.active ? status : undefined} />
+          <TurnBlock key={v.runId} view={v} agent={agent} brand={brand} waitingId={waitingId} onDecide={onDecide} status={v.active ? status : undefined} />
         ))}
         <div ref={end} />
       </div>
@@ -166,12 +177,14 @@ function MessageList({
 function TurnBlock({
   view,
   agent,
+  brand,
   waitingId,
   onDecide,
   status,
 }: {
   view: TurnView;
-  agent: string | null;
+  agent: string;
+  brand: boolean;
   waitingId: string | null;
   onDecide: Decide;
   status: TurnStatus | undefined;
@@ -192,9 +205,9 @@ function TurnBlock({
       )}
       {hasReply && (
         <div className="flex gap-3.5">
-          <Avatar name={agentLabel(agent)} brand={!agent || agent === "chat"} />
+          <Avatar name={agent} brand={brand} />
           <div className="min-w-0 flex-1 space-y-3.5 pt-1">
-            <div className="text-sm font-semibold">{agentLabel(agent)}</div>
+            <div className="text-sm font-semibold">{agent}</div>
             {renderItems(view.items, agent, waitingId, onDecide)}
             {view.draft && (
               <div data-testid="draft">
@@ -230,7 +243,7 @@ function TurnBlock({
 }
 
 /** Items in order; consecutive tool steps share one frame. */
-function renderItems(items: Item[], agent: string | null, waitingId: string | null, onDecide: Decide): ReactNode[] {
+function renderItems(items: Item[], agent: string, waitingId: string | null, onDecide: Decide): ReactNode[] {
   const out: ReactNode[] = [];
   let steps: Extract<Item, { kind: "tool" }>[] = [];
   const flush = () => {

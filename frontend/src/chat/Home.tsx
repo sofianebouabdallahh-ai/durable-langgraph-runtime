@@ -28,6 +28,7 @@ export function Home({ go }: { go: (route: Route) => void }) {
   const [agent, setAgent] = useState("chat");
   const [notice, setNotice] = useState<string | null>(null);
   const choices = (agents.data ?? []).filter((a) => !a.hidden);
+  const chosen = choices.find((a) => a.name === agent)?.display_name ?? agentLabel(agent);
 
   const start = async (text: string): Promise<boolean> => {
     setNotice(null);
@@ -49,7 +50,7 @@ export function Home({ go }: { go: (route: Route) => void }) {
         <div className="mb-8 flex flex-col items-center text-center">
           <Mark size={52} className="mb-5 drop-shadow-sm" />
           <h1 className="font-display text-4xl font-medium tracking-tight sm:text-5xl">{greeting()}</h1>
-          <p className="mt-3 text-lg text-stone-500 dark:text-stone-400">What can {agentLabel(agent)} do for you today?</p>
+          <p className="mt-3 text-lg text-stone-500 dark:text-stone-400">What can {chosen} do for you today?</p>
         </div>
         {notice && (
           <div role="alert" className="mb-3 rounded-xl bg-rose-50 px-4 py-2.5 text-sm text-rose-800 ring-1 ring-rose-200 dark:bg-rose-950/40 dark:text-rose-200 dark:ring-rose-900">
@@ -60,7 +61,7 @@ export function Home({ go }: { go: (route: Route) => void }) {
           busy={false}
           autoFocus
           onSend={start}
-          placeholder={`Message ${agentLabel(agent)}…`}
+          placeholder={`Message ${chosen}…`}
           leading={
             choices.length > 1 && (
               <label className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800">
@@ -75,7 +76,7 @@ export function Home({ go }: { go: (route: Route) => void }) {
                 >
                   {choices.map((a) => (
                     <option key={a.name} value={a.name}>
-                      {agentLabel(a.name)}
+                      {a.display_name}
                     </option>
                   ))}
                 </select>

@@ -144,7 +144,7 @@ export function ApprovalCard({
         <div className="min-w-0 flex-1">
           <div className="text-[11px] font-semibold tracking-wider text-amber-700 uppercase dark:text-amber-400">Needs your approval</div>
           <div className="mt-0.5 font-medium text-stone-900 dark:text-stone-100">
-            {agentLabel(agent)} wants to use: {what}
+            {agent ?? agentLabel(agent)} wants to use: {what}
           </div>
           <div className="mt-1 text-stone-500 dark:text-stone-400">{approvalReason(message.reason)}</div>
           <div className="mt-3">

@@ -53,7 +53,7 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: () =>
         >
           <Plus aria-hidden className="size-4" /> New chat
         </a>
-        <NavLink to={{ page: "agents" }} active={route.page === "agents" || route.page === "agent"} onNavigate={onNavigate} icon={<Bot aria-hidden className="size-4" />}>
+        <NavLink to={{ page: "agents" }} active={route.page === "agents" || route.page === "agent" || route.page === "studio"} onNavigate={onNavigate} icon={<Bot aria-hidden className="size-4" />}>
           Agents
         </NavLink>
       </div>
