@@ -442,6 +442,72 @@ async def child_crash(c: Cluster) -> Report:
     return r
 
 
+# ---------------------------------------------------------- phase 5b: sub-agents
+
+
+async def subagents_crash(c: Cluster) -> Report:
+    """AC41 / SC16: SIGKILL the worker while a sub-agent is mid-task (another has
+    finished). The reclaiming worker resumes the main agent and the unfinished
+    sub-agent from their checkpoints; nothing finished re-runs; one result per handle."""
+    r = Report("sub-agents resume after a crash (AC41)")
+    h = "${spawn_subagent[%d].handle}"
+    script = [
+        {"tool_calls": [
+            {"name": "spawn_subagent", "args": {"agent": "scribe", "task": "keep: e2e"}},
+            {"name": "spawn_subagent", "args": {"agent": "mathematician", "task": "6*7"}},
+        ]},
+        {"tool_calls": [{"name": "wait_subagents",
+                         "args": {"handles": [h % 0, h % 1], "timeout_s": 60}}]},
+        {"content": "Kept; 42."},
+    ]  # fmt: skip
+    ret = {"tool_calls": [{"name": "return_result", "args": {"summary": "done"}}]}
+    subs = {
+        "scribe": [{"tool_calls": [{"name": "save_note",
+                                    "args": {"text": "e2e", "linger_s": 4}}]}, ret],
+        "mathematician": [{"tool_calls": [{"name": "calculator",
+                                           "args": {"expression": "6*7"}}]}, ret],
+    }  # fmt: skip
+    resp = await c.client.post("/runs", json={"graph": "delegator", "input": {
+        "message": "e2e", "script": script, "subagent_scripts": subs}})  # fmt: skip
+    resp.raise_for_status()
+    run_id = str(resp.json()["run_id"])
+
+    async def scribe_mid_task() -> bool:
+        noted = await c.rows("SELECT 1 FROM notes WHERE run_id = %s", run_id)
+        done = await c.rows(
+            "SELECT 1 FROM subagent_invocations WHERE run_id = %s AND agent LIKE '%%mathematician'"
+            " AND status = 'completed'", run_id,
+        )  # fmt: skip
+        return bool(noted and done)
+
+    await c.wait(scribe_mid_task, timeout_s=30, what="the scribe is mid-task")
+    owner = (await c.run(run_id))["owner"]
+    victim = c.pid_of(owner)
+    c.process(victim).send_signal(signal.SIGKILL)
+    await c.wait(lambda: c.status_is(run_id, "completed", "failed"), timeout_s=90,
+                 what="completion")  # fmt: skip
+
+    run, events = await c.run(run_id), await c.events(run_id)
+    subs_now = {s["agent"]: s for s in run["subagents"]}
+    calls = [e["payload"] for e in events if e["type"] == "tool.called"]
+    notes = await c.rows("SELECT 1 FROM notes WHERE run_id = %s", run_id)
+    resumer = next(e for e in events if e["type"] == "run.reclaimed")["payload"]["owner"]
+    r.check("run completed", run["status"] == "completed", run["status"])
+    r.check("resumed on another worker", c.pid_of(resumer) != victim, f"{owner} → {resumer}")
+    statuses = {a: s["status"] for a, s in subs_now.items()}
+    expected = {"scribe": "completed", "mathematician": "completed"}
+    r.check("both sub-agents completed", statuses == expected, str(statuses))
+    r.check("no sub-agent spawned twice", _count(events, "subagent.spawned") == 2)
+    r.check("exactly one result per handle", _count(events, "subagent.completed") == 2)
+    r.check("the finished sub-agent never re-ran",
+            sum(p["tool"] == "calculator" for p in calls) == 1)  # fmt: skip
+    r.check("the scribe resumed from its checkpoint (no repeated model call)",
+            subs_now["scribe"]["usage"]["model_calls"] == 2,
+            str(subs_now["scribe"]["usage"]))  # fmt: skip
+    r.check("its side effect happened once", len(notes) == 1, f"{len(notes)} note(s)")
+    return r
+
+
 SCENARIOS: dict[str, tuple[Callable[[Cluster], Awaitable[Report]], dict[str, Any]]] = {
     "crash": (crash, {}),
     "zombie": (zombie, {}),
@@ -453,6 +519,7 @@ SCENARIOS: dict[str, tuple[Callable[[Cluster], Awaitable[Report]], dict[str, Any
     "approval-restart": (approval_restart, {}),
     "fanout": (fanout, {}),
     "child-crash": (child_crash, {}),
+    "subagents-crash": (subagents_crash, {}),
 }
 
 
