@@ -81,4 +81,4 @@
 
 - **The GHCR package must be made public once** (GitHub → Packages → visibility) after the first tag, so testers can pull without logging in.
 - **`setup.ps1` needs a run on a real Windows machine.**
-- **No UI yet:** testers use the API docs or `./setup.sh --chat` until L3.
+- **No UI yet:** testers use the API docs or `./setup.sh --chat` until L2 (the chat UI, re-ordered ahead of the Studio).

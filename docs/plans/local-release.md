@@ -1,6 +1,6 @@
 # Local release plan: clone it, run it, tell us what you think
 
-**Status:** Accepted (2026-10-17); **L1 delivered** ([summary](../progress/phase-L1.md)) · **Comes before:** the [beta platform](../architecture/beta-platform.md), which waits for this release's feedback · **Builds on:** phases 0–6 · **Product scope:** [CR-006](../requirements/CR-006-agent-studio.md), in single-user form
+**Status:** Accepted (2026-10-17); **L1 delivered** ([summary](../progress/phase-L1.md)); **L2 is the chat UI** (re-ordered, §5) · **Comes before:** the [beta platform](../architecture/beta-platform.md), which waits for this release's feedback · **Builds on:** phases 0–6 · **Product scope:** [CR-006](../requirements/CR-006-agent-studio.md), in single-user form
 
 ## 1. Goal
 
@@ -162,14 +162,17 @@ The runtime is built for many users and workers, but the local release has **one
 | Phase | Name | Contents | Estimate | Done when |
 |---|---|---|---|---|
 | **L1** | **Containerise & one-command setup** | Dockerfiles (`runtime`, later `ui`), the full Compose stack (api, workers, profiles), `setup.sh` / `setup.ps1` (checks, generated `.env`, model questions, smoke test), `doctor`, multi-arch images to GHCR in CI, image scanning | ~14–18 h | Clone → working chat (API + `runtime chat`) on macOS, Windows and Linux with only Docker |
-| **L2** | **Local Agent Studio backend** | The `local` workspace/user; model connections stored encrypted (local key) + Test; agents in the DB (drafts, versions, publish, import/export); the builder agent; instruction-only skills (spec, upload, scan, attach); playground budget | ~24–32 h | The API supports everything the UI needs; AC44 (local Ollama + a Foundry or OpenAI key), AC47 |
-| **L3** | **UI: chat + Studio** | §4.5, Playwright flows, sanitised rendering | ~40–50 h | AC43 with 2–3 non-technical testers on their own machines |
-| **L4** | **Dashboards & local Kubernetes** | Observability profile with dashboards; Helm chart; kind/k3d mode; kube-prometheus-stack; pod-kill demo | ~16–22 h | `--observability` and `--kubernetes` both work from a clean machine |
-| **L5** | **Release v0.1 & feedback loop** | Docs (§4.9), issue templates, in-app feedback, update + backup, opt-in telemetry, the first tagged release | ~10–14 h | 5–10 external testers installed it; feedback collected |
+| **L2** | **Chat UI** | The chat view of §4.5 (sessions, streaming, tool and sub-agent cards, approval, stop, "What happened?"), the SSE hook, the `ui` image in the `app` profile, Playwright against the Compose stack | ~18–24 h | AC20 in the browser; a working end-to-end product (milestone M1) |
+| **L3** | **Local Agent Studio backend** | The `local` workspace/user; model connections stored encrypted (local key) + Test; agents in the DB (drafts, versions, publish, import/export); the builder agent; instruction-only skills (spec, upload, scan, attach); playground budget | ~24–32 h | The API supports everything the Studio UI needs; AC44, AC45, AC47 |
+| **L4** | **Studio UI** | The Studio, skills library and Settings → Models of §4.5 | ~22–28 h | AC43 with 2–3 non-technical testers on their own machines (M2) |
+| **L5** | **Dashboards & local Kubernetes** | Observability profile with dashboards; Helm chart; kind mode; kube-prometheus-stack; pod-kill demo | ~16–22 h | `--observability` and `--kubernetes` both work from a clean machine |
+| **L6** | **Release v0.1 & feedback loop** | Docs (§4.9), issue templates, in-app feedback, update + backup, opt-in telemetry, the first tagged release | ~10–14 h | 5–10 external testers installed it; feedback collected (M3) |
 
-**≈ 105–135 focused hours to v0.1.** Each phase keeps the working agreement: plan → success criteria → build → e2e 5× → summary → PR.
+**Re-ordered (2026-10-17):** the chat UI moved ahead of the Studio backend. The API already serves everything a chat UI needs, so this reaches a working product in the browser about 45 h sooner, and the Studio then plugs into a UI testers already use. The [roadmap](../roadmap.md) tracks the status.
 
-**After feedback:** the [beta platform](../architecture/beta-platform.md) (identity, Key Vault, fair scheduling, Azure). Much of L1–L5 carries over unchanged: the images, the UI, the Studio, connections, dashboards and the Helm chart.
+**≈ 105–140 focused hours to v0.1.** Each phase keeps the working agreement: plan → success criteria → build → e2e 5× → summary → PR.
+
+**After feedback:** the [beta platform](../architecture/beta-platform.md) (identity, Key Vault, fair scheduling, Azure). Much of L1–L6 carries over unchanged: the images, the UI, the Studio, connections, dashboards and the Helm chart.
 
 ## 6. Risks
 
