@@ -272,6 +272,9 @@ class HelperView(BaseModel):
 
 class AgentView(BaseModel):
     name: str
+    display_name: str = Field(description="How people see it (falls back to the name)")
+    source: Literal["builtin", "user"] = Field(description="Files in git, or built in the Studio")
+    agent_id: uuid.UUID | None = Field(description="A Studio agent's id (for editing)")
     description: str
     version: int
     model: str

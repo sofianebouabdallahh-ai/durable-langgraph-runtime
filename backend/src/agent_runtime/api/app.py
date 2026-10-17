@@ -25,6 +25,7 @@ from fastapi.responses import StreamingResponse
 
 from agent_runtime import __doc__ as package_doc
 from agent_runtime.admin import AdminRepository, AdminState
+from agent_runtime.agents.studio import StudioService
 from agent_runtime.api import problems
 from agent_runtime.api.problems import ApiDraining, ResultNotReady
 from agent_runtime.api.schemas import (
@@ -44,6 +45,7 @@ from agent_runtime.api.schemas import (
 )
 from agent_runtime.api.sessions import agents as agents_router
 from agent_runtime.api.sessions import sessions as sessions_router
+from agent_runtime.api.studio import studio as studio_router
 from agent_runtime.config import Settings, get_settings
 from agent_runtime.db import Pool, create_pool
 from agent_runtime.graphs import GraphRegistry, GraphSpec, default_registry
@@ -371,6 +373,7 @@ def create_app(
         relay = OutboxRelay(p, q, stale_s=settings.relay_stale_s)
         app.state.service = RunService(p, settings, graphs, relay, b)
         app.state.sessions = SessionService(p, settings, graphs, app.state.service, relay, b)
+        app.state.studio = StudioService(p, app.state.service.agents, app.state.sessions, settings)
 
     app = FastAPI(
         title="Agent Runtime API",
@@ -389,6 +392,7 @@ def create_app(
     app.include_router(runs)
     app.include_router(sessions_router)
     app.include_router(agents_router)
+    app.include_router(studio_router)
     app.include_router(graphs_router)
     app.include_router(health)
     if settings.admin_api_enabled:

@@ -259,6 +259,7 @@ class RunExecutor:
         self._orchestrator: SubagentOrchestrator | None = None  # set for agents with sub-agents
         self._transcript: TranscriptWriter | None = None  # set for chat turns
         self._tokens: TokenRelay | None = None  # set for agent graphs
+        self._test_chat = False  # a Studio test chat: side effects are simulated
         # A release the worker must NOT re-send at once (an open circuit breaker): the
         # outbox relay re-sends it once its message is stale, which is the backoff.
         self.deferred = False
@@ -333,6 +334,11 @@ class RunExecutor:
         except Exception as exc:
             return await self._fail(fence, FailureReason.ERROR, None, detail=repr(exc))
         outbox = Outbox(run.id, fence, committed_steps=run.steps, bus=self._bus)
+        self._test_chat = False
+        if run.session_id is not None:
+            async with self._pool.connection() as conn:
+                session = await SessionRepository(conn).get(run.session_id)
+            self._test_chat = session.playground_of is not None
         if run.session_id is not None:
             # A chat turn: its transcript is written in each checkpoint's transaction.
             self._transcript = outbox.transcript = TranscriptWriter(
@@ -553,6 +559,7 @@ class RunExecutor:
             post_hooks=[self._hooks.get(h) for h in fm.hooks.post_tool],
             max_tool_calls=limits.max_tool_calls,
             orchestrator=self._orchestrator,
+            simulate_side_effects=self._test_chat,
         )
         pipeline = ToolPipeline(self._tools, self._policy, interrupt=interrupt)
         turn = TurnInfo(

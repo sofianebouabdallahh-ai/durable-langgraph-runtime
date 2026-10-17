@@ -16,11 +16,15 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from agent_runtime.agents.document import ImportRejected
+from agent_runtime.agents.resolver import AgentUnavailable
+from agent_runtime.agents.studio import PublishBlocked
+from agent_runtime.agents.studio_store import AgentNotFound, NameTaken
 from agent_runtime.graphs import UnknownGraph
 from agent_runtime.runs.limits import LimitAboveCeiling
 from agent_runtime.runs.service import AdmissionPaused, Overloaded
 from agent_runtime.runs.store import NotWaitingForApproval, RunNotFound, RunTerminal
-from agent_runtime.sessions.service import NotAnAgent
+from agent_runtime.sessions.service import DuplicateSend, NotAnAgent
 from agent_runtime.sessions.store import NoActiveTurn, SessionArchived, SessionNotFound, TurnActive
 
 log = logging.getLogger(__name__)
@@ -53,6 +57,33 @@ def _errors(exc: ValidationError | RequestValidationError) -> list[dict[str, Any
 
 
 def install(app: FastAPI) -> None:
+    # ------------------------------------------------------------ Studio (L3a)
+    @app.exception_handler(AgentNotFound)
+    async def _agent_not_found(_: Request, exc: AgentNotFound) -> JSONResponse:
+        return problem(404, "agent-not-found", "Agent not found", str(exc))
+
+    @app.exception_handler(AgentUnavailable)
+    async def _agent_unavailable(_: Request, exc: AgentUnavailable) -> JSONResponse:
+        return problem(409, "agent-unavailable", "This agent can't run right now", str(exc))
+
+    @app.exception_handler(PublishBlocked)
+    async def _publish_blocked(_: Request, exc: PublishBlocked) -> JSONResponse:
+        return problem(409, "publish-blocked", "Not ready to publish", str(exc),
+                       blockers=exc.blockers)  # fmt: skip
+
+    @app.exception_handler(NameTaken)
+    async def _name_taken(_: Request, exc: NameTaken) -> JSONResponse:
+        return problem(409, "name-taken", "That name is taken", str(exc))
+
+    @app.exception_handler(ImportRejected)
+    async def _import_rejected(_: Request, exc: ImportRejected) -> JSONResponse:
+        return problem(422, "import-rejected", "This file can't be imported", str(exc))
+
+    @app.exception_handler(DuplicateSend)
+    async def _duplicate_send(_: Request, exc: DuplicateSend) -> JSONResponse:
+        return problem(409, "duplicate-send", "This message is already being sent",
+                       "Retry with the same Idempotency-Key to get its turn.")  # fmt: skip
+
     @app.exception_handler(RunNotFound)
     async def _run_not_found(_: Request, exc: RunNotFound) -> JSONResponse:
         return problem(404, "run-not-found", "Run not found", str(exc), run_id=str(exc.run_id))

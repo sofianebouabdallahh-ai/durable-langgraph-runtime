@@ -66,7 +66,18 @@ class AgentResolver:
         self._ceilings = ceilings or Ceilings.from_settings(get_agent_settings())
         self._specs: OrderedDict[str, GraphSpec] = OrderedDict()
 
+    @property
+    def catalog(self) -> Catalog:
+        return self._catalog
+
+    @property
+    def ceilings(self) -> Ceilings:
+        return self._ceilings
+
     # --------------------------------------------------------------- lookups
+
+    def builtins(self) -> list[AgentDefinition]:
+        return [s.agent for s in self._graphs if s.agent is not None]
 
     def builtin(self, name: str) -> AgentDefinition | None:
         try:

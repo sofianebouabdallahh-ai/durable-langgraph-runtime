@@ -3,6 +3,7 @@ from the snapshot the turn was created with, whatever the files say by then."""
 
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -22,8 +23,10 @@ from agent_runtime.tools.builtin import default_tools
 
 pytestmark = pytest.mark.integration
 AGENTS = Path(__file__).resolve().parents[2] / "agents"
-CALC = [{"tool_calls": [{"name": "calculator", "args": {"expression": "6*7"}}]},
-        {"content": "42"}]  # fmt: skip
+CALC: list[dict[str, Any]] = [
+    {"tool_calls": [{"name": "calculator", "args": {"expression": "6*7"}}]},
+    {"content": "42"},
+]
 
 
 def edited_registry(tmp_path: Path) -> GraphRegistry:

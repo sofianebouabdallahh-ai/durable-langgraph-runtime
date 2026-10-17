@@ -1,0 +1,284 @@
+"""The Agent Studio API (CR-006 R17.1 to R17.3, phase L3a): what the editor calls.
+
+GET  /studio/catalog                      tools, protections, presets, placeholders
+GET  /studio/agents · POST /studio/agents create blank, or a copy (`copy_of`)
+GET  /studio/agents/{id}                  draft (+ issues, tested, blockers), versions
+PUT  /studio/agents/{id}/draft            autosave + validate
+POST …/edit · …/publish · …/archive · …/versions/{n}/restore · DELETE …/draft
+POST …/test-chat                          a test chat with the draft
+GET  …/export · POST /studio/import       agent.md, or a zipped folder
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+from typing import Annotated, Any, Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from pydantic import BaseModel, ConfigDict, Field
+
+from agent_runtime.agents.document import MAX_UPLOAD_BYTES, AgentDocument, ImportRejected
+from agent_runtime.agents.schema import MAIN_PLACEHOLDERS, SUB_PLACEHOLDERS
+from agent_runtime.agents.studio import (
+    PROTECTIONS,
+    TOOLS,
+    AgentState,
+    StudioService,
+    presets,
+)
+from agent_runtime.agents.studio_store import AgentNotFound, Version
+from agent_runtime.api.schemas import SessionView
+
+studio = APIRouter(prefix="/studio", tags=["studio"])
+
+
+def _studio(request: Request) -> StudioService:
+    service: StudioService = request.app.state.studio
+    return service
+
+
+StudioDep = Annotated[StudioService, Depends(_studio)]
+
+
+# ------------------------------------------------------------------- schemas
+
+
+class ToolOption(BaseModel):
+    name: str
+    label: str
+    description: str
+    risk: str
+    asks_first: bool = Field(description="Needs a person's approval before it runs")
+    helpers_allowed: bool = Field(description="Helpers may use it (not approval-gated tools)")
+
+
+class ProtectionOption(BaseModel):
+    hook: str
+    point: str
+    label: str
+    description: str
+    default: bool
+    helpers: bool = Field(description="Also applies to helpers (tool protections)")
+
+
+class Preset(BaseModel):
+    max_turns: int
+    limits: dict[str, Any]
+
+
+class StudioCatalog(BaseModel):
+    tools: list[ToolOption]
+    protections: list[ProtectionOption]
+    presets: dict[str, Preset]
+    placeholders: dict[str, list[str]]
+    ceilings: dict[str, float]
+
+
+class IssueView(BaseModel):
+    where: str = Field(description="'agent' or 'helpers.<name>'")
+    field: str | None
+    message: str
+
+
+class VersionView(BaseModel):
+    number: int
+    state: Literal["draft", "published", "archived"]
+    changelog: str | None
+    created_at: datetime
+    published_at: datetime | None
+
+    @classmethod
+    def of(cls, v: Version) -> VersionView:
+        return cls(number=v.number, state=v.state, changelog=v.changelog,
+                   created_at=v.created_at, published_at=v.published_at)  # fmt: skip
+
+
+class DraftView(BaseModel):
+    number: int
+    document: AgentDocument
+    issues: list[IssueView]
+    tested: bool = Field(description="A test-chat reply completed on exactly this draft")
+    blockers: list[str] = Field(description="What stands between this draft and publishing")
+
+
+class StudioAgentView(BaseModel):
+    id: uuid.UUID
+    name: str
+    display_name: str
+    description: str
+    status: Literal["draft", "published", "changes"] = Field(
+        description="Never published / published, nothing pending / published, with a draft"
+    )
+    archived: bool
+    published: VersionView | None
+    published_document: AgentDocument | None
+    draft: DraftView | None
+    versions: list[VersionView]
+
+    @classmethod
+    def of(cls, s: AgentState) -> StudioAgentView:
+        current = s.draft.version.document if s.draft else (s.published.document if s.published
+                                                              else {})  # fmt: skip
+        return cls(
+            id=s.agent.id, name=s.agent.name,
+            display_name=str(current.get("display_name") or s.agent.name),
+            description=str(current.get("description") or ""),
+            status=("changes" if s.draft and s.published else "draft" if s.draft
+                    else "published"),
+            archived=s.agent.archived_at is not None,
+            published=VersionView.of(s.published) if s.published else None,
+            published_document=AgentDocument.model_validate(s.published.document)
+            if s.published else None,
+            draft=DraftView(
+                number=s.draft.version.number,
+                document=AgentDocument.model_validate(s.draft.version.document),
+                issues=[IssueView(where=i.where, field=i.field, message=i.message)
+                        for i in s.draft.issues],
+                tested=s.draft.tested, blockers=s.draft.blockers,
+            ) if s.draft else None,
+            versions=[VersionView.of(v) for v in s.versions],
+        )  # fmt: skip
+
+
+class CreateAgentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: Annotated[str, Field(min_length=1, max_length=60)]
+    description: Annotated[str, Field(max_length=500)] = ""
+    copy_of: str | None = Field(default=None, description="An agent to start from (its name)")
+
+
+class PublishRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    changelog: Annotated[str, Field(max_length=500)] | None = None
+
+
+# ----------------------------------------------------------------- endpoints
+
+
+@studio.get("/catalog", response_model=StudioCatalog, summary="What the form offers")
+async def catalog(request: Request) -> StudioCatalog:
+    service = _studio(request)
+    risks = service.tool_risks()
+    s = request.app.state.settings
+    return StudioCatalog(
+        tools=[
+            ToolOption(name=n, label=label, description=desc, risk=risks.get(n, "read"),
+                       asks_first=risks.get(n) == "external_side_effect",
+                       helpers_allowed=risks.get(n) != "external_side_effect")
+            for n, (label, desc) in TOOLS.items() if n in risks
+        ],
+        protections=[
+            ProtectionOption(hook=h, point=point, label=label, description=desc,
+                             default=default, helpers=point in ("pre_tool", "post_tool"))
+            for h, (point, label, desc, default) in PROTECTIONS.items()
+        ],
+        presets={k: Preset(**v) for k, v in presets(s).items()},
+        placeholders={"agent": sorted(MAIN_PLACEHOLDERS), "helper": sorted(SUB_PLACEHOLDERS)},
+        ceilings={"max_turns": s.ceiling_model_calls, "max_tool_calls": s.ceiling_tool_calls,
+                  "timeout_s": s.run_timeout_s},
+    )  # fmt: skip
+
+
+@studio.get("/agents", response_model=list[StudioAgentView], summary="Your agents")
+async def list_agents(service: StudioDep) -> list[StudioAgentView]:
+    return [StudioAgentView.of(s) for s in await service.all()]
+
+
+@studio.post("/agents", status_code=status.HTTP_201_CREATED, response_model=StudioAgentView,
+             summary="A new agent (blank, or a copy) with a draft")  # fmt: skip
+async def create_agent(body: CreateAgentRequest, service: StudioDep) -> StudioAgentView:
+    try:
+        return StudioAgentView.of(
+            await service.create(body.display_name, body.description, body.copy_of)
+        )
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+
+
+@studio.get("/agents/{agent_id}", response_model=StudioAgentView, summary="One agent")
+async def get_agent(agent_id: uuid.UUID, service: StudioDep) -> StudioAgentView:
+    return StudioAgentView.of(await service.get(agent_id))
+
+
+@studio.put("/agents/{agent_id}/draft", response_model=StudioAgentView,
+            summary="Save the draft (autosave); returns its issues")  # fmt: skip
+async def save_draft(
+    agent_id: uuid.UUID, document: AgentDocument, service: StudioDep
+) -> StudioAgentView:
+    return StudioAgentView.of(await service.save_draft(agent_id, document))
+
+
+@studio.post("/agents/{agent_id}/edit", response_model=StudioAgentView,
+             summary="Start editing: a draft from the published version")  # fmt: skip
+async def edit(agent_id: uuid.UUID, service: StudioDep) -> StudioAgentView:
+    return StudioAgentView.of(await service.edit(agent_id))
+
+
+@studio.delete("/agents/{agent_id}/draft", response_model=StudioAgentView,
+               summary="Throw away the draft (back to the published version)")  # fmt: skip
+async def discard(agent_id: uuid.UUID, service: StudioDep) -> StudioAgentView:
+    return StudioAgentView.of(await service.discard(agent_id))
+
+
+@studio.post("/agents/{agent_id}/publish", response_model=StudioAgentView,
+             summary="Publish the draft as an immutable version (needs a test)")  # fmt: skip
+async def publish(agent_id: uuid.UUID, body: PublishRequest, service: StudioDep) -> StudioAgentView:
+    return StudioAgentView.of(await service.publish(agent_id, body.changelog))
+
+
+@studio.post("/agents/{agent_id}/versions/{number}/restore", response_model=StudioAgentView,
+             summary="Make an earlier version the draft")  # fmt: skip
+async def restore(agent_id: uuid.UUID, number: int, service: StudioDep) -> StudioAgentView:
+    try:
+        return StudioAgentView.of(await service.restore(agent_id, number))
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+
+
+@studio.post("/agents/{agent_id}/archive", response_model=StudioAgentView,
+             summary="Archive: no new chats; old ones stay readable")  # fmt: skip
+async def archive(agent_id: uuid.UUID, service: StudioDep) -> StudioAgentView:
+    return StudioAgentView.of(await service.archive(agent_id))
+
+
+@studio.post("/agents/{agent_id}/test-chat", status_code=status.HTTP_201_CREATED,
+             response_model=SessionView, summary="A test chat with the draft")  # fmt: skip
+async def test_chat(agent_id: uuid.UUID, service: StudioDep) -> SessionView:
+    return SessionView.of(await service.playground(agent_id))
+
+
+@studio.get("/agents/{agent_id}/export", summary="Download as agent.md (or a zipped folder)",
+            responses={200: {"content": {"application/zip": {}, "text/markdown": {}}}})  # fmt: skip
+async def export(
+    agent_id: uuid.UUID,
+    service: StudioDep,
+    version: Annotated[
+        int | None, Query(ge=1, description="Default: the draft, else current")
+    ] = None,
+) -> Response:
+    try:
+        filename, data, media = await service.export(agent_id, version)
+    except LookupError as exc:
+        if isinstance(exc, AgentNotFound):
+            raise
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    disposition = f'attachment; filename="{filename}"'
+    return Response(data, media_type=media, headers={"Content-Disposition": disposition})
+
+
+@studio.post("/import", status_code=status.HTTP_201_CREATED, response_model=StudioAgentView,
+             summary="Import an agent.md or a zipped folder (the file is the body)")  # fmt: skip
+async def import_agent(
+    request: Request,
+    service: StudioDep,
+    filename: Annotated[str, Query(min_length=1, max_length=200)],
+) -> StudioAgentView:
+    data = bytearray()
+    async for chunk in request.stream():  # bounded: never buffer more than the limit
+        data += chunk
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise ImportRejected(f"the file is larger than {MAX_UPLOAD_BYTES // 1000} KB")
+    return StudioAgentView.of(await service.import_(filename, bytes(data)))

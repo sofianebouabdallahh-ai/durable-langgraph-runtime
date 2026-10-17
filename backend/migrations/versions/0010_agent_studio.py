@@ -117,6 +117,11 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS ux_runs_idempotency")
     op.execute("ALTER TABLE runs DROP COLUMN IF EXISTS idempotency_key")
     op.execute("ALTER TABLE sessions DROP COLUMN IF EXISTS playground_of")
+    # Back to the old schema, runs lose their bundle pin (it can't be expressed there).
+    op.execute(
+        "UPDATE runs SET agent_hash = NULL "
+        "WHERE agent_hash IN (SELECT hash FROM agent_definitions WHERE kind = 'bundle')"
+    )
     op.execute("DELETE FROM agent_definitions WHERE kind = 'bundle'")
     op.execute("ALTER TABLE agent_definitions DROP CONSTRAINT agent_definitions_kind_check")
     op.execute(
