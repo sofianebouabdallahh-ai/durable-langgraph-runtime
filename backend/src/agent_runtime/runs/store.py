@@ -239,6 +239,11 @@ class RunRepository:
         # outbox relay re-sends any that are lost.
         self.ready: list[uuid.UUID] = []
 
+    @property
+    def conn(self) -> Conn:
+        """For collaborators that must write in this repository's transaction."""
+        return self._conn
+
     async def create(
         self,
         *,
@@ -457,7 +462,7 @@ class RunRepository:
             created: list[Run] = []
             for child in children:
                 run = await self.create(
-                    graph_name=child.graph_name, input=child.input,
+                    graph_name=child.graph_name, input=child.input, kind="child",
                     options=child.options, limits=child.limits,
                     parent=parent, child_key=child.key,
                 )  # fmt: skip

@@ -73,6 +73,7 @@ class FailureReason(StrEnum):
     CHILDREN_FAILED = "children_failed"  # R2.8: every child failed
     REJECTED = "rejected"  # R1.4: approval rejected → cancelled
     CANCEL_REQUESTED = "cancel_requested"  # R1.6
+    TURN_DENIED = "turn_denied"  # R15.5: a turn_start hook (or session_start) said no
 
 
 class InvalidTransition(Exception):

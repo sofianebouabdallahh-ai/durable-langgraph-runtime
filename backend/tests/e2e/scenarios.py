@@ -508,6 +508,122 @@ async def subagents_crash(c: Cluster) -> Report:
     return r
 
 
+# ------------------------------------------------------------ phase 6a: chat
+
+
+def _calc(expression: str) -> dict[str, Any]:
+    return {"tool_calls": [{"name": "calculator", "args": {"expression": expression}}]}
+
+
+async def _session(c: Cluster) -> str:
+    resp = await c.client.post("/sessions", json={"agent": "chat"})
+    resp.raise_for_status()
+    return str(resp.json()["id"])
+
+
+async def _send(c: Cluster, sid: str, text: str, script: list[dict[str, Any]]) -> str:
+    resp = await c.client.post(f"/sessions/{sid}/messages",
+                               json={"content": text, "script": script})  # fmt: skip
+    resp.raise_for_status()
+    return str(resp.json()["run_id"])
+
+
+async def _transcript(c: Cluster, sid: str) -> list[dict[str, Any]]:
+    page = await c.client.get(f"/sessions/{sid}/messages", params={"limit": 500})
+    return list(page.json()["messages"])
+
+
+def _duplicates(messages: list[dict[str, Any]]) -> int:
+    ids = [m["message_id"] for m in messages]
+    return len(ids) - len(set(ids))
+
+
+async def chat_sessions(c: Cluster) -> Report:
+    """AC18 / SC6: 3 sessions x 3 turns, interleaved over 2 workers; turn 3 uses a
+    value from turn 1 (only possible if the conversation's context carried over)."""
+    r = Report("multi-session chat (AC18)")
+    sids = [await _session(c) for _ in range(3)]
+    # Watch session 0 from the OTHER replica the whole time (R12.5: any replica).
+    watch = asyncio.create_task(read_sse(c.clients[1], f"/sessions/{sids[0]}/stream",
+                                         stop_after=11, timeout_s=90))  # fmt: skip
+
+    def turn(k: int, n: int) -> tuple[str, list[dict[str, Any]]]:
+        if k == 0:
+            return "what is n*7?", [_calc(f"{n}*7"), {"content": "done"}]
+        if k == 1:
+            note = {"name": "save_note", "args": {"text": "${calculator[0].value}",
+                                                  "linger_s": 0.3}}  # fmt: skip
+            return "note it", [{"tool_calls": [note]}, {"content": "noted"}]
+        return "add one to the first result", [_calc("${calculator[0].value} + 1"),
+                                               {"content": "added"}]  # fmt: skip
+
+    runs: list[str] = []
+    for k in range(3):  # interleaved: turn k of every session, then turn k + 1
+        batch = [await _send(c, sid, *turn(k, n + 1)) for n, sid in enumerate(sids)]
+        for run_id in batch:
+            await c.wait(lambda rid=run_id: c.status_is(rid, "completed", "failed"),  # type: ignore[misc]
+                         timeout_s=60, what="the turn completes")  # fmt: skip
+        runs += batch
+
+    statuses = [(await c.run(rid))["status"] for rid in runs]
+    owners = {c.pid_of(o) for rid in runs for o in await _executed_by(c, rid)}
+    r.check("all 9 turns completed", statuses == ["completed"] * 9, str(statuses))
+    r.check("turns ran on both workers", len(owners) >= 2, f"pids {sorted(owners)}")
+    shape = ["user", "system", "tool_call", "tool_result", "assistant",
+             "user", "tool_call", "tool_result", "assistant",
+             "user", "tool_call", "tool_result", "assistant"]  # fmt: skip
+    for n, sid in enumerate(sids):
+        msgs = await _transcript(c, sid)
+        seqs = [m["seq"] for m in msgs]
+        last = [m for m in msgs if m["type"] == "tool_result"][-1]["content"]["result"]
+        types = [m["type"] for m in msgs]
+        in_order = types == shape and seqs == list(range(1, len(msgs) + 1))
+        r.check(f"session {n}: complete and in order", in_order, str(types))
+        r.check(f"session {n}: turn 3 used turn 1's value", last == {"value": (n + 1) * 7 + 1.0},
+                str(last))  # fmt: skip
+    got = await watch
+    r.check("a stream on the other replica got every message once, in order",
+            got.seqs == list(range(1, 12)), str(got.seqs))  # fmt: skip
+    return r
+
+
+async def chat_crash(c: Cluster) -> Report:
+    """AC19 / SC5: SIGKILL the owning worker during a tool call in a chat turn."""
+    r = Report("crash mid-turn (AC19)")
+    sid = await _session(c)
+    await _send(c, sid, "warm up", [{"content": "hi"}])
+    first = await _transcript(c, sid)
+    await c.wait(lambda: c.status_is(first[0]["run_id"], "completed"), timeout_s=30,
+                 what="turn 1")  # fmt: skip
+    run_id = await _send(c, sid, "keep this", [
+        {"tool_calls": [{"name": "save_note", "args": {"text": "kept", "linger_s": 4}}]},
+        {"content": "Kept."},
+    ])  # fmt: skip
+
+    async def noted() -> bool:
+        return bool(await c.rows("SELECT 1 FROM notes WHERE run_id = %s", run_id))
+
+    await c.wait(noted, timeout_s=30, what="the tool is running")
+    victim = c.pid_of((await c.run(run_id))["owner"])
+    c.process(victim).send_signal(signal.SIGKILL)
+    await c.wait(lambda: c.status_is(run_id, "completed", "failed"), timeout_s=60,
+                 what="the turn completes")  # fmt: skip
+
+    run, events = await c.run(run_id), await c.events(run_id)
+    msgs = await _transcript(c, sid)
+    notes = await c.rows("SELECT 1 FROM notes WHERE run_id = %s", run_id)
+    resumer = next(e for e in events if e["type"] == "run.reclaimed")["payload"]["owner"]
+    r.check("the turn completed", run["status"] == "completed", run["status"])
+    r.check("on the other worker", c.pid_of(resumer) != victim)
+    r.check("exactly one run.reclaimed", _count(events, "run.reclaimed") == 1)
+    r.check("zero duplicate messages", _duplicates(msgs) == 0, f"{_duplicates(msgs)}")
+    turn2 = [m["type"] for m in msgs if m["run_id"] == run_id]
+    r.check("the turn's transcript is whole",
+            turn2 == ["user", "tool_call", "tool_result", "assistant"], str(turn2))  # fmt: skip
+    r.check("its side effect happened once", len(notes) == 1, f"{len(notes)} note(s)")
+    return r
+
+
 SCENARIOS: dict[str, tuple[Callable[[Cluster], Awaitable[Report]], dict[str, Any]]] = {
     "crash": (crash, {}),
     "zombie": (zombie, {}),
@@ -520,6 +636,8 @@ SCENARIOS: dict[str, tuple[Callable[[Cluster], Awaitable[Report]], dict[str, Any
     "fanout": (fanout, {}),
     "child-crash": (child_crash, {}),
     "subagents-crash": (subagents_crash, {}),
+    "chat-sessions": (chat_sessions, {"api_replicas": [{}, {}]}),
+    "chat-crash": (chat_crash, {}),
 }
 
 

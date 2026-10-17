@@ -15,10 +15,14 @@ Rules enforced here:
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from typing import Any, Literal
+
+log = logging.getLogger(__name__)
 
 HookPoint = Literal[
     "session_start", "turn_start", "pre_model", "post_model",
@@ -57,7 +61,55 @@ class ToolHookInput:
     cached: bool = False  # post_tool: the result came from an earlier execution
 
 
-HookFn = Callable[[ToolHookInput], Awaitable[HookDecision]]
+HookFn = Callable[[Any], Awaitable[Any]]  # tool hooks: ToolHookInput → HookDecision
+
+
+# ------------------------------------------------- session & turn hooks (R15.5, R15.6)
+
+
+@dataclass(frozen=True)
+class Context:
+    """session_start / turn_start: context to add to the agent's state."""
+
+    texts: list[str]
+
+
+@dataclass(frozen=True)
+class Summary:
+    """session_end: the summary stored on the session."""
+
+    text: str
+
+
+@dataclass(frozen=True)
+class SessionHookInput:
+    session_id: str
+    agent: str
+
+
+@dataclass(frozen=True)
+class TurnHookInput:
+    run_id: str
+    session_id: str | None
+    agent: str
+    message: str
+
+
+@dataclass(frozen=True)
+class TurnEndInput:
+    run_id: str
+    session_id: str | None
+    agent: str
+    status: str  # completed | failed | cancelled
+    reason: str | None
+
+
+@dataclass(frozen=True)
+class SessionEndInput:
+    session_id: str
+    agent: str
+    stats: dict[str, int]  # messages per type, turns
+    last_answer: str | None
 
 
 @dataclass(frozen=True)
@@ -137,6 +189,33 @@ async def run_hooks(specs: list[HookSpec], inp: ToolHookInput) -> HookOutcome:
     return HookOutcome(Continue(), inp, audit)
 
 
+async def run_context_hooks(specs: list[HookSpec], inp: Any) -> Context | Deny:
+    """session_start / turn_start: in order; contexts accumulate; the first deny wins.
+    Fail closed: an exception or a timeout denies (R15.8)."""
+    texts: list[str] = []
+    for spec in specs:
+        try:
+            decision = await asyncio.wait_for(spec.fn(inp), timeout=spec.timeout_s)
+        except Exception as exc:
+            return Deny(f"hook_error:{spec.name}:{type(exc).__name__}")
+        if isinstance(decision, Deny):
+            return decision
+        if isinstance(decision, Context):
+            texts += decision.texts
+    return Context(texts)
+
+
+async def run_observers(specs: list[HookSpec], inp: Any) -> list[Any]:
+    """turn_end / session_end: observe only. A failing hook is logged, never fatal."""
+    results: list[Any] = []
+    for spec in specs:
+        try:
+            results.append(await asyncio.wait_for(spec.fn(inp), timeout=spec.timeout_s))
+        except Exception:
+            log.warning("hook %s failed (observe-only: ignored)", spec.name, exc_info=True)
+    return results
+
+
 # ------------------------------------------------------------- built-in hooks
 
 SECRET_PATTERNS = [
@@ -175,5 +254,20 @@ def default_hooks() -> HookRegistry:
     async def redact_result(inp: ToolHookInput) -> HookDecision:
         cleaned = redact(inp.result)
         return Modify(cleaned) if cleaned != inp.result else Continue()
+
+    @registry.hook("session_clock", point="session_start")
+    async def session_clock(inp: SessionHookInput) -> Context:
+        """Tells the agent when the conversation started (an example of session context)."""
+        return Context([f"This conversation started at {datetime.now(UTC):%Y-%m-%d %H:%M} UTC."])
+
+    @registry.hook("summarize_session", point="session_end")
+    async def summarize_session(inp: SessionEndInput) -> Summary:
+        """A deterministic summary: what happened, and the last answer (no model call)."""
+        s = inp.stats
+        last = (inp.last_answer or "")[:300]
+        return Summary(
+            f"{s.get('turns', 0)} turn(s), {s.get('tool_call', 0)} tool call(s), "
+            f"{s.get('error', 0)} error(s). Last answer: {last or '(none)'}"
+        )
 
     return registry

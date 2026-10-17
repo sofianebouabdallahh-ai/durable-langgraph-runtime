@@ -16,12 +16,13 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from langgraph.checkpoint.base import CheckpointMetadata
+from langgraph.checkpoint.base import Checkpoint, CheckpointMetadata
 
 from agent_runtime.db import Conn
 from agent_runtime.fencing import Fence
 from agent_runtime.runs.events import EventType
 from agent_runtime.runs.store import Event, RunRepository
+from agent_runtime.sessions.transcript import TranscriptWriter
 from agent_runtime.streaming.bus import EventBus, publish_events
 
 
@@ -32,6 +33,7 @@ class Outbox:
     committed_steps: int  # steps committed for this run so far (all executions)
     bus: EventBus | None = None
     counts_steps: bool = True
+    transcript: TranscriptWriter | None = None  # chat turns: the transcript, same txn
     pending: list[tuple[EventType, dict[str, Any]]] = field(default_factory=list)
     _just_written: list[Event] = field(default_factory=list)
 
@@ -43,9 +45,14 @@ class Outbox:
             await repo.append_event(self.run_id, epoch=self.fence.epoch, type=type, payload=payload)
         self.pending.clear()
 
-    async def on_commit(self, conn: Conn, metadata: CheckpointMetadata) -> None:
+    async def on_commit(
+        self, conn: Conn, checkpoint: Checkpoint, metadata: CheckpointMetadata
+    ) -> None:
         """FencedCheckpointer hook: runs inside the checkpoint's transaction."""
         repo = RunRepository(conn)
+        if self.transcript is not None:
+            messages = checkpoint["channel_values"].get("messages") or []
+            await self.transcript.write(conn, list(messages))
         # Step 0 only maps the input into state; supersteps ≥ 1 executed nodes.
         loop_step = metadata.get("source") == "loop" and metadata.get("step", 0) >= 1
         if self.counts_steps and loop_step:
@@ -57,3 +64,5 @@ class Outbox:
         """FencedCheckpointer hook: the transaction committed; now announce it."""
         written, self._just_written = self._just_written, []
         await publish_events(self.bus, written)
+        if self.transcript is not None:
+            await self.transcript.publish()

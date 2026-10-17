@@ -170,7 +170,7 @@ async def test_two_subagents_run_in_parallel_and_their_usage_rolls_up(
     assert await counters(pool, done.id) == (8, 8)
     assert invs["scribe"].usage["model_calls"] == 3 and invs["scribe"].usage["tool_calls"] == 3
     # The sub-agents' steps don't count toward the main run's max_steps
-    assert done.steps == 5  # model, tools, model, tools, model
+    assert done.steps == 6  # before_agent (turn hooks), model, tools, model, tools, model
 
 
 async def test_spawn_errors_are_tool_errors_the_model_sees(

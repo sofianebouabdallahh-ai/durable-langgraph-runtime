@@ -20,6 +20,8 @@ from agent_runtime.graphs import UnknownGraph
 from agent_runtime.runs.limits import LimitAboveCeiling
 from agent_runtime.runs.service import AdmissionPaused, Overloaded
 from agent_runtime.runs.store import NotWaitingForApproval, RunNotFound, RunTerminal
+from agent_runtime.sessions.service import NotAnAgent
+from agent_runtime.sessions.store import NoActiveTurn, SessionArchived, SessionNotFound, TurnActive
 
 log = logging.getLogger(__name__)
 
@@ -93,6 +95,31 @@ def install(app: FastAPI) -> None:
         )  # fmt: skip
         response.headers["Retry-After"] = str(exc.retry_after_s)
         return response
+
+    @app.exception_handler(SessionNotFound)
+    async def _session_not_found(_: Request, exc: SessionNotFound) -> JSONResponse:
+        return problem(404, "session-not-found", "Session not found", str(exc),
+                       session_id=str(exc.session_id))  # fmt: skip
+
+    @app.exception_handler(SessionArchived)
+    async def _archived(_: Request, exc: SessionArchived) -> JSONResponse:
+        return problem(409, "session-archived", "Session is archived", str(exc),
+                       session_id=str(exc.session_id))  # fmt: skip
+
+    @app.exception_handler(TurnActive)
+    async def _turn_active(_: Request, exc: TurnActive) -> JSONResponse:
+        return problem(409, "turn-active", "A turn is already active", str(exc),
+                       session_id=str(exc.session_id), run_id=str(exc.run_id),
+                       status_now=exc.status)  # fmt: skip
+
+    @app.exception_handler(NoActiveTurn)
+    async def _no_turn(_: Request, exc: NoActiveTurn) -> JSONResponse:
+        return problem(409, "no-active-turn", "No active turn", str(exc),
+                       session_id=str(exc.session_id))  # fmt: skip
+
+    @app.exception_handler(NotAnAgent)
+    async def _not_an_agent(_: Request, exc: NotAnAgent) -> JSONResponse:
+        return problem(422, "not-an-agent", "Not an agent", str(exc), name=exc.name)
 
     @app.exception_handler(UnknownGraph)
     async def _unknown_graph(_: Request, exc: UnknownGraph) -> JSONResponse:

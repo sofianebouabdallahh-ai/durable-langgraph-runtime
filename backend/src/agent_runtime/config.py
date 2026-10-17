@@ -78,6 +78,8 @@ class Settings(AgentSettings):
     worker_block_ms: int = Field(default=2000, gt=0)  # XREADGROUP BLOCK: how long a read waits
     worker_grace_s: float = Field(default=50.0, gt=0)  # drain budget; < k8s terminationGrace (60)
     relay_interval_s: float = Field(default=10.0, gt=0)  # outbox relay sweep period
+    session_idle_ttl_s: float = Field(default=24 * 3600, gt=0)  # then archived (R15.6)
+    session_sweep_s: float = Field(default=60.0, gt=0)  # how often workers look for idle ones
     relay_stale_s: float = Field(default=30.0, gt=0)  # re-send a queued run's message after this
 
     # Streaming (R2.5, §5). Pub/Sub is only a wake-up hint; Postgres is the record.

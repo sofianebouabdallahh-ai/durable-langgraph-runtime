@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from agent_runtime.runs.state import RunStatus
 from agent_runtime.runs.store import Event, Run
+from agent_runtime.sessions.store import Message, Session
 from agent_runtime.subagents.store import Invocation
 
 
@@ -166,3 +167,96 @@ class AdminStatus(BaseModel):
     reason: str | None
     updated_at: datetime
     queue_depth: int = Field(description="Runs waiting for a worker (R2.9)")
+
+
+# ------------------------------------------------------------ sessions (CR-001)
+
+
+class CreateSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    agent: str = Field(description="The agent to chat with (GET /agents)")
+    title: Annotated[str, Field(min_length=1, max_length=200)] | None = None
+
+
+class UpdateSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: Annotated[str, Field(min_length=1, max_length=200)] | None = None
+    status: Literal["archived"] | None = Field(default=None, description="Archive (R12.1)")
+
+
+class SessionView(BaseModel):
+    id: uuid.UUID
+    agent: str | None
+    title: str | None
+    status: str
+    active_run_id: uuid.UUID | None
+    active_run_status: str | None
+    messages: int = Field(description="Transcript length (the last seq)")
+    tokens: int
+    cost: float
+    summary: str | None = Field(description="Stored by the session_end hooks (R15.6)")
+    created_at: datetime
+    last_activity_at: datetime
+    ended_at: datetime | None
+
+    @classmethod
+    def of(cls, s: Session) -> SessionView:
+        return cls(
+            id=s.id, agent=s.agent_name, title=s.title, status=s.status,
+            active_run_id=s.active_run_id, active_run_status=s.active_run_status,
+            messages=s.last_seq, tokens=s.tokens, cost=s.cost, summary=s.summary,
+            created_at=s.created_at, last_activity_at=s.last_activity_at, ended_at=s.ended_at,
+        )  # fmt: skip
+
+
+class MessageView(BaseModel):
+    seq: int
+    message_id: str
+    run_id: uuid.UUID | None
+    type: str
+    role: str
+    content: dict[str, Any]
+    created_at: datetime
+
+    @classmethod
+    def of(cls, m: Message) -> MessageView:
+        return cls(
+            seq=m.seq, message_id=m.message_id, run_id=m.run_id, type=m.type, role=m.role,
+            content=m.content, created_at=m.created_at,
+        )  # fmt: skip
+
+
+class MessagesPage(BaseModel):
+    messages: list[MessageView]
+    next_after_seq: int | None
+
+
+class SendMessageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content: Annotated[str, Field(min_length=1, max_length=32_000)]  # R14.5: 32 KB
+    options: dict[str, Any] | None = None
+    # The scripted model's replies (R14.20); real providers ignore them.
+    script: list[dict[str, Any]] | None = None
+    subagent_scripts: dict[str, list[dict[str, Any]]] | None = None
+
+
+class TurnAccepted(BaseModel):
+    message_id: str
+    seq: int
+    run_id: uuid.UUID
+
+
+class AgentView(BaseModel):
+    name: str
+    description: str
+    version: int
+    model: str
+    max_turns: int
+    tools: list[dict[str, Any]]
+    limits: dict[str, Any]
+    hooks: dict[str, list[str]]
+    subagents: list[str]
+    prompt: str | None = Field(default=None, description="GET /agents/{name} only")
