@@ -16,6 +16,11 @@ COPY . .
 RUN pnpm build
 
 FROM ${NGINX_IMAGE}
+# The base is pinned by digest; Alpine's security fixes published since are applied
+# here (e.g. libexpat CVE-2026-77214), and the Trivy gate checks the result.
+USER root
+RUN apk upgrade --no-cache
+USER 101
 # Runs as nginx (UID 101); listens on 8080; temp files and the pid in /tmp (a tmpfs
 # in Compose), so the root filesystem can be read-only.
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf

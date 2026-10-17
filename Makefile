@@ -57,7 +57,7 @@ ui-api: ## Regenerate the UI's API types from the backend's OpenAPI spec
 ui-e2e: ## Browser tests (Playwright, in a container) against the running stack: ./setup.sh first
 	$(DOCKER) build -q -t agent-runtime-e2e:local frontend/e2e >/dev/null
 	$(DOCKER) run --rm --network $(STACK)_default -v /var/run/docker.sock:/var/run/docker.sock \
-		-e COMPOSE_PROJECT=$(STACK) -e BASE_URL=http://ui:8080 \
+		-e COMPOSE_PROJECT=$(STACK) -e BASE_URL=http://ui:8080 -e LIVE_MODEL=$(LIVE_MODEL) \
 		-v $(CURDIR)/frontend/e2e/test-results:/e2e/test-results -v $(CURDIR)/frontend/e2e/playwright-report:/e2e/playwright-report \
 		agent-runtime-e2e:local $(ARGS)
 
