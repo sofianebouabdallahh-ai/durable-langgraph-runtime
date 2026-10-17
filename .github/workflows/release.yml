@@ -58,7 +58,11 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
       - name: Scan the published image (fail on fixable HIGH/CRITICAL)
+        # The package is private until made public, so Trivy pulls with the job's token.
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          docker run --rm aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa \
+          docker run --rm -e TRIVY_USERNAME -e TRIVY_PASSWORD aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa \
             image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress \
             "${IMAGE}:${GITHUB_REF_NAME#v}"
