@@ -131,7 +131,7 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 **Learn:** pub/sub vs. persistent logs, ordering, exactly-once *display* on top of at-least-once delivery.
 **Done when:** **AC3** passes via `make demo-replicas`, plus SC1–SC11 in the plan.
 
-### Phase 4 — Tools & human-in-the-loop · ~8–10 h
+### Phase 4 — Tools & human-in-the-loop · ~8–10 h (plan: [plans/phase-04.md](plans/phase-04.md); summary: [progress/phase-04.md](progress/phase-04.md))
 **Goal:** tools are safe to retry, and runs can pause for a human.
 - Tool registry with `side_effect`, `cache` and `isolation` (R3.4, R13.1)
 - `ToolPolicy` (R3.2); idempotency wrapper and `tool_invocations` (R2.6)
@@ -141,7 +141,7 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 - Deny-by-default grants per graph/node, risk classes, strict argument validation, audit events, result truncation (R14.9–R14.11, R14.17, R14.5)
 
 **Learn:** idempotency keys, the outbox-style "record, then act" pattern, durable pauses.
-**Done when:** **AC4** (approval survives restart) passes.
+**Done when:** **AC4** (approval survives restart) passes via `make demo-approval`, plus SC1–SC12 in the plan.
 
 ### Phase 5 — Sub-runs, sub-agents & backpressure · ~10–14 h
 **Goal:** the research fan-out spreads across workers (child runs), and a main agent can orchestrate its sub-agents in-process (CR-005).

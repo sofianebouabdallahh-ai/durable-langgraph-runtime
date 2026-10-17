@@ -4,7 +4,7 @@
 
 A runtime that runs LangGraph agents across a pool of workers and makes them survive what distributed systems throw at them: crashed workers, paused "zombie" workers, restarts, human approvals that take hours, node drains and rolling upgrades. It survives all of these without losing or duplicating work.
 
-> **Status: Phase 3 (streaming across replicas) complete.** Runs execute on a pool of workers that survives crashes and zombies, and any API replica streams any run live over SSE, in order and exactly once, across reconnects and replica restarts. Tools, human-in-the-loop and real agents come next. See the [roadmap](docs/roadmap.md) and [phase summaries](docs/progress/).
+> **Status: Phase 4 (tools & human-in-the-loop) complete.** Runs execute on a pool of workers that survives crashes and zombies; any API replica streams any run live. Agents call tools through one fixed-order pipeline (validated, granted, hooked, budgeted, idempotent, audited), so a crash never repeats a side effect, and a run can pause for human approval with no worker holding it, then resume on any worker. Sub-runs and sub-agents come next. See the [roadmap](docs/roadmap.md) and [phase summaries](docs/progress/).
 
 ## How it works (target design)
 

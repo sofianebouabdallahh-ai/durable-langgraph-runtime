@@ -1,5 +1,7 @@
 # Phase 4 plan — Tools & human-in-the-loop
 
+> **Status: delivered.** Every success criterion passed; results are in [progress/phase-04.md](../progress/phase-04.md).
+
 **Goal:** agents call tools through one safe pipeline. Every call is validated, permitted, budgeted, idempotent and audited, so a retry after a crash never repeats a side effect. And a run can **pause for a human** for hours, with no worker holding it, then resume exactly where it stopped.
 
 **Done when:** AC4 passes as `make demo-approval`: a run pauses for approval, **all workers are killed**, the approval (with edits) is given through the API with no worker alive, fresh workers resume the run, and it completes using the edits. Plus the success criteria below.
