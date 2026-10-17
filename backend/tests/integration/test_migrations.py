@@ -24,6 +24,8 @@ TABLES = {
     "subagent_invocations",
     "notes",
     "outbox_notifications",
+    "agents",
+    "agent_versions",
 }
 
 
@@ -208,3 +210,77 @@ def test_rows_without_an_epoch_are_not_fenced(migrated_db: psycopg.Connection) -
         "VALUES (%s, 1, 'm-api', 'user', 'user', '{}')",
         (sid,),
     )
+
+
+# ------------------------------------------------------------ Studio (L3a, AC47)
+
+
+def _agent_with_version(conn: psycopg.Connection, state: str = "draft") -> uuid.UUID:
+    agent = uuid.uuid4()
+    digest = "a" * 64
+    conn.execute(
+        "INSERT INTO agent_definitions (hash, name, version, kind, content) "
+        "VALUES (%s, 't', 1, 'bundle', '{}') ON CONFLICT DO NOTHING",
+        (digest,),
+    )
+    conn.execute("INSERT INTO agents (id, name) VALUES (%s, %s)", (agent, f"a{agent.hex[:8]}"))
+    conn.execute(
+        "INSERT INTO agent_versions (agent_id, number, state, document, bundle_hash) "
+        "VALUES (%s, 1, 'draft', '{}', %s)",
+        (agent, digest),
+    )
+    if state == "published":
+        conn.execute(
+            "UPDATE agent_versions SET state = 'published', published_at = now() "
+            "WHERE agent_id = %s",
+            (agent,),
+        )
+    return agent
+
+
+def test_a_published_version_can_never_change(migrated_db: psycopg.Connection) -> None:
+    agent = _agent_with_version(migrated_db, "published")
+    for change in ("document = '{\"x\": 1}'", "changelog = 'sneaky'", "state = 'draft'"):
+        migrated_db.execute("SAVEPOINT s")
+        with pytest.raises(psycopg.errors.CheckViolation):
+            migrated_db.execute(f"UPDATE agent_versions SET {change} WHERE agent_id = %s", (agent,))
+        migrated_db.execute("ROLLBACK TO SAVEPOINT s")
+    with pytest.raises(psycopg.errors.CheckViolation):
+        migrated_db.execute("DELETE FROM agent_versions WHERE agent_id = %s", (agent,))
+
+
+def test_versions_only_move_forward_and_one_draft_per_agent(
+    migrated_db: psycopg.Connection,
+) -> None:
+    agent = _agent_with_version(migrated_db, "published")
+    migrated_db.execute(
+        "UPDATE agent_versions SET state = 'archived' WHERE agent_id = %s", (agent,)
+    )
+    migrated_db.execute(
+        "INSERT INTO agent_versions (agent_id, number, state, document) "
+        "VALUES (%s, 2, 'draft', '{}')",
+        (agent,),
+    )
+    migrated_db.execute("UPDATE agent_versions SET document = '{\"a\": 1}' WHERE number = 2 "
+                        "AND agent_id = %s", (agent,))  # a draft is editable  # fmt: skip
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        migrated_db.execute(
+            "INSERT INTO agent_versions (agent_id, number, state, document) "
+            "VALUES (%s, 3, 'draft', '{}')",
+            (agent,),
+        )
+
+
+def test_a_retried_send_finds_its_turn(migrated_db: psycopg.Connection) -> None:
+    session = migrated_db.execute(
+        "INSERT INTO sessions (id, graph_name) VALUES (%s, 'chat') RETURNING id", (uuid.uuid4(),)
+    ).fetchone()
+    assert session is not None
+    insert = (
+        "INSERT INTO runs (id, graph_name, thread_id, input, status, finished_at, session_id,"
+        " idempotency_key, kind) "
+        "VALUES (%s, 'chat', 't', '{}', 'completed', now(), %s, 'k1', 'turn')"
+    )
+    migrated_db.execute(insert.replace("'completed'", "'cancelled'"), (uuid.uuid4(), session[0]))
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        migrated_db.execute(insert, (uuid.uuid4(), session[0]))
