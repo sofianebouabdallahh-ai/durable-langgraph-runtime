@@ -24,11 +24,36 @@ COMPOSE := $(DOCKER) compose --file infra/compose/docker-compose.yml --env-file 
 BACKEND     := cd backend && uv run --frozen
 BACKEND_ENV := cd backend && uv run --frozen --env-file $(ENV_FILE)
 
+# The UI's toolchain (Node + pnpm) runs in a pinned container: nothing to install on
+# the host. node_modules and the pnpm store live in named volumes (fast on macOS).
+# With Node 24 installed natively, `cd frontend && pnpm …` works the same.
+UI_NODE_IMAGE := node:24.20.0-trixie-slim@sha256:50c3b2f6988dfc307b86e5301d69611af31f4789bdf232863b07d3b02fe55ae0
+UI_TTY := $(shell [ -t 0 ] && echo -it)
+UI_RUN = $(DOCKER) run --rm -v $(CURDIR)/frontend:/app -v agent-runtime-ui-node-modules:/app/node_modules \
+	-v agent-runtime-ui-pnpm:/pnpm -e COREPACK_HOME=/pnpm/corepack -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
+	-e npm_config_store_dir=/pnpm/store -w /app $(1) $(UI_NODE_IMAGE) sh -c 'corepack enable && $(2)'
+
 .DEFAULT_GOAL := help
-.PHONY: help env hooks up down nuke ps logs setup image app-stop doctor demo-compose llm-up llm-down migrate migration api worker run-toy demo-crash demo-zombie demo-release demo-replicas demo-tools demo-approval demo-fanout demo-subagents demo-chat demo-chat-crash demo-chat-live chat demo-e2e lint fmt typecheck agents-validate test test-unit test-integration test-live coverage check
+.PHONY: help env hooks up down nuke ps logs setup image app-stop doctor demo-compose llm-up llm-down migrate migration api worker run-toy demo-crash demo-zombie demo-release demo-replicas demo-tools demo-approval demo-fanout demo-subagents demo-chat demo-chat-crash demo-chat-live chat demo-e2e ui-install ui-check ui-dev ui-api ui-pnpm lint fmt typecheck agents-validate test test-unit test-integration test-live coverage check
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
+
+ui-install: ## Install the UI's locked dependencies (in a Node container)
+	$(call UI_RUN,,pnpm install --frozen-lockfile)
+
+ui-check: ui-install ## UI: lint, types, unit tests with coverage, production build
+	$(call UI_RUN,,pnpm check)
+
+ui-dev: ui-install ## UI dev server on http://127.0.0.1:5173, proxying /api to API_URL (default: the stack's UI)
+	$(call UI_RUN,$(UI_TTY) -p 127.0.0.1:5173:5173 -e API_URL=$(or $(API_URL),http://host.docker.internal:$(or $(UI_PORT),3000)/api),pnpm dev)
+
+ui-api: ## Regenerate the UI's API types from the backend's OpenAPI spec
+	$(BACKEND) runtime openapi --out ../frontend/openapi.json
+	$(call UI_RUN,,pnpm api)
+
+ui-pnpm: ## Run any pnpm command in the UI container: make ui-pnpm ARGS="add -D x@1.2.3"
+	$(call UI_RUN,$(UI_TTY),pnpm $(ARGS))
 
 env: ## Create .env from .env.example, or add keys that .env is missing (never overwrites)
 	@test -f .env || (cp .env.example .env && echo "created .env from .env.example")

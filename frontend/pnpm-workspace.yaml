@@ -1,0 +1,11 @@
+# pnpm settings (supply chain). Same policy as uv's exclude-newer for the backend:
+# a version must be public for 14 days before we install it, so a hijacked release
+# is usually caught and pulled before it reaches us.
+minimumReleaseAge: 20160  # minutes
+# Dependencies' install scripts don't run unless listed here (pnpm's default).
+onlyBuiltDependencies: []
+# openapi-typescript 7.13 declares typescript ^5 but works with 6 (its output is
+# checked by `tsc` and the drift check in CI). Remove when it declares 6.
+peerDependencyRules:
+  allowedVersions:
+    openapi-typescript>typescript: "6"
