@@ -37,6 +37,12 @@ export function errorText(reason: string, budgetLimited: boolean): string {
   return `Something went wrong (${reason}).`;
 }
 
+/** Why an action waits for a person, without the policy's vocabulary. */
+export function approvalReason(reason: string | null): string {
+  if (reason?.includes("external")) return "It reaches outside this chat (real people or systems), so it waits for your OK.";
+  return "It needs your OK before it runs.";
+}
+
 export function helperStatusLabel(status: string): string {
   switch (status) {
     case "running":

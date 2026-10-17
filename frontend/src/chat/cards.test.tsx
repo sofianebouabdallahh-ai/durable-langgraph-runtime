@@ -37,6 +37,7 @@ describe("ApprovalCard", () => {
     const onDecide = vi.fn();
     const { unmount } = render(<ApprovalCard message={ask} decided={null} pending onDecide={onDecide} />);
     expect(screen.getByText(/wants to use: Notification/)).toBeInTheDocument();
+    expect(screen.getByText(/reaches outside this chat/)).toBeInTheDocument(); // plain words, not "external"
     await userEvent.click(screen.getByRole("button", { name: "Approve" }));
     await userEvent.click(screen.getByRole("button", { name: "Approve" }));
     expect(onDecide).toHaveBeenCalledTimes(1);

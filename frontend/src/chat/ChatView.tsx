@@ -18,6 +18,7 @@ export function ChatView({ sessionId }: { sessionId: string }) {
   const { state, dispatch, connection } = useChat(sessionId);
   const queryClient = useQueryClient();
   const [notice, setNotice] = useState<string | null>(null);
+  const [sentCount, setSentCount] = useState(0); // the list follows a message you send
   const session = useQuery({
     queryKey: ["session", sessionId],
     queryFn: () => unwrap(api.GET("/sessions/{session_id}", { params: { path: { session_id: sessionId } } })),
@@ -33,6 +34,7 @@ export function ChatView({ sessionId }: { sessionId: string }) {
         api.POST("/sessions/{session_id}/messages", { params: { path: { session_id: sessionId } }, body: { content: text } }),
       );
       dispatch({ kind: "sent", runId: accepted.run_id });
+      setSentCount((n) => n + 1);
       if (!session.data?.title) {
         // Name a new chat after its first message, as people expect.
         void api
@@ -72,6 +74,7 @@ export function ChatView({ sessionId }: { sessionId: string }) {
         waitingId={waiting?.messageId ?? null}
         onDecide={(decision, reason) => void decide(decision, reason)}
         status={state.turn?.status}
+        sentCount={sentCount}
       />
       <div className="border-t border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
         {notice && (
@@ -90,11 +93,13 @@ function MessageList({
   waitingId,
   onDecide,
   status,
+  sentCount,
 }: {
   views: TurnView[];
   waitingId: string | null;
   onDecide: (decision: "approve" | "reject", reason: string | null) => void;
   status: TurnStatus | undefined;
+  sentCount: number;
 }) {
   const end = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -105,6 +110,9 @@ function MessageList({
     // Follow new content only if the reader is already at the bottom.
     if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 160) end.current?.scrollIntoView({ block: "end" });
   }, [signature]);
+  useEffect(() => {
+    if (sentCount > 0) end.current?.scrollIntoView({ block: "end" }); // you just sent: show it
+  }, [sentCount]);
   return (
     <div ref={box} className="min-h-0 flex-1 overflow-y-auto px-4 py-6" data-testid="messages">
       <div className="mx-auto max-w-3xl space-y-8">

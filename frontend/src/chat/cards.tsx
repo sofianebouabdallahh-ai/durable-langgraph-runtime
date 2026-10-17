@@ -3,7 +3,7 @@ import { useState } from "react";
 
 import type { Message } from "../api/messages";
 import { Badge, Button, DataBlock } from "../ui/primitives";
-import { errorText, helperStatusLabel, toolLabel } from "../ui/words";
+import { approvalReason, errorText, helperStatusLabel, toolLabel } from "../ui/words";
 import type { Helper } from "./transcript";
 
 type Of<T extends Message["type"]> = Extract<Message, { type: T }>;
@@ -89,7 +89,7 @@ export function ApprovalCard({
   return (
     <div className="rounded-lg border-2 border-amber-400 bg-amber-50 p-3 text-sm dark:border-amber-600 dark:bg-amber-950/30" data-testid="approval-card">
       <div className="font-medium">The assistant wants to use: {what}</div>
-      {message.reason && <div className="mt-1 text-slate-600 dark:text-slate-300">{message.reason}</div>}
+      <div className="mt-1 text-slate-600 dark:text-slate-300">{approvalReason(message.reason)}</div>
       <div className="mt-2">
         <DataBlock value={message.args} />
       </div>

@@ -29,12 +29,14 @@ BACKEND_ENV := cd backend && uv run --frozen --env-file $(ENV_FILE)
 # With Node 24 installed natively, `cd frontend && pnpm …` works the same.
 UI_NODE_IMAGE := node:24.20.0-trixie-slim@sha256:50c3b2f6988dfc307b86e5301d69611af31f4789bdf232863b07d3b02fe55ae0
 UI_TTY := $(shell [ -t 0 ] && echo -it)
+# The Compose project the browser tests target (its network is <project>_default).
+STACK := $(or $(COMPOSE_PROJECT_NAME),agent-runtime)
 UI_RUN = $(DOCKER) run --rm -v $(CURDIR)/frontend:/app -v agent-runtime-ui-node-modules:/app/node_modules \
 	-v agent-runtime-ui-pnpm:/pnpm -e COREPACK_HOME=/pnpm/corepack -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
 	-e npm_config_store_dir=/pnpm/store -w /app $(1) $(UI_NODE_IMAGE) sh -c 'corepack enable && $(2)'
 
 .DEFAULT_GOAL := help
-.PHONY: help env hooks up down nuke ps logs setup image app-stop doctor demo-compose llm-up llm-down migrate migration api worker run-toy demo-crash demo-zombie demo-release demo-replicas demo-tools demo-approval demo-fanout demo-subagents demo-chat demo-chat-crash demo-chat-live chat demo-e2e ui-install ui-check ui-dev ui-api ui-pnpm lint fmt typecheck agents-validate test test-unit test-integration test-live coverage check
+.PHONY: help env hooks up down nuke ps logs setup image app-stop doctor demo-compose llm-up llm-down migrate migration api worker run-toy demo-crash demo-zombie demo-release demo-replicas demo-tools demo-approval demo-fanout demo-subagents demo-chat demo-chat-crash demo-chat-live chat demo-e2e ui-install ui-check ui-dev ui-api ui-pnpm ui-e2e lint fmt typecheck agents-validate test test-unit test-integration test-live coverage check
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -51,6 +53,13 @@ ui-dev: ui-install ## UI dev server on http://127.0.0.1:5173, proxying /api to A
 ui-api: ## Regenerate the UI's API types from the backend's OpenAPI spec
 	$(BACKEND) runtime openapi --out ../frontend/openapi.json
 	$(call UI_RUN,,pnpm api)
+
+ui-e2e: ## Browser tests (Playwright, in a container) against the running stack: ./setup.sh first
+	$(DOCKER) build -q -t agent-runtime-e2e:local frontend/e2e >/dev/null
+	$(DOCKER) run --rm --network $(STACK)_default -v /var/run/docker.sock:/var/run/docker.sock \
+		-e COMPOSE_PROJECT=$(STACK) -e BASE_URL=http://ui:8080 \
+		-v $(CURDIR)/frontend/e2e/test-results:/e2e/test-results -v $(CURDIR)/frontend/e2e/playwright-report:/e2e/playwright-report \
+		agent-runtime-e2e:local $(ARGS)
 
 ui-pnpm: ## Run any pnpm command in the UI container: make ui-pnpm ARGS="add -D x@1.2.3"
 	$(call UI_RUN,$(UI_TTY),pnpm $(ARGS))
