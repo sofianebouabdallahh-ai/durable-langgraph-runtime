@@ -19,7 +19,7 @@ from pydantic import ValidationError
 from agent_runtime.graphs import UnknownGraph
 from agent_runtime.runs.limits import LimitAboveCeiling
 from agent_runtime.runs.service import AdmissionPaused
-from agent_runtime.runs.store import RunNotFound, RunTerminal
+from agent_runtime.runs.store import NotWaitingForApproval, RunNotFound, RunTerminal
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +69,13 @@ def install(app: FastAPI) -> None:
     async def _terminal(_: Request, exc: RunTerminal) -> JSONResponse:
         return problem(
             409, "run-terminal", "Run has already ended", str(exc),
+            run_id=str(exc.run.id), status_now=str(exc.run.status),
+        )  # fmt: skip
+
+    @app.exception_handler(NotWaitingForApproval)
+    async def _not_waiting(_: Request, exc: NotWaitingForApproval) -> JSONResponse:
+        return problem(
+            409, "not-waiting-for-approval", "Run is not waiting for approval", str(exc),
             run_id=str(exc.run.id), status_now=str(exc.run.status),
         )  # fmt: skip
 

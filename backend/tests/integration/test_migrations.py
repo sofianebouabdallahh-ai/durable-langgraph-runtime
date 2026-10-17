@@ -22,6 +22,8 @@ TABLES = {
     "agent_definitions",
     "admin_state",
     "subagent_invocations",
+    "notes",
+    "outbox_notifications",
 }
 
 

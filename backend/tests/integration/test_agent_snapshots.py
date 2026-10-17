@@ -2,8 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from agent_runtime.agents.loader import Catalog, Ceilings, load_agents
+from agent_runtime.agents.loader import Ceilings, load_agents
 from agent_runtime.agents.store import AgentDefinitionRepository
+from agent_runtime.catalog import default_catalog
 from agent_runtime.db import Pool
 
 pytestmark = pytest.mark.integration
@@ -13,7 +14,7 @@ CEILINGS = Ceilings(model_calls=100, tool_calls=100, tokens=1_000_000, cost_usd=
 
 
 async def test_snapshot_is_content_addressed_and_idempotent(pool: Pool) -> None:
-    example = load_agents(AGENTS, Catalog(), CEILINGS).get("example")
+    example = load_agents(AGENTS, default_catalog(), CEILINGS).get("example")
     async with pool.connection() as conn:
         repo = AgentDefinitionRepository(conn)
         first = await repo.snapshot(example)

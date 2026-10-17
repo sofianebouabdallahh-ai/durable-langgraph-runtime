@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -37,6 +37,9 @@ class RunView(BaseModel):
     reclaims: int = Field(description="Times taken over after a worker died (R2.4)")
     releases: int = Field(description="Graceful hand-offs on worker shutdown (R10.7)")
     cancel_requested: bool
+    interrupt_payload: dict[str, Any] | None = Field(
+        description="What a waiting_approval run waits on (R1.4)"
+    )
     limits: dict[str, Any]
     created_at: datetime
     started_at: datetime | None
@@ -57,6 +60,7 @@ class RunView(BaseModel):
             reclaims=run.reclaims,
             releases=run.releases,
             cancel_requested=run.cancel_requested,
+            interrupt_payload=run.interrupt_payload,
             limits=run.limits,
             created_at=run.created_at,
             started_at=run.started_at,
@@ -99,6 +103,24 @@ class GraphView(BaseModel):
     nodes: list[str]
     edges: list[GraphEdge]
     input_schema: dict[str, Any]
+
+
+class ApprovalEdits(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    args: dict[str, Any] | None = Field(
+        default=None, description="Replacement tool arguments (re-validated before use)"
+    )
+
+
+class ApprovalRequest(BaseModel):
+    """R1.4: `{decision: approve|reject, edits?}`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["approve", "reject"]
+    edits: ApprovalEdits | None = None
+    reason: str | None = Field(default=None, max_length=2000)
 
 
 class PauseRequest(BaseModel):

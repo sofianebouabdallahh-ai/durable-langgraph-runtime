@@ -18,6 +18,17 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - CR-004 + ADR-0003 (accepted): agents defined as `backend/agents/*.agent.md` (name, max turns, prompt, tools, limits, hooks); hooks for session start/end, turn start/end and pre/post tool, built on LangChain middleware plus harness-owned session hooks.
 - CR-003 (accepted): harness guardrails. Run budgets with a soft→hard wrap-up, loop detection, ceilings that callers can only tighten, deny-by-default tool grants, least-privilege DB roles, untrusted-content handling, audit trail, kill switch.
 
+### Phase 4 — Tools & human-in-the-loop
+#### Added
+- Tool registry (`@registry.tool`): strict, frozen argument models; risk classes; per-tool `max_calls`; isolation flag. Fixture tools `calculator`, `save_note`, `notify` (migration `0006`: `notes`, `outbox_notifications`, `runs.resume_value`).
+- Hook registry (`@registry.hook`): ordered, bounded, fail-closed, audited `pre_tool` / `post_tool` hooks; built-in secret redaction for args and results.
+- `ToolPipeline`: the fixed-order Chain of Responsibility every tool call goes through; `ToolPolicy` with a risk-class default (external side effects need approval).
+- Tool ledger (`tool_invocations`): idempotency keys, "record, then act", cached replay, takeover of a dead owner's call; per-run and per-tool budgets charged once per key; model-call budget from the agent's `max_turns`.
+- `ScriptedChatModel` and agent graphs built from agent definitions with `create_agent` + `RuntimeMiddleware` (the `assistant` agent).
+- Durable approval: `waiting_approval` with no lease held; `POST /runs/{id}/approve` (approve with edits, or reject → `cancelled(rejected)`); `409 not-waiting-for-approval`.
+- Audit events `policy.decision`, `hook.decision`, `approval.decided`, `run.resumed`; `tool.called {taken_over}`.
+- E2E scenarios `tool-crash` and `approval-restart`; `make demo-tools`, `make demo-approval` (AC4).
+
 ### Phase 3 — Streaming across replicas
 #### Added
 - `EventBus` port: Redis Pub/Sub adapter + in-memory fake (one contract suite); wire format for persisted and transient events; `run:` / `session:` channels.

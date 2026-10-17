@@ -16,7 +16,7 @@ from agent_runtime.admin import AdminRepository
 from agent_runtime.config import Settings
 from agent_runtime.db import Pool
 from agent_runtime.graphs import GraphRegistry
-from agent_runtime.runs.limits import RunOptions, resolve_limits
+from agent_runtime.runs.limits import RunOptions, profile_of, resolve_limits
 from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.state import RunStatus
 from agent_runtime.runs.store import Run, RunRepository, RunTerminal
@@ -71,14 +71,14 @@ class RunService:
         spec = self._graphs.get(graph)
         validated_input = spec.input_model.model_validate(input)
         run_options = RunOptions.model_validate(options or {})
-        limits = resolve_limits(self._settings, run_options)
+        limits = resolve_limits(self._settings, run_options, profile_of(spec))
         async with self._pool.connection() as conn:
             repo = RunRepository(conn)
             run = await repo.create(
                 graph_name=graph,
                 input=validated_input.model_dump(mode="json"),
                 options=run_options.model_dump(exclude_none=True),
-                limits=limits.model_dump(),
+                limits=limits.model_dump(exclude_none=True),
             )
         await publish_events(self._bus, repo.emitted)  # after commit (R1.5)
         if enqueue and self._relay is not None:
@@ -129,3 +129,23 @@ class RunService:
             except RunTerminal:
                 pass  # finished meanwhile
         return cancelled
+
+    async def decide_approval(
+        self,
+        run_id: uuid.UUID,
+        decision: str,
+        edits: dict[str, Any] | None = None,
+        reason: str | None = None,
+    ) -> Run:
+        """R1.4: approve (re-queue with the decision) or reject (cancelled: rejected).
+        No live worker is needed. Raises NotWaitingForApproval (→ 409)."""
+        async with self._pool.connection() as conn:
+            repo = RunRepository(conn)
+            run = await repo.decide_approval(
+                run_id, decision=decision, edits=edits, reason=reason,
+                decided_by="local",  # an authenticated principal once auth exists (roadmap)
+            )  # fmt: skip
+        await publish_events(self._bus, repo.emitted)
+        if run.status is RunStatus.QUEUED and self._relay is not None:
+            await self._relay.enqueue(run.id)
+        return run

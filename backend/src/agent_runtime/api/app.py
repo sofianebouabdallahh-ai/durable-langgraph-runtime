@@ -28,6 +28,7 @@ from agent_runtime.admin import AdminRepository, AdminState
 from agent_runtime.api import problems
 from agent_runtime.api.problems import ApiDraining, ResultNotReady
 from agent_runtime.api.schemas import (
+    ApprovalRequest,
     CreateRunRequest,
     CreateRunResponse,
     EventsPage,
@@ -140,6 +141,20 @@ async def cancel_run(run_id: uuid.UUID, service: ServiceDep) -> RunView:
 
 
 @runs.post(
+    "/{run_id}/approve",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=RunView,
+    summary="Approve or reject a paused run (human-in-the-loop)",
+    description="R1.4. `approve` re-queues the run with the decision (and optional edited "
+    "tool arguments); `reject` cancels it with reason `rejected`. Works with no worker alive. "
+    "409 unless the run is `waiting_approval`.",
+)
+async def approve_run(run_id: uuid.UUID, body: ApprovalRequest, service: ServiceDep) -> RunView:
+    edits = body.edits.model_dump(exclude_none=True) if body.edits else None
+    return RunView.of(await service.decide_approval(run_id, body.decision, edits, body.reason))
+
+
+@runs.post(
     "/{run_id}/resume",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=RunView,
@@ -193,7 +208,7 @@ graphs_router = APIRouter(prefix="/graphs", tags=["graphs"])
 
 
 def _describe(spec: GraphSpec) -> GraphView:
-    drawable = spec.build().compile().get_graph()
+    drawable = spec.compile(None).get_graph()
     return GraphView(
         name=spec.name,
         description=spec.description,

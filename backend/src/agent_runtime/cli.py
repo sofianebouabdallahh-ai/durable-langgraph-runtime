@@ -18,11 +18,11 @@ from pathlib import Path
 
 from agent_runtime.agents.loader import (
     AgentValidationError,
-    Catalog,
     Ceilings,
     UnknownAgent,
     load_agents,
 )
+from agent_runtime.catalog import default_catalog
 from agent_runtime.config import Settings, get_agent_settings, get_settings
 from agent_runtime.runs.state import RunStatus
 from agent_runtime.runs.store import Event, Run, RunRepository, RunTerminal
@@ -265,7 +265,7 @@ def _agents_validate(args: argparse.Namespace) -> int:
     settings = get_agent_settings()
     root = args.path or settings.agents_dir
     try:
-        registry = load_agents(root, Catalog(), Ceilings.from_settings(settings))
+        registry = load_agents(root, default_catalog(), Ceilings.from_settings(settings))
     except AgentValidationError as exc:
         print(exc, file=sys.stderr)
         return 1
@@ -277,9 +277,9 @@ def _agents_validate(args: argparse.Namespace) -> int:
 def _agents_show(args: argparse.Namespace) -> int:
     settings = get_agent_settings()
     try:
-        agent = load_agents(settings.agents_dir, Catalog(), Ceilings.from_settings(settings)).get(
-            args.name
-        )
+        agent = load_agents(
+            settings.agents_dir, default_catalog(), Ceilings.from_settings(settings)
+        ).get(args.name)
     except (AgentValidationError, UnknownAgent) as exc:
         print(exc, file=sys.stderr)
         return 1

@@ -17,6 +17,10 @@ class EventType(StrEnum):
     TOOL_CALLED = "tool.called"
     TOOL_COMPLETED = "tool.completed"
     INTERRUPT_RAISED = "interrupt.raised"
+    APPROVAL_DECIDED = "approval.decided"  # R14.17
+    RUN_RESUMED_AFTER_APPROVAL = "run.resumed"  # approved: back in the queue
+    POLICY_DECISION = "policy.decision"  # R14.17: deny / require_approval
+    HOOK_DECISION = "hook.decision"  # R15.8: any non-continue hook decision
     CHILD_STARTED = "child.started"
     CHILD_COMPLETED = "child.completed"
     # `token` is deliberately absent: it is pub/sub only and never persisted.

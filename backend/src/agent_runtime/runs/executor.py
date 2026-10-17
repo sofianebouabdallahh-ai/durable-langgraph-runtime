@@ -41,17 +41,26 @@ from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import CheckpointMetadata
 from langgraph.errors import GraphRecursionError
+from langgraph.types import Command, interrupt
 
 from agent_runtime.checkpointing import FencedCheckpointer
 from agent_runtime.config import Settings
 from agent_runtime.db import Conn, Pool
 from agent_runtime.fencing import Fence, FencedError, check_fence
-from agent_runtime.graphs import GraphRegistry
+from agent_runtime.graphs import GraphRegistry, GraphSpec
+from agent_runtime.graphs.assistant import AgentInput
 from agent_runtime.runs.events import EventType
 from agent_runtime.runs.limits import RunLimits, RunOptions, resolve_limits
 from agent_runtime.runs.state import FailureReason, RunStatus
 from agent_runtime.runs.store import Event, Run, RunRepository, RunTerminal
 from agent_runtime.streaming.bus import EventBus, publish_events
+from agent_runtime.tools.builtin import default_tools
+from agent_runtime.tools.hooks import HookRegistry, default_hooks
+from agent_runtime.tools.invocations import BudgetExceeded
+from agent_runtime.tools.middleware import RunContext
+from agent_runtime.tools.pipeline import Grant, ToolPipeline, ToolRunContext
+from agent_runtime.tools.policy import RiskClassPolicy, ToolPolicy
+from agent_runtime.tools.spec import ToolRegistry
 
 log = logging.getLogger(__name__)
 
@@ -194,6 +203,9 @@ class RunExecutor:
         on_heartbeat: Callable[[], Awaitable[object]] | None = None,
         release_requested: asyncio.Event | None = None,
         bus: EventBus | None = None,
+        tools: ToolRegistry | None = None,
+        hooks: HookRegistry | None = None,
+        policy: ToolPolicy | None = None,
     ) -> None:
         self._pool = pool
         self._settings = settings
@@ -202,6 +214,9 @@ class RunExecutor:
         self._on_heartbeat = on_heartbeat
         self._release_requested = release_requested or asyncio.Event()
         self._bus = bus  # events are published after each commit (R1.5)
+        self._tools = tools or default_tools()
+        self._hooks = hooks or default_hooks()
+        self._policy = policy or RiskClassPolicy()
 
     async def execute(self, run_id: uuid.UUID) -> Run:
         """Run (or resume) `run_id` to a stopping point and return its final state.
@@ -260,7 +275,8 @@ class RunExecutor:
         checkpointer = FencedCheckpointer(
             self._pool, fence, on_commit=outbox.on_commit, after_commit=outbox.after_commit
         )
-        graph = spec.build().compile(checkpointer=checkpointer)
+        graph = spec.compile(checkpointer)
+        context = self._agent_context(spec, run, fence, limits, outbox)
         config: RunnableConfig = {
             "configurable": {"thread_id": run.thread_id},
             "callbacks": [
@@ -270,9 +286,13 @@ class RunExecutor:
             "recursion_limit": limits.max_steps + 5,
         }
         resuming = await checkpointer.aget_tuple(config) is not None
-        graph_input = (
-            None if resuming else spec.input_model.model_validate(run.input).model_dump(mode="json")
+        graph_input: Any = (
+            None if resuming else spec.to_graph_input(spec.input_model.model_validate(run.input))
         )
+        if resuming and (await graph.aget_state(config)).interrupts:
+            # Paused on an approval (R1.4) and since approved: LangGraph re-runs the
+            # interrupted step and interrupt() returns the human's decision.
+            graph_input = Command(resume=run.resume_value)
         if run.started_at is None:  # set by the queued → running transition
             raise RuntimeError(f"run {run.id} is running without started_at")
         elapsed = (datetime.now(UTC) - run.started_at).total_seconds()
@@ -282,7 +302,9 @@ class RunExecutor:
 
         try:
             final = await self._under_lease(
-                graph.ainvoke(graph_input, config, durability="sync"), fence, remaining
+                graph.ainvoke(graph_input, config, durability="sync", context=context),
+                fence,
+                remaining,
             )
         except ReleaseRequested:
             return await self._release(fence, outbox)
@@ -293,6 +315,8 @@ class RunExecutor:
             )  # fmt: skip
         except (StepLimitReached, GraphRecursionError):
             return await self._fail(fence, FailureReason.STEP_LIMIT, outbox)
+        except BudgetExceeded as exc:  # a hard limit (R14.1)
+            return await self._fail(fence, FailureReason(exc.reason), outbox, detail=str(exc))
         except TimeoutError:
             return await self._fail(fence, FailureReason.TIMEOUT, outbox)
         except (FencedError, LeaseLost) as exc:
@@ -301,7 +325,29 @@ class RunExecutor:
         except Exception as exc:
             log.exception("run %s failed", run.id)
             return await self._fail(fence, FailureReason.ERROR, outbox, detail=repr(exc))
-        return await self._complete(fence, final, outbox)
+        if interrupts := final.get("__interrupt__"):
+            return await self._pause(fence, interrupts[0].value, outbox)
+        return await self._complete(fence, spec.to_output(final), outbox)
+
+    def _agent_context(
+        self, spec: GraphSpec, run: Run, fence: Fence, limits: RunLimits, outbox: _Outbox
+    ) -> RunContext | None:
+        """Everything an agent graph needs about this run (None for plain graphs)."""
+        if spec.agent is None:
+            return None
+        fm = spec.agent.frontmatter
+        tools = ToolRunContext(
+            fence=fence,
+            pool=self._pool,
+            grants={t.name: Grant(max_calls=t.max_calls) for t in fm.tools},
+            emit=outbox.stage,  # audit events commit with the step's checkpoint
+            pre_hooks=[self._hooks.get(h) for h in fm.hooks.pre_tool],
+            post_hooks=[self._hooks.get(h) for h in fm.hooks.post_tool],
+            max_tool_calls=limits.max_tool_calls,
+        )
+        pipeline = ToolPipeline(self._tools, self._policy, interrupt=interrupt)
+        script = AgentInput.model_validate(run.input).script
+        return RunContext(tools, pipeline, max_model_calls=limits.max_model_calls, script=script)
 
     async def _under_lease(
         self, work: Coroutine[Any, Any, Any], fence: Fence, timeout_s: float
@@ -377,6 +423,21 @@ class RunExecutor:
         async with self._pool.connection() as conn:
             if await RunRepository(conn).is_cancel_requested(run_id):
                 raise CancelRequested
+
+    async def _pause(self, fence: Fence, payload: Any, outbox: _Outbox) -> Run:
+        """Durable pause (R1.4): persist what we wait on, release the lease. No worker
+        holds the run while a human decides; approval re-queues it."""
+        value = payload if isinstance(payload, dict) else {"value": payload}
+
+        async def work(repo: RunRepository) -> Run:
+            await outbox.flush(repo)
+            await repo.set_interrupt(fence.run_id, value)
+            return await repo.transition(
+                fence.run_id, RunStatus.WAITING_APPROVAL, event=EventType.INTERRUPT_RAISED,
+                fence=fence, payload=value,
+            )  # fmt: skip
+
+        return await self._fenced_then_publish(fence, work)
 
     async def _release(self, fence: Fence, outbox: _Outbox) -> Run:
         """Graceful hand-off (R10.7): back to `queued`, lease cleared, not a reclaim."""
