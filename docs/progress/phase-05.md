@@ -1,6 +1,6 @@
 # Phase 5 — Sub-runs, sub-agents & backpressure
 
-**Plan:** [plans/phase-05.md](../plans/phase-05.md) · **ADR:** [0005](../adr/0005-fan-out-child-runs.md) · Delivered in two PRs: **5a, child runs & backpressure** (this part), and 5b, sub-agents (added below when it merges).
+**Plan:** [plans/phase-05.md](../plans/phase-05.md) · **ADR:** [0005](../adr/0005-fan-out-child-runs.md) · Delivered in two PRs: **5a, child runs & backpressure**, and **5b, sub-agents**.
 
 ## Part A — Child runs & backpressure
 
@@ -94,3 +94,115 @@ The children are sent to the queue **after** the commit. A breached limit is a `
 - **A rejected fan-out would have lost the step's staged events.** The transaction that rolled back had already taken them from the outbox. They are now restored on rejection.
 - **A later fan-out reusing an earlier one's keys would have silently received the old results.** It now has to match the stored fan-out, or it is rejected.
 - **A test that waited for an event that can't exist yet.** `node.started` for the spawning node is committed with the *next* checkpoint, which the test was deliberately blocking. The test now waits for the blocked call itself.
+
+## Part B — Sub-agents
+
+**Completed:** 2026-10-16 · **Branch:** `feat/phase-05b-subagents` · **Tests:** 309 (294 after 5a) · **Branch coverage:** 95 % (CI floor 90 %)
+
+### What we built
+
+**The orchestrator** ([subagents/orchestrator.py](../../backend/src/agent_runtime/subagents/orchestrator.py)). An in-process Supervisor, one per run execution of an agent that has sub-agents.
+- **Running:** each sub-agent is an asyncio task in the main run's worker, started in a **fresh contextvars context** (the measured isolation fix).
+- **Persistence:** each one is a `create_agent` graph with **its own checkpoint thread** (`<run>/sub/<handle>`). Its checkpoints go through a `FencedCheckpointer` using the **main run's fence**, so one lease covers everything.
+- **Events:** each has its own outbox that writes into the run's event log but doesn't count toward the run's `max_steps`.
+- **Limits:** 4 in parallel (a semaphore), 10 per run, and a timeout each, counted from when it was spawned, so a recovered sub-agent keeps its original deadline. All are configurable downwards only.
+- **Lifecycle:**
+  - `stop()` cancels the tasks and leaves their rows `running`.
+  - `recover()` resumes every running row from its checkpoint.
+  - A pause, a graceful release and a crash all take this one path.
+
+**Persistence** ([subagents/store.py](../../backend/src/agent_runtime/subagents/store.py)). This uses the `subagent_invocations` table from migration 0002; migration `0008` adds a durable cooperative-cancel flag.
+- The handle is **derived from the spawn call's idempotency key**, so a replayed spawn returns the same handle (`UNIQUE spawned_by_tool_call_id`).
+- Every write is fenced, both in code and by the database trigger. It stamps the current epoch, because the trigger rejects an update that keeps an older one (a sub-agent spawned before a reclaim).
+- `subagent.spawned / progress / completed` commit with the state they describe, exactly once per handle.
+
+**Tools** ([subagents/tools.py](../../backend/src/agent_runtime/subagents/tools.py)), granted by the harness and run through the full tool pipeline:
+
+| Tool | For | Behavior |
+|---|---|---|
+| `spawn_subagent` | main agent | Returns a handle at once (non-blocking) |
+| `subagent_status` | main agent | Live status, latest progress message, usage |
+| `wait_subagents` | main agent | Blocks up to 120 s; the tool spec carries its own timeout |
+| `cancel_subagent` | main agent | Cooperative: checked before every model call and tool call |
+| `report_progress` | sub-agent | At most 1 update per 2 s and 50 in total; extra updates are dropped with a note |
+| `return_result` | sub-agent | Stores the result; the next model call then short-circuits to a final answer, ending the loop |
+
+**Isolation & least privilege** (R16.6, R16.7).
+- **Context:** a sub-agent's conversation is its own prompt plus one message with the task (and context).
+- **Tools:** its grants are its own tools only.
+- **Approvals:** the pipeline's `approvals=False` turns `RequireApproval` or a hook's `ask` into `Deny(approval_unavailable)`. A sub-agent never pauses the run.
+
+**Budgets** (R16.8).
+- **Roll-up:** every model call is charged to the sub-agent's `max_turns` **and** to the run's budget, in one fenced transaction. Every tool call is charged to the sub-agent's own tool limits (the ledger's `extra_charge`) **and** the run's.
+- **Soft limit:** at 80 % of the run's model or tool budget, a wrap-up note is added to the sub-agents' next requests.
+- **Hard limit:** when one sub-agent hits the run's limit, it ends `failed` (`partial` if it had reported progress) and the others are cancelled.
+
+**Turn guard** (R16.9). If the main agent answers while sub-agents still run, the middleware waits for them (bounded by the run's deadline), then makes **one more model call** that includes their results.
+
+**Executor wiring.**
+- **Before the run starts:** sub-agents are recovered.
+- **Before the run leaves `running`:** they are stopped (pause, release) or cancelled (complete, fail, cancel). This rule exists because the fence compares epochs only, and a pause doesn't change the epoch.
+- **On any exit:** a `finally` stops them, including when the executor task itself is cancelled.
+
+**API.** `GET /runs/{id}` lists the run's sub-agents: agent, status, progress, usage and result.
+
+### How it fits
+
+```
+ worker ── RunExecutor(main run, lease epoch e) ─────────────────────────────────────
+   recover(): every `running` row → task resumes from <run>/sub/<handle>
+   main graph ── spawn_subagent ── ledger (key) ── row (handle = f(key)) ── task ─┐
+            ├── wait_subagents ≤ 120 s ◄── results ─────────────────────────────┐  │
+            └── final answer while running? → wait → one more model call       │  │
+   sub-agent task (fresh context, semaphore 4) ── create_agent ── own tools ────┘◄─┘
+            each model call: cancel? → charge (own max_turns + the run's) → wrap-up?
+            checkpoints: FencedCheckpointer(fence = e) · events → the run's log
+   leaving `running`: pause/release → stop()  ·  complete/fail/cancel → cancel_all()
+```
+
+### Success criteria: results
+
+| # | Criterion | Result |
+|---|---|---|
+| SC12 | Parallel in the same worker | ✅ Two sub-agents overlapped (`max_running_seen = 2`) in the main run's process; unknown sub-agent and over-limit spawns → tool errors the model sees |
+| SC13 | Isolation & privilege (AC39 without sandboxes) | ✅ The sub-agent's first model request is exactly `[system prompt, task + context]`; a main-agent tool it lacks → `Deny(not_granted)`, audited with its handle; a hook's `ask` → `Deny(approval_unavailable)`, and the run never pauses |
+| SC14 | **AC40: status, return, cancel, timeout** | ✅ `subagent_status` shows the progress message and percent; `return_result(status=partial)` reaches the main agent as partial; `cancel_subagent` stopped the sub-agent before its next step (1 of 2 notes written); past its 2 s timeout → `timed_out`, result `failed: timeout`; the second progress update within 2 s was dropped |
+| SC15 | Turn guard (R16.9) | ✅ An early final answer → the runtime waited, then made one more call whose request contained the sub-agent's result; `subagent.completed` comes before `run.completed` |
+| SC16 | **AC41: crash resume** | ✅ `make demo-subagents`, **5/5**, SIGKILL with real processes: resumed on another worker; both sub-agents completed; spawned 2 / completed 2 (one result per handle); the finished sub-agent's tool never re-ran; the unfinished one resumed from **its** checkpoint (2 model calls, not 3; its tool call taken over at epoch 2); one note |
+| SC17 | **AC42: budget roll-up** | ✅ Usage adds up (main 3 + 3, sub-agents 3 + 3 and 2 + 2 → run 8 model / 8 tool calls). With `max_model_calls = 6`: the 5th and 6th calls carried the wrap-up note; the 7th was refused; the sub-agent ended `failed` / `partial`; the run failed `budget:model_calls` at exactly 6 |
+| SC18 | Fenced | ✅ A stale epoch can't report progress, finish or cancel a sub-agent; a repeated spawn with the same key returns the same handle |
+| SC19 | Visible | ✅ `GET /runs/{id}` lists sub-agents with status, usage and result; `subagent.*` events are in the run's log (and therefore its stream) |
+| SC20 | Quality | ✅ 309 tests; coverage 95 %; **55/55 e2e runs** (11 scenarios × 5, every earlier phase's included); no API key |
+| — | Also | ✅ An approval pause stops a running sub-agent, leaving its row `running`; after approval it resumes and completes |
+
+### Concepts learned
+
+- **Concurrency inside one run changes the locking story.** With one writer per run, `FOR SHARE` followed by `UPDATE` was harmless. With parallel tool calls and sub-agents it deadlocks: each transaction holds the share lock the other's upgrade needs. Choose the lock mode you'll end up needing (`FOR NO KEY UPDATE`).
+- **contextvars are inherited by tasks.** An `asyncio.create_task` from inside a running graph silently joins the parent's run. Isolation has to be explicit.
+- **Make every stop resumable, then there is one recovery path.** A pause, a release and a crash become the same operation: stop the tasks, keep their checkpoints, resume them later.
+- **A fence that compares epochs needs a rule for pauses,** which keep the epoch. Here: stop every writer before the run leaves `running`.
+- **Idempotent identity from the idempotency key.** Deriving the handle from the spawn call's key makes a replayed spawn find the same sub-agent with no extra bookkeeping.
+
+### Decisions & trade-offs
+
+- **Handles must be scripted somehow.** The scripted model resolves `${tool[i].field}` from earlier tool results in the conversation. It is replay-stable like the rest of the test double, and it keeps `wait_subagents` and `cancel_subagent` taking explicit handles, as the spec says.
+- **Per-tool caps in a sub-agent count per sub-agent.** The run-wide caps still apply through the run's counters.
+- **`return_result`'s `output_schema` validation waits** until output schemas are registered (none exist yet).
+- **No new table.** `subagent_invocations` was designed in phase 0; 5b added only the cancel flag.
+- **Not in this phase, as planned:**
+  - AC37 (the `chat` agent and its sub-agents) is phase 6.
+  - One sandbox per sub-agent is phase 7.
+  - Sub-agent spans and metrics are phase 9.
+  - The main agent's own soft-limit wrap-up turn is phase 6.
+
+### Bugs found by testing (all fixed before merge)
+
+- **A deadlock latent since phase 4,** found by the first real sub-agent run: two tool calls in one turn run concurrently, and each ledger transaction upgraded a `FOR SHARE` lock on the run row. Fixed in `check_fence` (`FOR NO KEY UPDATE`). There's a regression test that **fails with the old lock** (verified).
+- **The first progress update always failed:** the rate limit subtracted `-infinity` from `now()`, which Postgres rejects. Found by the first smoke run.
+- **A sub-agent's usage update would have been fenced after a reclaim:** the database trigger rejects an update that keeps an older epoch. Every write now stamps the current epoch.
+- **Two tests that didn't prove what they claimed.** The budget test accepted any "budget" reason, and its script used a tool the sub-agent doesn't have (so those calls were denied, not charged). The crash test didn't distinguish "resumed from its checkpoint" from "restarted". Both now assert exact values.
+
+### Known issues & follow-ups
+
+- **Event-log contention:** sub-agents append to the main run's log, serialised on its row. That's fine at 4 in parallel; measure it with real models in phase 6.
+- **Bidirectional messaging** (a sub-agent asking its main agent a question) remains on the roadmap (CR-005 §6).
