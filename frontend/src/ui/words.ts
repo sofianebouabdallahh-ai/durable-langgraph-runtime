@@ -13,8 +13,44 @@ const TOOLS: Record<string, string> = {
   notify: "Notification",
 };
 
+/** An agent's display name. The general assistant is Nuria herself. */
+export function agentLabel(name: string | null | undefined): string {
+  if (!name || name === "chat") return "Nuria";
+  return name.replaceAll(/[-_]/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+}
+
 export function toolLabel(tool: string): string {
   return TOOLS[tool] ?? tool.replaceAll("_", " ").replace(/^\w/, (c) => c.toUpperCase());
+}
+
+/** What a tool does, in a few words (the Agents page). */
+export function toolPurpose(tool: string): string {
+  switch (tool) {
+    case "calculator":
+      return "Exact arithmetic";
+    case "search":
+      return "Searches the documents it was given";
+    case "retrieve":
+      return "Reads from the knowledge base";
+    case "save_note":
+      return "Keeps notes you want to remember";
+    case "notify":
+      return "Sends messages to people, only with your approval";
+    default:
+      return "";
+  }
+}
+
+/** An agent's limits, in plain words. */
+export function limitLines(limits: Record<string, unknown>, maxTurns?: number): string[] {
+  const out: string[] = [];
+  if (typeof maxTurns === "number") out.push(`Up to ${String(maxTurns)} steps per message`);
+  if (typeof limits.max_tool_calls === "number") out.push(`At most ${String(limits.max_tool_calls)} tool uses per message`);
+  if (typeof limits.timeout_s === "number") {
+    const m = Math.round(limits.timeout_s / 60);
+    out.push(m >= 1 ? `Stops after ${String(m)} minute${m === 1 ? "" : "s"}` : `Stops after ${String(limits.timeout_s)} seconds`);
+  }
+  return out;
 }
 
 export function turnLabel(status: TurnStatus | undefined): string {

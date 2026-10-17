@@ -430,6 +430,10 @@ async def test_the_session_api_and_stream(
     assert chat_agent["prompt"] is None
     detail = (await c.get("/agents/delegator")).json()
     assert detail["subagents"] == ["mathematician", "napper", "scribe"]
+    helpers = {h["name"]: h for h in detail["helpers"]}  # the sub-agents, for the UI
+    assert set(helpers) == {"mathematician", "napper", "scribe"}
+    assert helpers["mathematician"]["description"] and helpers["mathematician"]["prompt"]
+    assert all(h["prompt"] is None for h in chat_agent["helpers"])  # the list stays light
     assert "coordinate specialists" in detail["prompt"]
     assert (await c.get("/agents/toy")).status_code == 404
 

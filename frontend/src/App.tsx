@@ -1,80 +1,61 @@
-import { useQuery } from "@tanstack/react-query";
+import { Menu, X } from "lucide-react";
 import { useState } from "react";
 
-import { api, unwrap } from "./api/client";
+import { AgentDetail, AgentsPage } from "./agents/AgentsPage";
+import { useRoute } from "./app/route";
 import { ChatView } from "./chat/ChatView";
-import { useSessionRoute } from "./sessions/route";
+import { Home } from "./chat/Home";
 import { Sidebar } from "./sessions/Sidebar";
-import { Badge } from "./ui/primitives";
+import { Logo } from "./ui/Logo";
 
 export function App() {
-  const [sessionId, go] = useSessionRoute();
-  const [menu, setMenu] = useState(false); // the chats list on a small screen
-  const open = (id: string | null) => {
-    setMenu(false);
-    go(id);
+  const [route, go] = useRoute();
+  const [drawer, setDrawer] = useState(false); // the sidebar on a small screen
+  const close = () => {
+    setDrawer(false);
   };
-  const about = useQuery({ queryKey: ["about"], queryFn: () => unwrap(api.GET("/about")), staleTime: Infinity });
+
   return (
-    <div className="flex h-full bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      <aside className="hidden w-64 shrink-0 border-r border-slate-200 bg-white md:block dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex items-center gap-2 px-4 pt-4 font-semibold">
-          <img src="/favicon.svg" alt="" className="size-6" /> Agent Runtime
-        </div>
-        <Sidebar current={sessionId} onOpen={open} />
+    <div className="flex h-full">
+      <aside className="hidden w-72 shrink-0 border-r border-stone-200 bg-stone-100/60 md:block dark:border-stone-800 dark:bg-stone-900/40">
+        <Sidebar route={route} onNavigate={close} />
       </aside>
+
+      {drawer && (
+        <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+          <button type="button" aria-label="Close the menu" className="absolute inset-0 bg-stone-950/30 backdrop-blur-sm" onClick={close} />
+          <div id="mobile-menu" className="absolute inset-y-0 left-0 w-80 max-w-[85%] bg-stone-50 shadow-lift dark:bg-stone-950">
+            <button type="button" aria-label="Close the menu" onClick={close} className="absolute top-4 right-3 rounded-lg p-1.5 text-stone-500 hover:bg-stone-200 dark:hover:bg-stone-800">
+              <X aria-hidden className="size-5" />
+            </button>
+            <Sidebar route={route} onNavigate={close} />
+          </div>
+        </div>
+      )}
+
       <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex h-14 shrink-0 items-center gap-2 border-b border-stone-200 px-3 md:hidden dark:border-stone-800">
           <button
             type="button"
-            className="rounded-md px-2 py-1 text-sm font-medium text-slate-700 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-indigo-500 md:hidden dark:text-slate-200 dark:hover:bg-slate-800"
-            aria-expanded={menu}
-            aria-controls="mobile-chats"
+            aria-label="Open the menu"
+            aria-expanded={drawer}
+            aria-controls="mobile-menu"
             onClick={() => {
-              setMenu(!menu);
+              setDrawer(true);
             }}
+            className="rounded-lg p-2 text-stone-600 hover:bg-stone-100 dark:text-stone-300 dark:hover:bg-stone-800"
           >
-            ☰ Chats
+            <Menu aria-hidden className="size-5" />
           </button>
-          <span className="ml-auto flex items-center gap-2">
-            {about.data?.demo_model && (
-              <span title="The offline demo model follows simple rules. Connect a real model with ./setup.sh --model …">
-                <Badge tone="amber">Demo model</Badge>
-              </span>
-            )}
-            {about.data && !about.data.demo_model && <Badge>{about.data.chat_model ?? about.data.model_provider}</Badge>}
-          </span>
-        </header>
-        {menu && (
-          <div id="mobile-chats" className="border-b border-slate-200 bg-white md:hidden dark:border-slate-800 dark:bg-slate-900">
-            <div className="h-[60vh]">
-              <Sidebar current={sessionId} onOpen={open} />
-            </div>
-          </div>
-        )}
-        <div className="min-h-0 flex-1">
-          {sessionId ? (
-            <ChatView key={sessionId} sessionId={sessionId} />
-          ) : (
-            <Welcome />
-          )}
+          <Logo />
+        </div>
+        <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
+          {route.page === "chat" && <ChatView key={route.sessionId} sessionId={route.sessionId} />}
+          {route.page === "home" && <Home go={go} />}
+          {route.page === "agents" && <AgentsPage />}
+          {route.page === "agent" && <AgentDetail key={route.name} name={route.name} go={go} />}
         </div>
       </main>
-    </div>
-  );
-}
-
-function Welcome() {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
-      <h1 className="text-2xl font-semibold">Chat with your agents</h1>
-      <p className="max-w-md text-slate-600 dark:text-slate-400">
-        Every reply survives crashes and restarts: try stopping a worker in the middle of an answer.
-      </p>
-      <p className="text-sm text-slate-500">
-        <span className="hidden md:inline">Start with “New chat” on the left.</span>
-        <span className="md:hidden">Open “☰ Chats” to start one.</span>
-      </p>
     </div>
   );
 }

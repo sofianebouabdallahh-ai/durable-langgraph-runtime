@@ -16,6 +16,7 @@ from agent_runtime.api.schemas import (
     AgentView,
     ApprovalRequest,
     CreateSessionRequest,
+    HelperView,
     MessagesPage,
     MessageView,
     RunView,
@@ -164,6 +165,16 @@ def _agent_view(graphs: GraphRegistry, name: str, *, prompt: bool) -> AgentView:
         limits=fm.limits.model_dump(exclude_none=True),
         hooks={k: v for k, v in fm.hooks.model_dump().items() if v},
         subagents=[s.frontmatter.name for s in a.subagents],
+        helpers=[
+            HelperView(
+                name=s.frontmatter.name, description=s.frontmatter.description,
+                model=s.frontmatter.model, max_turns=s.frontmatter.max_turns,
+                tools=[t.model_dump(exclude_none=True) for t in s.frontmatter.tools],
+                limits=s.frontmatter.limits.model_dump(exclude_none=True),
+                prompt=s.prompt if prompt else None,
+            )
+            for s in a.subagents
+        ],
         prompt=a.prompt if prompt else None,
     )  # fmt: skip
 

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Message } from "../api/messages";
 import { call, msg, result } from "../test/fixtures";
 import { ApprovalCard, ErrorNote, HelperCards, ToolCard } from "./cards";
-import { Composer } from "./ChatView";
+import { Composer } from "./Composer";
 
 type Of<T extends Message["type"]> = Extract<Message, { type: T }>;
 
@@ -38,7 +38,7 @@ describe("ApprovalCard", () => {
   it("approves once, or rejects with a reason", async () => {
     const onDecide = vi.fn();
     const { unmount } = render(<ApprovalCard message={ask} decided={null} pending onDecide={onDecide} />);
-    expect(screen.getByText(/wants to use: Notification/)).toBeInTheDocument();
+    expect(screen.getByText(/Nuria wants to use: Notification/)).toBeInTheDocument();
     expect(screen.getByText(/reaches outside this chat/)).toBeInTheDocument(); // plain words, not "external"
     await userEvent.click(screen.getByRole("button", { name: "Approve" }));
     await userEvent.click(screen.getByRole("button", { name: "Approve" }));
@@ -83,7 +83,7 @@ describe("HelperCards and ErrorNote", () => {
 describe("Composer", () => {
   it("sends on Enter, keeps Shift+Enter for new lines, and clears once accepted", async () => {
     const onSend = vi.fn().mockResolvedValue(true);
-    render(<Composer busy={false} waitingApproval={false} onSend={onSend} onStop={vi.fn()} />);
+    render(<Composer busy={false} onSend={onSend} onStop={vi.fn()} />);
     const box = screen.getByRole("textbox", { name: "Message" });
     await userEvent.type(box, "line one{Shift>}{Enter}{/Shift}line two{Enter}");
     expect(onSend).toHaveBeenCalledWith("line one\nline two");
@@ -93,10 +93,10 @@ describe("Composer", () => {
   it("keeps the text when the server refuses it, and offers Stop while busy", async () => {
     const onSend = vi.fn().mockResolvedValue(false);
     const onStop = vi.fn().mockResolvedValue(undefined);
-    const { rerender } = render(<Composer busy={false} waitingApproval={false} onSend={onSend} onStop={onStop} />);
+    const { rerender } = render(<Composer busy={false} onSend={onSend} onStop={onStop} />);
     await userEvent.type(screen.getByRole("textbox"), "hello{Enter}");
     expect(screen.getByRole("textbox")).toHaveValue("hello");
-    rerender(<Composer busy waitingApproval={false} onSend={onSend} onStop={onStop} />);
+    rerender(<Composer busy onSend={onSend} onStop={onStop} />);
     await userEvent.click(screen.getByRole("button", { name: "Stop the reply" }));
     expect(onStop).toHaveBeenCalled();
   });

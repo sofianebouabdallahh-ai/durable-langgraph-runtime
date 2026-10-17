@@ -507,6 +507,11 @@ export interface components {
         AgentView: {
             /** Description */
             description: string;
+            /**
+             * Helpers
+             * @description The sub-agents in detail
+             */
+            helpers: components["schemas"]["HelperView"][];
             /** Hooks */
             hooks: {
                 [key: string]: string[];
@@ -664,6 +669,33 @@ export interface components {
         Health: {
             /** Status */
             status: string;
+        };
+        /**
+         * HelperView
+         * @description A sub-agent (CR-005), as the UI shows it under its main agent.
+         */
+        HelperView: {
+            /** Description */
+            description: string;
+            /** Limits */
+            limits: {
+                [key: string]: unknown;
+            };
+            /** Max Turns */
+            max_turns: number;
+            /** Model */
+            model: string;
+            /** Name */
+            name: string;
+            /**
+             * Prompt
+             * @description GET /agents/{name} only
+             */
+            prompt?: string | null;
+            /** Tools */
+            tools: {
+                [key: string]: unknown;
+            }[];
         };
         /** MessageView */
         MessageView: {

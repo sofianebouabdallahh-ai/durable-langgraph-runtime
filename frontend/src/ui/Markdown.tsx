@@ -17,11 +17,13 @@ export function safeUrl(url: unknown): string | null {
   return typeof url === "string" && SAFE_URL.test(url.trim()) ? url.trim() : null;
 }
 
+const link = "font-medium text-sun-700 underline decoration-sun-300 underline-offset-2 hover:decoration-sun-500 dark:text-sun-300";
+
 const components: Components = {
   a: ({ href, children }) => {
     const url = safeUrl(href);
     return url ? (
-      <a href={url} target="_blank" rel="noopener noreferrer nofollow" className="text-indigo-600 underline dark:text-indigo-400">
+      <a href={url} target="_blank" rel="noopener noreferrer nofollow" className={link}>
         {children}
       </a>
     ) : (
@@ -32,31 +34,28 @@ const components: Components = {
     const url = safeUrl(src);
     const label = `image: ${alt?.trim() ? alt : "untitled"}`;
     return url ? (
-      <a href={url} target="_blank" rel="noopener noreferrer nofollow" className="text-indigo-600 underline dark:text-indigo-400">
+      <a href={url} target="_blank" rel="noopener noreferrer nofollow" className={link}>
         [{label}]
       </a>
     ) : (
       <span>[{label}]</span>
     );
   },
-  pre: ({ children }) => (
-    <pre className="my-2 overflow-x-auto rounded-lg bg-slate-900 p-3 text-sm text-slate-100">{children}</pre>
-  ),
-  code: ({ children, className }) => (
-    <code className={className ?? "rounded bg-slate-100 px-1 py-0.5 text-[0.9em] dark:bg-slate-800"}>{children}</code>
-  ),
-  table: ({ children }) => (
-    <div className="my-2 overflow-x-auto">
-      <table className="border-collapse text-sm">{children}</table>
-    </div>
-  ),
-  th: ({ children }) => <th className="border border-slate-300 px-2 py-1 text-left dark:border-slate-700">{children}</th>,
-  td: ({ children }) => <td className="border border-slate-300 px-2 py-1 dark:border-slate-700">{children}</td>,
 };
+
+const PROSE = [
+  "prose prose-stone max-w-none dark:prose-invert",
+  "prose-p:leading-relaxed prose-p:my-2 prose-li:my-0.5 prose-headings:font-display prose-headings:font-medium",
+  "prose-code:font-mono prose-code:text-[0.85em] prose-code:before:content-none prose-code:after:content-none",
+  "prose-code:rounded-md prose-code:bg-stone-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:font-normal dark:prose-code:bg-stone-800",
+  "prose-pre:rounded-xl prose-pre:bg-stone-900 prose-pre:text-stone-100 prose-pre:text-[13px] dark:prose-pre:bg-black/40",
+  "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
+  "prose-table:text-sm prose-th:font-semibold",
+].join(" ");
 
 export function Markdown({ text }: { text: string }) {
   return (
-    <div className="prose-chat">
+    <div className={`${PROSE} text-[15px]`}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]} components={components} skipHtml>
         {text}
       </ReactMarkdown>

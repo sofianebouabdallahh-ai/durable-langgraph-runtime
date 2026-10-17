@@ -258,6 +258,18 @@ class TurnAccepted(BaseModel):
     run_id: uuid.UUID
 
 
+class HelperView(BaseModel):
+    """A sub-agent (CR-005), as the UI shows it under its main agent."""
+
+    name: str
+    description: str
+    model: str
+    max_turns: int
+    tools: list[dict[str, Any]]
+    limits: dict[str, Any]
+    prompt: str | None = Field(default=None, description="GET /agents/{name} only")
+
+
 class AgentView(BaseModel):
     name: str
     description: str
@@ -268,4 +280,5 @@ class AgentView(BaseModel):
     limits: dict[str, Any]
     hooks: dict[str, list[str]]
     subagents: list[str]
+    helpers: list[HelperView] = Field(description="The sub-agents in detail")
     prompt: str | None = Field(default=None, description="GET /agents/{name} only")

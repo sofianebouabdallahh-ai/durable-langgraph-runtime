@@ -1,29 +1,60 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
-html,
-body {
-  height: 100%;
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/fraunces";
+@import "@fontsource-variable/jetbrains-mono";
+
+/* Nuria: warm neutrals (stone), ink for primary actions, a sunrise accent. */
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces Variable", ui-serif, Georgia, serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", monospace;
+
+  --color-sun-50: #fff8ed;
+  --color-sun-100: #ffefd4;
+  --color-sun-200: #ffdba8;
+  --color-sun-300: #ffc070;
+  --color-sun-400: #ff9a37;
+  --color-sun-500: #fd7a10;
+  --color-sun-600: #ee5f06;
+  --color-sun-700: #c54607;
+
+  --shadow-soft: 0 1px 2px rgb(28 25 23 / 0.04), 0 4px 16px -4px rgb(28 25 23 / 0.08);
+  --shadow-lift: 0 2px 4px rgb(28 25 23 / 0.04), 0 12px 32px -8px rgb(28 25 23 / 0.16);
 }
 
-/* Model replies: readable spacing without a typography plugin. */
-.prose-chat > * + * {
-  margin-top: 0.6em;
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-stone-50 font-sans text-stone-900 antialiased dark:bg-stone-950 dark:text-stone-100;
+    font-feature-settings: "cv11", "ss01";
+  }
+  ::selection {
+    @apply bg-sun-200 text-stone-900;
+  }
 }
-.prose-chat ul {
-  list-style: disc;
-  padding-left: 1.4em;
+
+@utility bg-brand {
+  background-image: linear-gradient(135deg, #ffb347 0%, #fd7a10 48%, #e8475f 100%);
 }
-.prose-chat ol {
-  list-style: decimal;
-  padding-left: 1.4em;
+
+@utility text-brand {
+  background-image: linear-gradient(135deg, #fd7a10 0%, #e8475f 100%);
+  background-clip: text;
+  color: transparent;
 }
-.prose-chat h1,
-.prose-chat h2,
-.prose-chat h3 {
-  font-weight: 600;
+
+/* A soft glow behind the greeting: the "light" in Nuria. */
+@utility glow {
+  background: radial-gradient(60% 50% at 50% 0%, rgb(253 122 16 / 0.12), transparent 70%);
 }
-.prose-chat blockquote {
-  border-left: 3px solid var(--color-slate-300);
-  padding-left: 0.8em;
-  color: var(--color-slate-600);
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-stone-300) transparent;
 }

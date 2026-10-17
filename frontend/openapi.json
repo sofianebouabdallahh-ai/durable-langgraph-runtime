@@ -120,6 +120,14 @@
             "title": "Description",
             "type": "string"
           },
+          "helpers": {
+            "description": "The sub-agents in detail",
+            "items": {
+              "$ref": "#/components/schemas/HelperView"
+            },
+            "title": "Helpers",
+            "type": "array"
+          },
           "hooks": {
             "additionalProperties": {
               "items": {
@@ -188,7 +196,8 @@
           "tools",
           "limits",
           "hooks",
-          "subagents"
+          "subagents",
+          "helpers"
         ],
         "title": "AgentView",
         "type": "object"
@@ -485,6 +494,62 @@
           "status"
         ],
         "title": "Health",
+        "type": "object"
+      },
+      "HelperView": {
+        "description": "A sub-agent (CR-005), as the UI shows it under its main agent.",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "limits": {
+            "additionalProperties": true,
+            "title": "Limits",
+            "type": "object"
+          },
+          "max_turns": {
+            "title": "Max Turns",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "GET /agents/{name} only",
+            "title": "Prompt"
+          },
+          "tools": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "model",
+          "max_turns",
+          "tools",
+          "limits"
+        ],
+        "title": "HelperView",
         "type": "object"
       },
       "MessageView": {
