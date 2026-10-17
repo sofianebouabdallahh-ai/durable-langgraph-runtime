@@ -1,14 +1,87 @@
-# Local inner loop (R9.2). Phase 0 has only the stateful services; api, worker
-# and ui join in later phases, and the `observability` profile in phase 9.
+# The local stack (R9.2).
 #
-# Run it through the root Makefile (`make up`), which passes the root .env:
+#   default (`make up`):  Postgres + Redis only. Developers run the API and workers
+#                         on the host with uv (`make api`, `make worker`).
+#   profile `app`:        the whole product in containers: migrate (one-shot), api,
+#                         2 workers. This is what `./setup.sh` starts for testers.
+#   profile `llm`:        Ollama in Docker (CPU-only on macOS: prefer the native app).
+#
+# Run it through the root Makefile or setup.sh, which pass the root .env:
 #   docker compose --file infra/compose/docker-compose.yml --env-file .env ...
 #
-# Ports bind to 127.0.0.1 so the databases are never exposed on the LAN.
+# Ports bind to 127.0.0.1 so nothing is exposed on the LAN.
 
 name: agent-runtime
 
+x-runtime: &runtime
+  image: ${RUNTIME_IMAGE:-ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/runtime:latest}
+  build: ../../backend
+  profiles: ["app"]
+  env_file: ../../.env
+  # Inside the network services are reached by name; these override the
+  # host-oriented values in .env (localhost), which the developer loop uses.
+  environment: &runtime-env
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: "5432"
+    REDIS_URL: redis://redis:6379/0
+    OLLAMA_BASE_URL: ${CONTAINER_OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+  extra_hosts:
+    - "host.docker.internal:host-gateway" # a model server on the host (Linux; macOS/Windows have it)
+  read_only: true
+  tmpfs:
+    - /tmp
+  security_opt:
+    - no-new-privileges:true
+  restart: unless-stopped
+
 services:
+  migrate:
+    <<: *runtime
+    command: ["db", "init"] # migrate + provision the component logins (idempotent)
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *runtime
+    command: ["api", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      <<: *runtime-env
+      # Least privilege (R14.13): the API connects as its own login, not the owner.
+      POSTGRES_USER: ${API_POSTGRES_USER:?set in .env}
+      POSTGRES_PASSWORD: ${API_POSTGRES_PASSWORD:?set in .env}
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=3).status == 200 else 1)"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+    stop_grace_period: 15s # drain: streams are asked to reconnect (R10.7)
+
+  worker:
+    <<: *runtime
+    command: ["worker", "--workers", "1", "--concurrency", "${WORKER_CONCURRENCY:-4}"]
+    deploy:
+      replicas: ${WORKERS:-2}
+    environment:
+      <<: *runtime-env
+      POSTGRES_USER: ${WORKER_POSTGRES_USER:?set in .env}
+      POSTGRES_PASSWORD: ${WORKER_POSTGRES_PASSWORD:?set in .env}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    # SIGTERM → finish the current step, release the run to another worker (R10.7).
+    stop_grace_period: 40s
+
   postgres:
     image: pgvector/pgvector:0.8.0-pg16 # Postgres 16 + pgvector (R4.5)
     environment:
@@ -31,7 +104,7 @@ services:
     # Redis is still rebuildable from Postgres; AOF just avoids needless recovery.
     command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     healthcheck:

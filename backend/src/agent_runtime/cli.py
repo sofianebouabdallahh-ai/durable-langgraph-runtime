@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 import uuid
 from collections.abc import Callable, Sequence
@@ -29,7 +30,10 @@ from agent_runtime.runs.state import RunStatus
 from agent_runtime.runs.store import Event, Run, RunRepository, RunTerminal
 
 Handler = Callable[[argparse.Namespace], int]
-BACKEND_DIR = Path(__file__).resolve().parents[2]  # backend/ (holds alembic.ini)
+# The directory holding alembic.ini, migrations/, agents/ and fixtures/: the source
+# checkout's backend/ by default; RUNTIME_HOME in an installed (non-editable) package,
+# e.g. /app in the container image, where __file__ is inside site-packages.
+BACKEND_DIR = Path(os.environ.get("RUNTIME_HOME") or Path(__file__).resolve().parents[2])
 
 
 def _setup_logging(settings: Settings) -> None:
@@ -89,6 +93,12 @@ def _db_provision_users(args: argparse.Namespace) -> int:
     done = asyncio.run(run())
     print(f"ok: provisioned {', '.join(done) or 'no'} database user(s)")
     return 0
+
+
+def _db_init(args: argparse.Namespace) -> int:
+    """Everything a fresh or updated database needs, idempotently: migrate, then
+    (re)provision the component logins. The Compose `migrate` service runs this."""
+    return _db_upgrade(args) or _db_provision_users(args)
 
 
 # --------------------------------------------------------------------- runs
@@ -236,6 +246,35 @@ def _print_live(type_: str, payload: dict[str, Any]) -> None:
         agent = payload.get("agent", "")
         detail = payload.get("message") or payload.get("status") or ""
         print(f"\n  ◇ {type_.removeprefix('subagent.')} {agent} {detail}", flush=True)
+
+
+def _smoke(args: argparse.Namespace) -> int:
+    """One real chat turn through the API and the workers (setup's final check)."""
+    from agent_runtime.ops import SmokeFailed, smoke
+
+    settings = get_settings()
+    try:
+        result = asyncio.run(smoke(args.api, settings, timeout_s=args.timeout))
+    except SmokeFailed as exc:
+        print(f"smoke test FAILED: {exc}", file=sys.stderr)
+        return 1
+    print(f"ok: a chat turn completed in {result.seconds:.1f}s "
+          f"(provider: {settings.model_provider}): {result.answer[:80]!r}")  # fmt: skip
+    return 0
+
+
+def _doctor(args: argparse.Namespace) -> int:
+    """Diagnostics with every secret redacted, as JSON (setup zips it with the logs)."""
+    from agent_runtime.ops import doctor
+
+    report = asyncio.run(doctor(get_settings(), args.api))
+    text = json.dumps(report, indent=2, default=str)
+    if args.out:
+        Path(args.out).write_text(text + "\n", encoding="utf-8")
+        print(f"wrote {args.out} ({'ok' if report['ok'] else 'problems found'})")
+    else:
+        print(text)
+    return 0 if report["ok"] else 1
 
 
 def _execute(args: argparse.Namespace) -> int:
@@ -397,6 +436,9 @@ def build_parser() -> argparse.ArgumentParser:
     show.set_defaults(handler=_agents_show)
 
     db = commands.add_parser("db", help="database").add_subparsers(required=True, metavar="ACTION")
+    db.add_parser("init", help="upgrade + provision-users (idempotent)").set_defaults(
+        handler=_db_init
+    )
     db.add_parser("upgrade", help="migrate our schema and LangGraph's tables").set_defaults(
         handler=_db_upgrade
     )
@@ -431,6 +473,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     worker.add_argument("--workers", type=int, default=1, help="number of worker processes")
     worker.set_defaults(handler=_worker)
+
+    smoke = commands.add_parser("smoke", help="one chat turn through the API and workers")
+    smoke.add_argument("--api", default="http://127.0.0.1:8000")
+    smoke.add_argument("--timeout", type=float, default=180.0)
+    smoke.set_defaults(handler=_smoke)
+
+    doctor = commands.add_parser("doctor", help="diagnostics, secrets redacted (JSON)")
+    doctor.add_argument("--api", default=None, help="also check this API's /readyz")
+    doctor.add_argument("--out", default=None, help="write to this file instead of stdout")
+    doctor.set_defaults(handler=_doctor)
 
     chat = commands.add_parser("chat", help="chat with an agent in this terminal")
     chat.add_argument("--agent", default="chat")
