@@ -163,16 +163,19 @@ The runtime is built for many users and workers, but the local release has **one
 |---|---|---|---|---|
 | **L1** | **Containerise & one-command setup** | Dockerfiles (`runtime`, later `ui`), the full Compose stack (api, workers, profiles), `setup.sh` / `setup.ps1` (checks, generated `.env`, model questions, smoke test), `doctor`, multi-arch images to GHCR in CI, image scanning | ~14–18 h | Clone → working chat (API + `runtime chat`) on macOS, Windows and Linux with only Docker |
 | **L2** | **Chat UI** | The chat view of §4.5 (sessions, streaming, tool and sub-agent cards, approval, stop, "What happened?"), the SSE hook, the `ui` image in the `app` profile, Playwright against the Compose stack | ~18–24 h | AC20 in the browser; a working end-to-end product (milestone M1) |
-| **L3** | **Local Agent Studio backend** | The `local` workspace/user; model connections stored encrypted (local key) + Test; agents in the DB (drafts, versions, publish, import/export); the builder agent; instruction-only skills (spec, upload, scan, attach); playground budget | ~24–32 h | The API supports everything the Studio UI needs; AC44, AC45, AC47 |
-| **L4** | **Studio UI** | The Studio, skills library and Settings → Models of §4.5 | ~22–28 h | AC43 with 2–3 non-technical testers on their own machines (M2) |
-| **L5** | **Dashboards & local Kubernetes** | Observability profile with dashboards; Helm chart; kind mode; kube-prometheus-stack; pod-kill demo | ~16–22 h | `--observability` and `--kubernetes` both work from a clean machine |
-| **L6** | **Release v0.1 & feedback loop** | Docs (§4.9), issue templates, in-app feedback, update + backup, opt-in telemetry, the first tagged release | ~10–14 h | 5–10 external testers installed it; feedback collected (M3) |
+| **L3a** | **Agent Studio: agents & helpers** | Agents in the DB as versions, turns pinned by hash, the form (tools, helpers, presets, protections), test chat, publish, history, import/export ([plan](phase-L3a.md)) | ~22–28 h | AC47; build, test and publish an agent with a helper without Markdown |
+| **L3b** | **Agent Studio: your own model** | Model connections stored encrypted (local key) + Test; a model per agent and helper | ~14–18 h | AC44, AC45 |
+| **L3c** | **Agent Studio: skills & "describe your agent"** | Instruction-only skills (spec, upload, scan, attach); the builder agent; "improve my instructions" | ~16–20 h | AC43 with 2–3 non-technical testers (M2) |
+| **L4** | **Dashboards & local Kubernetes** | Observability profile with dashboards; Helm chart; kind mode; kube-prometheus-stack; pod-kill demo | ~16–22 h | `--observability` and `--kubernetes` both work from a clean machine |
+| **L5** | **Release v0.1 & feedback loop** | Docs (§4.9), issue templates, in-app feedback, update + backup, opt-in telemetry, the first tagged release | ~10–14 h | 5–10 external testers installed it; feedback collected (M3) |
+
+**Re-cut (2026-10-17):** the Studio is built by feature (agents → models → skills), each slice with its backend and its screens, instead of a backend phase followed by a screens phase.
 
 **Re-ordered (2026-10-17):** the chat UI moved ahead of the Studio backend. The API already serves everything a chat UI needs, so this reaches a working product in the browser about 45 h sooner, and the Studio then plugs into a UI testers already use. The [roadmap](../roadmap.md) tracks the status.
 
 **≈ 105–140 focused hours to v0.1.** Each phase keeps the working agreement: plan → success criteria → build → e2e 5× → summary → PR.
 
-**After feedback:** the [beta platform](../architecture/beta-platform.md) (identity, Key Vault, fair scheduling, Azure). Much of L1–L6 carries over unchanged: the images, the UI, the Studio, connections, dashboards and the Helm chart.
+**After feedback:** the [beta platform](../architecture/beta-platform.md) (identity, Key Vault, fair scheduling, Azure). Much of L1–L5 carries over unchanged: the images, the UI, the Studio, connections, dashboards and the Helm chart.
 
 ## 6. Risks
 

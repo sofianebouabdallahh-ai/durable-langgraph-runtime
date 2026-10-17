@@ -2,7 +2,7 @@
 
 The delivery plan for **Durable, Distributed Runtime for LangGraph Agents**: what we build, in what order, and how we know each part is done.
 
-**Where we are (2026-10-17):** the runtime core is done (phases 0–6). In the local release, L1 (one-command setup) and **L2 (the chat UI, now called _Nuria_)** are merged: milestone **M1** is reached. **Next: L3, the Agent Studio backend.**
+**Where we are (2026-10-17):** the runtime core is done (phases 0–6). In the local release, L1 (one-command setup) and **L2 (the chat UI, now called _Nuria_)** are merged: milestone **M1** is reached. **Next: L3a, the Agent Studio: create agents and helpers in the UI** ([plan](plans/phase-L3a.md)).
 
 **Sources of truth for scope**
 - Base spec: [`Project_4_Detailed_Requirements_K8s.pdf`](requirements/Project_4_Detailed_Requirements_K8s.pdf). Requirements are `R<section>.<n>`; acceptance criteria are `AC<n>`.
@@ -27,7 +27,7 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 ```
  DONE                      LOCAL RELEASE (on testers' machines)                    HOSTED BETA (after feedback)
  ────────────────────      ─────────────────────────────────────────────────      ────────────────────────────────
- 0–6 runtime core    ──►  L1 ✅ ─► L2 ─► L3 ─► L4 ─► L5 ─► L6        ──►  P7 ─► P8 ─► P9 ─► P10 ─► P11 ─► P12
+ 0–6 runtime core    ──►  L1 ✅ ─► L2 ✅ ─► L3a ─► L3b ─► L3c ─► L4 ─► L5 ──►  P7 ─► P8 ─► P9 ─► P10 ─► P11 ─► P12
  durable runs, workers,     setup  chat  Studio Studio dash- v0.1               identity keys Studio fair  UI   Azure
  streaming, tools, HITL,          UI    backend UI    boards feedback                       multi- sched.     closed
  sub-agents, chat, models           ▲            ▲    + K8s    ▲                                 user              beta
@@ -37,8 +37,8 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 | Milestone | After | What a person can do | Who tries it |
 |---|---|---|---|
 | **M1 · It works in the browser** | L2 | `./setup.sh`, open `localhost`, chat with the built-in agent: streaming replies, tools, sub-agents, approvals, stop; survives a worker crash | Us, plus 1–2 friendly developers (`v0.1.0-alpha`) |
-| **M2 · Build your own agent** | L4 | Add their own model (Ollama, OpenAI, Foundry, any compatible endpoint), create an agent with helpers and skills, without seeing Markdown | 2–3 non-technical testers (AC43) |
-| **M3 · v0.1 for testers** | L6 | All of the above, plus optional dashboards and local Kubernetes, safe updates, feedback in two clicks | 5–10 external testers |
+| **M2 · Build your own agent** | L3c | Add their own model (Ollama, OpenAI, Foundry, any compatible endpoint), create an agent with helpers and skills, without seeing Markdown | 2–3 non-technical testers (AC43) |
+| **M3 · v0.1 for testers** | L5 | All of the above, plus optional dashboards and local Kubernetes, safe updates, feedback in two clicks | 5–10 external testers |
 | **M4 · Closed beta** | P12 | The hosted, multi-user version: sign in, shared agents, the workspace key, fair scheduling | Invited beta users |
 
 ---
@@ -50,16 +50,17 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 | 0–6 | Runtime core (see [Done](#done-the-runtime-core-phases-06)) | ✅ Done | — |
 | **L1** | Containerise & one-command setup | ✅ Done ([plan](plans/phase-L1.md), [summary](progress/phase-L1.md)) | ~14–18 h |
 | **L2** | Chat UI (Nuria) → M1 | ✅ Done ([plan](plans/phase-L2.md), [summary](progress/phase-L2.md)) | ~18–24 h |
-| **L3** | **Local Agent Studio backend** | ⏳ Next | ~24–32 h |
-| L4 | Studio UI → M2 | — | ~22–28 h |
-| L5 | Dashboards & local Kubernetes | — | ~16–22 h |
-| L6 | Release v0.1 & feedback loop → M3 | — | ~10–14 h |
+| **L3a** | **Agent Studio: agents & helpers** | ⏳ Next ([plan](plans/phase-L3a.md)) | ~22–28 h |
+| L3b | Agent Studio: your own model | — | ~14–18 h |
+| L3c | Agent Studio: skills & "describe your agent" → M2 | — | ~16–20 h |
+| L4 | Dashboards & local Kubernetes | — | ~16–22 h |
+| L5 | Release v0.1 & feedback loop → M3 | — | ~10–14 h |
 | P7–P12 | Hosted beta → M4 | After the feedback | ~160–200 h |
 | P13–P16 | Sandboxes, research agent, evals, AKS | After the beta opens | ~65–90 h |
 
 Legend: ⏳ next · 🚧 in progress · ✅ done · ⏸ blocked
 
-**M1 reached.** **To M2 (build your own agent): ~46–60 h.** **To M3 (v0.1): ~72–96 h.** Estimates are focused hours and rough; we correct them as we go.
+**M1 reached.** **To M2 (build your own agent): ~52–66 h.** **To M3 (v0.1): ~78–102 h.** Estimates are focused hours and rough; we correct them as we go.
 
 ---
 
@@ -90,30 +91,35 @@ The `runtime` image (non-root, read-only, tini); the Compose `app` profile (`mig
 
 **Done when:** **AC20** (resume the conversation after a reload and a lost stream) passes in the browser, and the Playwright flows pass 5/5 against the Compose stack.
 
-### L3 — Local Agent Studio backend · ~24–32 h
-- The `local` workspace and user, so the beta's identity layer slots in later.
-- **Model connections** (Ollama / OpenAI / Foundry / compatible): stored encrypted with the local key (AES-256-GCM), **Test** (capability check), defaults, per-agent choice.
-- Agents in the database: drafts, versions, publish, import/export of `.agent.md`; built-in agents read-only and copyable.
-- The builder agent ("describe your agent"); the playground budget.
-- **Instruction-only skills:** spec, upload, scan, attach to agents and helpers.
+**Re-cut (2026-10-17): the Studio by feature, not by layer.** L3 (backend) + L4 (screens) became three slices, each with its backend *and* its screens, so every PR adds something to click.
 
-**Done when:** **AC44** (a local Ollama and a Foundry or OpenAI key, used by different helpers in one conversation), **AC45** (the key appears nowhere) and **AC47** (immutable published versions).
+### L3a — Agent Studio: agents & helpers · ~22–28 h ([plan](plans/phase-L3a.md))
+- **Agents in the database as versions** (draft → published → archived; a published version is immutable); built-in agents stay files and can be copied.
+- **Every turn pins its agent by hash** (R15.4, finished here): publishing never changes a running conversation; the next turn uses the new version.
+- **The form:** name, purpose, instructions, tools as plain-language cards, helpers (sub-agents) with their own instructions and tools, limit presets, protections. One validator for files and the Studio, with issues shown next to each field.
+- **Test chat, then publish:** draft turns get a test budget, and approval-gated tools are simulated. Plus history and restore, import/export of `.agent.md`, and idempotent sends.
 
-### L4 — Studio UI · ~22–28 h → M2
-- **Settings → Models:** provider templates, Test, defaults.
-- **Agent Studio:** the form (name, purpose, instructions, model, tools as plain-language cards, helpers, skills, cost presets); "describe your agent"; the playground; versions; import/export.
-- **Skills library:** create or upload, the scan report, attach.
-- Plain words throughout (no "run", "epoch" or "lease" on the main screens).
+**Done when:** **AC47**, and a person builds, tests and publishes an agent with a helper without seeing Markdown (5/5 in the browser).
 
-**Done when:** **AC43**: a non-technical tester creates, tests and publishes an agent with a helper and a skill, without help and without seeing Markdown.
+### L3b — Agent Studio: your own model · ~14–18 h
+- **Settings → Models:** connections (Ollama / OpenAI / Foundry / compatible), the key encrypted with the local key (AES-256-GCM), **Test** (the capability check), defaults.
+- **A model per agent and per helper** in the form.
 
-### L5 — Dashboards & local Kubernetes · ~16–22 h
+**Done when:** **AC44** (a local Ollama and a Foundry or OpenAI key, used by different helpers in one conversation) and **AC45** (the key appears nowhere).
+
+### L3c — Agent Studio: skills & "describe your agent" · ~16–20 h → M2
+- **Instruction-only skills:** create or upload, the scan, attach to agents and helpers.
+- **"Describe your agent":** the builder agent drafts the form. Plus "improve my instructions".
+
+**Done when:** **AC43**: a non-technical tester creates, tests and publishes an agent with a helper and a skill, without help.
+
+### L4 — Dashboards & local Kubernetes · ~16–22 h
 - `./setup.sh --observability`: OpenTelemetry → Jaeger, Prometheus, Grafana dashboards (runs, queue, workers, model calls, cost); links from "What happened?" to the trace (R2.7, R7.1, R7.2).
 - `./setup.sh --kubernetes`: a kind cluster, a Helm chart, kube-prometheus-stack; the pod-kill demo.
 
 **Done when:** **AC8** (one trace spans every hop); both modes work from a clean machine.
 
-### L6 — Release v0.1 & feedback loop · ~10–14 h → M3
+### L5 — Release v0.1 & feedback loop · ~10–14 h → M3
 - In-app "Send feedback" (a pre-filled GitHub issue or a download; nothing sent without a click); issue templates.
 - `./setup.sh --update` completed: backup, then pull and migrate; an upgrade from the previous tag tested in CI.
 - Opt-in, content-free telemetry; docs ([local-release §4.9](plans/local-release.md)).
@@ -151,11 +157,11 @@ Designed in [architecture/beta-platform.md](architecture/beta-platform.md), and 
 |---|---|
 | 7 Sandboxes | P13: the beta has instruction-only skills, so code execution waits |
 | 8 Research agent | P14: built as a Studio template |
-| 9 Observability | L5 (local dashboards), then P12 (hosted telemetry and SLOs) |
+| 9 Observability | L4 (local dashboards), then P12 (hosted telemetry and SLOs) |
 | 10 Evals & CI gate | P15 |
-| 11 UI | L2 (chat), L4 (Studio), P11 (teams) |
-| 12 Kubernetes | L5 (kind + Helm, locally), then P16 (AKS) |
-| 13 Release v1.0.0 | L6 is v0.1 for testers; v1.0 comes once the beta is stable |
+| 11 UI | L2 (chat), L3a–L3c (Studio), P11 (teams) |
+| 12 Kubernetes | L4 (kind + Helm, locally), then P16 (AKS) |
+| 13 Release v1.0.0 | L5 is v0.1 for testers; v1.0 comes once the beta is stable |
 
 ---
 
