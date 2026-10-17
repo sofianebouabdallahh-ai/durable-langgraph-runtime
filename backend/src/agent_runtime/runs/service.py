@@ -129,3 +129,23 @@ class RunService:
             except RunTerminal:
                 pass  # finished meanwhile
         return cancelled
+
+    async def decide_approval(
+        self,
+        run_id: uuid.UUID,
+        decision: str,
+        edits: dict[str, Any] | None = None,
+        reason: str | None = None,
+    ) -> Run:
+        """R1.4: approve (re-queue with the decision) or reject (cancelled: rejected).
+        No live worker is needed. Raises NotWaitingForApproval (→ 409)."""
+        async with self._pool.connection() as conn:
+            repo = RunRepository(conn)
+            run = await repo.decide_approval(
+                run_id, decision=decision, edits=edits, reason=reason,
+                decided_by="local",  # an authenticated principal once auth exists (roadmap)
+            )  # fmt: skip
+        await publish_events(self._bus, repo.emitted)
+        if run.status is RunStatus.QUEUED and self._relay is not None:
+            await self._relay.enqueue(run.id)
+        return run

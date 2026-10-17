@@ -46,6 +46,12 @@ class RunTerminal(Exception):
         self.run = run
 
 
+class NotWaitingForApproval(Exception):
+    def __init__(self, run: Run) -> None:
+        super().__init__(f"run {run.id} is {run.status}, not waiting_approval")
+        self.run = run
+
+
 class RunNotFound(LookupError):
     def __init__(self, run_id: uuid.UUID) -> None:
         super().__init__(f"run {run_id} not found")
@@ -76,6 +82,8 @@ class Run:
     reclaims: int = 0
     releases: int = 0
     message_id: str | None = None
+    interrupt_payload: dict[str, Any] | None = None  # what the run is waiting on (R1.4)
+    resume_value: dict[str, Any] | None = None  # the human's decision, for Command(resume=…)
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> Run:
@@ -102,6 +110,8 @@ class Run:
             reclaims=row["reclaims"],
             releases=row["releases"],
             message_id=row["message_id"],
+            interrupt_payload=row["interrupt_payload"],
+            resume_value=row["resume_value"],
         )
 
 
@@ -146,7 +156,8 @@ def _required(row: dict[str, Any] | None, statement: str) -> dict[str, Any]:
 _RUN_COLUMNS = """
     id, graph_name, kind, thread_id, status, reason, epoch, owner, lease_expires_at,
     input, options, limits, steps, parent_run_id, session_id,
-    created_at, started_at, finished_at, cancel_requested, reclaims, releases, message_id
+    created_at, started_at, finished_at, cancel_requested, reclaims, releases, message_id,
+    interrupt_payload, resume_value
 """
 
 
@@ -308,6 +319,57 @@ class RunRepository:
                 run_id, RunStatus.CANCELLED, event=EventType.RUN_CANCELLED,
                 reason="cancel_requested", payload={"reason": "cancel_requested"},
             )  # fmt: skip
+
+    async def set_interrupt(self, run_id: uuid.UUID, payload: dict[str, Any] | None) -> None:
+        """Record what the run waits on. Call inside the pause's fenced transaction."""
+        await self._conn.execute(
+            "UPDATE runs SET interrupt_payload = %s WHERE id = %s",
+            (Jsonb(payload) if payload is not None else None, run_id),
+        )
+
+    async def decide_approval(
+        self,
+        run_id: uuid.UUID,
+        *,
+        decision: str,
+        edits: dict[str, Any] | None,
+        reason: str | None,
+        decided_by: str,
+    ) -> Run:
+        """R1.4. approve → store the resume value and re-queue; reject → cancelled(rejected).
+
+        Works with no worker alive: the run holds no lease while it waits.
+        Raises NotWaitingForApproval (→ 409) unless the run is waiting_approval."""
+        async with self._conn.transaction():
+            cur = await self._conn.execute(
+                f"SELECT {_RUN_COLUMNS} FROM runs WHERE id = %s FOR UPDATE", (run_id,)
+            )
+            row = await cur.fetchone()
+            if row is None:
+                raise RunNotFound(run_id)
+            run = Run.from_row(row)
+            if run.status is not RunStatus.WAITING_APPROVAL:
+                raise NotWaitingForApproval(run)
+            await self.append_event(
+                run_id,
+                epoch=run.epoch,
+                type=EventType.APPROVAL_DECIDED,
+                payload={"decision": decision, "edits": edits, "reason": reason,
+                         "decided_by": decided_by},
+            )  # fmt: skip
+            if decision == "reject":
+                await self.set_interrupt(run_id, None)
+                return await self.transition(
+                    run_id, RunStatus.CANCELLED, event=EventType.RUN_CANCELLED,
+                    reason="rejected", payload={"reason": "rejected", "comment": reason},
+                )  # fmt: skip
+            await self._conn.execute(
+                "UPDATE runs SET resume_value = %s, interrupt_payload = NULL WHERE id = %s",
+                (Jsonb({"decision": "approve", "edits": edits or {}}), run_id),
+            )
+            return await self.transition(
+                run_id, RunStatus.QUEUED, event=EventType.RUN_RESUMED_AFTER_APPROVAL
+            )
 
     async def is_cancel_requested(self, run_id: uuid.UUID) -> bool:
         cur = await self._conn.execute("SELECT cancel_requested FROM runs WHERE id = %s", (run_id,))

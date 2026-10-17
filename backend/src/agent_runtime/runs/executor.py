@@ -41,7 +41,7 @@ from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import CheckpointMetadata
 from langgraph.errors import GraphRecursionError
-from langgraph.types import interrupt
+from langgraph.types import Command, interrupt
 
 from agent_runtime.checkpointing import FencedCheckpointer
 from agent_runtime.config import Settings
@@ -286,9 +286,13 @@ class RunExecutor:
             "recursion_limit": limits.max_steps + 5,
         }
         resuming = await checkpointer.aget_tuple(config) is not None
-        graph_input = (
+        graph_input: Any = (
             None if resuming else spec.to_graph_input(spec.input_model.model_validate(run.input))
         )
+        if resuming and (await graph.aget_state(config)).interrupts:
+            # Paused on an approval (R1.4) and since approved: LangGraph re-runs the
+            # interrupted step and interrupt() returns the human's decision.
+            graph_input = Command(resume=run.resume_value)
         if run.started_at is None:  # set by the queued → running transition
             raise RuntimeError(f"run {run.id} is running without started_at")
         elapsed = (datetime.now(UTC) - run.started_at).total_seconds()
@@ -321,6 +325,8 @@ class RunExecutor:
         except Exception as exc:
             log.exception("run %s failed", run.id)
             return await self._fail(fence, FailureReason.ERROR, outbox, detail=repr(exc))
+        if interrupts := final.get("__interrupt__"):
+            return await self._pause(fence, interrupts[0].value, outbox)
         return await self._complete(fence, spec.to_output(final), outbox)
 
     def _agent_context(
@@ -417,6 +423,21 @@ class RunExecutor:
         async with self._pool.connection() as conn:
             if await RunRepository(conn).is_cancel_requested(run_id):
                 raise CancelRequested
+
+    async def _pause(self, fence: Fence, payload: Any, outbox: _Outbox) -> Run:
+        """Durable pause (R1.4): persist what we wait on, release the lease. No worker
+        holds the run while a human decides; approval re-queues it."""
+        value = payload if isinstance(payload, dict) else {"value": payload}
+
+        async def work(repo: RunRepository) -> Run:
+            await outbox.flush(repo)
+            await repo.set_interrupt(fence.run_id, value)
+            return await repo.transition(
+                fence.run_id, RunStatus.WAITING_APPROVAL, event=EventType.INTERRUPT_RAISED,
+                fence=fence, payload=value,
+            )  # fmt: skip
+
+        return await self._fenced_then_publish(fence, work)
 
     async def _release(self, fence: Fence, outbox: _Outbox) -> Run:
         """Graceful hand-off (R10.7): back to `queued`, lease cleared, not a reclaim."""
