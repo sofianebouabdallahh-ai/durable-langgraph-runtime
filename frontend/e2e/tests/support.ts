@@ -24,6 +24,11 @@ export async function restoreStack(apiReplicas: number, workers: number): Promis
   }
   await waitForReplicas("api", apiReplicas);
   await waitForReplicas("worker", workers);
+  // Running isn't ready: wait for the API's health check, so the next chaos test
+  // takes out one replica while the other is really serving (AC20's scenario).
+  await expect.poll(() => containers("api").every((id) => docker("inspect", "-f", "{{.State.Health.Status}}", id) === "healthy"),
+    { timeout: 60_000 }).toBe(true);
+  await new Promise((r) => setTimeout(r, 3_000)); // and the proxy's DNS view catches up (2 s)
 }
 
 /** A container's log, stdout and stderr (uvicorn's access log is on stderr). */
