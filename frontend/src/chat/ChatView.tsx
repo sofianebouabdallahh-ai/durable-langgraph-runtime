@@ -98,7 +98,7 @@ export function ChatView({ sessionId }: { sessionId: string }) {
             onSend={send}
             onStop={stop}
             placeholder={`Message ${agentLabel(agent)}…`}
-            leading={<span className="px-2 text-xs text-stone-400">Enter to send · Shift+Enter for a new line</span>}
+            leading={<span className="px-2 text-xs text-stone-500">Enter to send · Shift+Enter for a new line</span>}
           />
         </div>
       </div>
@@ -206,7 +206,7 @@ function TurnBlock({
               <div>
                 <button
                   type="button"
-                  className="inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-xs text-stone-400 transition hover:bg-stone-100 hover:text-stone-700 focus-visible:outline-2 focus-visible:outline-sun-500 dark:hover:bg-stone-800 dark:hover:text-stone-200"
+                  className="inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-xs text-stone-500 transition hover:bg-stone-100 hover:text-stone-700 focus-visible:outline-2 focus-visible:outline-sun-500 dark:hover:bg-stone-800 dark:hover:text-stone-200"
                   aria-expanded={details}
                   onClick={() => {
                     setDetails(!details);
@@ -256,7 +256,7 @@ function renderItems(items: Item[], agent: string | null, waitingId: string | nu
         out.push(
           <div key={item.key} data-testid="assistant-message">
             <Markdown text={item.message.text} />
-            {item.message.interrupted && <div className="mt-1 text-xs text-stone-400">(stopped before the end)</div>}
+            {item.message.interrupted && <div className="mt-1 text-xs text-stone-500">(stopped before the end)</div>}
           </div>,
         );
         break;

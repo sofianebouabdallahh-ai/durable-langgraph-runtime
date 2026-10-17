@@ -44,10 +44,10 @@ export function ToolCard({
           <ToolIcon tool={call.tool} className="size-3.5" />
         </span>
         <span className="font-medium text-stone-800 dark:text-stone-200">{toolLabel(call.tool)}</span>
-        {state === "running" && <span className="text-stone-400">working…</span>}
+        {state === "running" && <span className="text-stone-500">working…</span>}
         {state === "held" && <span className="text-amber-600 dark:text-amber-400">waiting for your OK</span>}
         {result?.cached && <Pill tone="blue">reused</Pill>}
-        <span className="ml-auto flex items-center gap-2 text-xs text-stone-400">
+        <span className="ml-auto flex items-center gap-2 text-xs text-stone-500">
           {result?.durationMs != null && <span className="tabular-nums">{formatMs(result.durationMs)}</span>}
           {state === "done" && <Check aria-hidden className="size-4 text-emerald-500" />}
           {state === "failed" && <AlertTriangle aria-hidden className="size-4 text-amber-500" />}
@@ -59,12 +59,12 @@ export function ToolCard({
       {open && (
         <div className="grid gap-3 border-t border-stone-100 bg-stone-50/50 px-3 py-3 sm:grid-cols-2 dark:border-stone-800 dark:bg-stone-950/30">
           <div>
-            <div className="mb-1.5 text-[11px] font-semibold tracking-wider text-stone-400 uppercase">Input</div>
+            <div className="mb-1.5 text-[11px] font-semibold tracking-wider text-stone-500 uppercase">Input</div>
             <DataBlock value={call.args} />
           </div>
           {result && (
             <div>
-              <div className="mb-1.5 text-[11px] font-semibold tracking-wider text-stone-400 uppercase">{result.error ? "Error" : "Result"}</div>
+              <div className="mb-1.5 text-[11px] font-semibold tracking-wider text-stone-500 uppercase">{result.error ? "Error" : "Result"}</div>
               <DataBlock value={result.error ?? result.result} />
             </div>
           )}

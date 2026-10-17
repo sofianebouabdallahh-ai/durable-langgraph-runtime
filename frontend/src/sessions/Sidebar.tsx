@@ -61,7 +61,7 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: () =>
       <div className="mt-5 px-3">
         <label className="relative block">
           <span className="sr-only">Search chats</span>
-          <Search aria-hidden className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-stone-400" />
+          <Search aria-hidden className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-stone-600" />
           <input
             value={query}
             onChange={(e) => {
@@ -76,7 +76,7 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: () =>
       <div className="scrollbar-thin mt-3 min-h-0 flex-1 overflow-y-auto px-3 pb-3" data-testid="session-list">
         {groups.map(([group, items]) => (
           <section key={group} className="mt-3 first:mt-0">
-            <h2 className="px-3 pb-1 text-[11px] font-semibold tracking-wider text-stone-400 uppercase">{group}</h2>
+            <h2 className="px-3 pb-1 text-[11px] font-semibold tracking-wider text-stone-600 uppercase">{group}</h2>
             <ul className="space-y-0.5">
               {items.map((s) => (
                 <li key={s.id}>
@@ -90,7 +90,7 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: () =>
                         : "text-stone-600 hover:bg-stone-100 hover:text-stone-900 dark:text-stone-400 dark:hover:bg-stone-800/60 dark:hover:text-stone-100"
                     }`}
                   >
-                    <MessageSquare aria-hidden className="size-3.5 shrink-0 text-stone-400" />
+                    <MessageSquare aria-hidden className="size-3.5 shrink-0 text-stone-600" />
                     <span className="truncate">{s.title ?? "New chat"}</span>
                     {s.active_run_id && (
                       <span className="ml-auto size-1.5 shrink-0 animate-pulse rounded-full bg-sun-500" title="Answering…" />
@@ -102,7 +102,7 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: () =>
           </section>
         ))}
         {sessions.data?.length === 0 && (
-          <p className="px-3 py-6 text-center text-sm text-stone-400">Your chats will appear here.</p>
+          <p className="px-3 py-6 text-center text-sm text-stone-600">Your chats will appear here.</p>
         )}
       </div>
       <ModelStatus />

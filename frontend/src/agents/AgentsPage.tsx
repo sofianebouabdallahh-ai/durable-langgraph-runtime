@@ -41,7 +41,7 @@ export function AgentsPage() {
               <Avatar name={agentLabel(a.name)} size="lg" brand={a.name === "chat"} />
               <div className="min-w-0">
                 <div className="font-display text-lg font-medium">{agentLabel(a.name)}</div>
-                <div className="font-mono text-xs text-stone-400">{a.name}</div>
+                <div className="font-mono text-xs text-stone-500">{a.name}</div>
               </div>
             </div>
             <p className="mt-3 line-clamp-3 flex-1 text-sm leading-relaxed text-stone-600 dark:text-stone-400">{a.description}</p>
@@ -116,7 +116,7 @@ export function AgentDetail({ name, go }: { name: string; go: (route: Route) => 
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_300px]">
         <section className="rounded-2xl border border-stone-200 bg-white p-6 dark:border-stone-800 dark:bg-stone-900">
-          <h2 className="text-[11px] font-semibold tracking-wider text-stone-400 uppercase">Instructions</h2>
+          <h2 className="text-[11px] font-semibold tracking-wider text-stone-500 uppercase">Instructions</h2>
           <div className="mt-3">
             <Markdown text={showPlaceholders(a.prompt ?? "")} />
           </div>
@@ -172,7 +172,7 @@ function HelperCard({ helper }: { helper: Helper }) {
         <Avatar name={helper.name} />
         <div>
           <div className="font-medium">{agentLabel(helper.name)}</div>
-          <div className="font-mono text-xs text-stone-400">{helper.name}</div>
+          <div className="font-mono text-xs text-stone-500">{helper.name}</div>
         </div>
       </div>
       <p className="mt-3 text-sm leading-relaxed text-stone-600 dark:text-stone-400">{helper.description}</p>
@@ -204,7 +204,7 @@ function HelperCard({ helper }: { helper: Helper }) {
 }
 
 function ToolList({ tools, compact = false }: { tools: Record<string, unknown>[]; compact?: boolean }) {
-  if (tools.length === 0) return <p className="text-sm text-stone-400">No tools.</p>;
+  if (tools.length === 0) return <p className="text-sm text-stone-500">No tools.</p>;
   if (compact) {
     return (
       <div className="flex flex-wrap gap-1.5">
@@ -242,7 +242,7 @@ function ToolList({ tools, compact = false }: { tools: Record<string, unknown>[]
 function Panel({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="rounded-2xl border border-stone-200 bg-white p-5 dark:border-stone-800 dark:bg-stone-900">
-      <h2 className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-stone-400 uppercase">
+      <h2 className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-stone-500 uppercase">
         {icon}
         {title}
       </h2>

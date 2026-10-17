@@ -34,7 +34,7 @@ export function WhatHappened({ runId, active }: { runId: string; active: boolean
                 l.type === "run.reclaimed" || l.type === "run.released" ? "bg-amber-500" : l.type === "run.failed" ? "bg-rose-500" : l.type === "run.completed" ? "bg-emerald-500" : "bg-stone-300 dark:bg-stone-600"
               }`}
             />
-            <span className="mr-2 font-mono text-[11px] text-stone-400 tabular-nums">{start ? `+${elapsed(start, l.ts)}` : ""}</span>
+            <span className="mr-2 font-mono text-[11px] text-stone-500 tabular-nums">{start ? `+${elapsed(start, l.ts)}` : ""}</span>
             <span className="text-stone-700 dark:text-stone-300">{l.text}</span>
           </li>
         ))}

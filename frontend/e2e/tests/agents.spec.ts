@@ -1,5 +1,9 @@
 /** The Agents section: each agent's instructions, tools, limits and helpers (sub-agents). */
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+
+const serious = async (page: import("@playwright/test").Page) =>
+  (await new AxeBuilder({ page }).analyze()).violations.filter((v) => v.impact === "serious" || v.impact === "critical");
 
 test("agents and their helpers, then a chat with one", async ({ page }) => {
   await page.goto("/");
@@ -9,6 +13,7 @@ test("agents and their helpers, then a chat with one", async ({ page }) => {
   await expect(cards.filter({ hasText: "Nuria" })).toHaveCount(1);
   await expect(cards.filter({ hasText: "Delegator" })).toHaveCount(0); // test fixtures stay hidden
   await expect(page.getByText("Building your own agents is coming next")).toBeVisible();
+  expect(await serious(page)).toEqual([]);
 
   await cards.filter({ hasText: "Nuria" }).click();
   await expect(page.getByRole("heading", { name: "Nuria", level: 1 })).toBeVisible();
@@ -21,6 +26,7 @@ test("agents and their helpers, then a chat with one", async ({ page }) => {
   await expect(helpers.filter({ hasText: "researcher" })).toContainText("Search");
   await helpers.filter({ hasText: "researcher" }).getByRole("button", { name: "Instructions" }).click();
   await expect(helpers.filter({ hasText: "researcher" })).toContainText("return_result");
+  expect(await serious(page)).toEqual([]);
 
   await page.getByRole("button", { name: "Chat with Nuria" }).click();
   await expect(page).toHaveURL(/#\/s\//);

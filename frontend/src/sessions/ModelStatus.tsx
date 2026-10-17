@@ -26,7 +26,7 @@ export function ModelStatus() {
           <span className="block truncate text-[13px] font-medium text-stone-800 dark:text-stone-200">
             {demo ? "Demo model" : (about.data.chat_model ?? about.data.model_provider)}
           </span>
-          <span className="block truncate text-xs text-stone-500">{demo ? "Offline · follows simple rules" : `via ${about.data.model_provider}`}</span>
+          <span className="block truncate text-xs text-stone-600">{demo ? "Offline · follows simple rules" : `via ${about.data.model_provider}`}</span>
         </span>
       </div>
     </div>
