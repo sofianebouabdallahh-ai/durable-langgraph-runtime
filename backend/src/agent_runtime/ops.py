@@ -141,9 +141,15 @@ async def _check_postgres(settings: Settings) -> dict[str, Any]:
         async with await psycopg.AsyncConnection.connect(
             settings.database_url("postgresql"), connect_timeout=5
         ) as conn:
-            cur = await conn.execute("SELECT version_num FROM alembic_version")
-            row = await cur.fetchone()
-        return {"ok": True, "schema": row[0] if row else None}
+            await conn.execute("SELECT 1")
+            schema: str | None = "unknown (this login can't read alembic_version)"
+            try:  # least-privilege logins (api, worker) may not read the migration table
+                cur = await conn.execute("SELECT version_num FROM alembic_version")
+                row = await cur.fetchone()
+                schema = row[0] if row else None
+            except psycopg.errors.InsufficientPrivilege:
+                pass
+        return {"ok": True, "user": settings.postgres_user, "schema": schema}
     except Exception as exc:  # report, never raise: this is a diagnostic
         return {"ok": False, "error": redact(f"{type(exc).__name__}: {exc}")[:300]}
 

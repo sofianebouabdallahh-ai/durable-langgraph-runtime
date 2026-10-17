@@ -12,6 +12,9 @@ concurrency:
 permissions:
   contents: read
 
+# Third-party actions are pinned to a full commit SHA (tags can be repointed: the
+# tj-actions/changed-files compromise in 2025 worked exactly that way).
+
 defaults:
   run:
     working-directory: backend
@@ -25,7 +28,7 @@ jobs:
       run:
         working-directory: .
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # scan the full history, not just the last commit
       - name: gitleaks over all commits
@@ -43,8 +46,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
           cache-dependency-glob: backend/uv.lock
@@ -91,8 +94,8 @@ jobs:
       WORKER_POSTGRES_PASSWORD: ci-only-worker
       REQUIRE_SERVICES: "1" # missing services fail the tests instead of skipping them
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
           cache-dependency-glob: backend/uv.lock
@@ -101,3 +104,54 @@ jobs:
         run: uv run runtime db upgrade && uv run runtime db provision-users
       - name: All tests with coverage (fails under the floor in pyproject.toml)
         run: uv run pytest --cov --cov-report=term
+
+  containers:
+    name: image · scan · setup · container e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: setup.ps1 parses and passes PSScriptAnalyzer (Windows path; not run here)
+        shell: pwsh
+        run: |
+          $errs = $null; $tok = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile("$PWD/setup.ps1", [ref]$tok, [ref]$errs)
+          if ($errs) { $errs | ForEach-Object { "::error::setup.ps1:$($_.Extent.StartLineNumber) $($_.Message)" }; exit 1 }
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.24.0 -Scope CurrentUser
+          $issues = Invoke-ScriptAnalyzer -Path setup.ps1 -Severity Error
+          $issues | Format-Table -AutoSize | Out-String -Width 200
+          if ($issues) { exit 1 }
+      - name: First run, exactly as a tester does it (builds the image)
+        run: ./setup.sh --non-interactive --model scripted --build
+      - name: Second run changes nothing (idempotent)
+        run: |
+          before=$(sha256sum .env)
+          ./setup.sh --non-interactive
+          [ "$before" = "$(sha256sum .env)" ] || { echo "::error::setup changed .env on a re-run"; exit 1; }
+      - name: Scan the image (fail on fixable HIGH/CRITICAL)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa \
+            image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress \
+            ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/runtime:latest
+      - name: The image runs as a non-root user
+        run: |
+          uid=$(docker run --rm --entrypoint id ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/runtime:latest -u)
+          [ "$uid" = "10001" ] || { echo "::error::image runs as uid $uid"; exit 1; }
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - name: Container e2e (kill / stop a worker mid-turn, least privilege)
+        working-directory: backend
+        run: uv run --locked python -m tests.e2e.compose_e2e all
+      - name: Diagnostics bundle (kept for 7 days)
+        if: always()
+        run: ./setup.sh --doctor || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: diagnostics
+          path: diagnostics-*.tar.gz
+          retention-days: 7

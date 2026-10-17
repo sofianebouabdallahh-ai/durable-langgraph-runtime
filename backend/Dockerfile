@@ -9,7 +9,8 @@
 #
 # Base images are pinned by digest; uv by version, at least two weeks old (as uv.lock).
 
-ARG PYTHON_IMAGE=python:3.12.15-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258
+# Debian 13 (trixie): 44 unfixed HIGH/CRITICAL in the base vs 63 on Debian 12 (Trivy, 2026-10-17).
+ARG PYTHON_IMAGE=python:3.12.15-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.12.20@sha256:100047e74f30778ab704942321a09750d6158739573ff58bf3924085cc6cd2d8
 
 FROM ${UV_IMAGE} AS uv

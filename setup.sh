@@ -163,7 +163,7 @@ configure_model() {
       if curl -fsS --max-time 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
         env_set CONTAINER_OLLAMA_BASE_URL http://host.docker.internal:11434/v1
         env_set COMPOSE_PROFILES app
-        ok "using the Ollama running on this machine (GPU-accelerated on macOS/Windows)"
+        ok "using the Ollama found at 127.0.0.1:11434 (the native app uses the GPU; Ollama in Docker on macOS doesn't)"
         curl -fsS http://127.0.0.1:11434/api/tags | grep -q "\"$name\"" \
           || warn "model $name isn't downloaded yet: run  ollama pull $name"
       else
