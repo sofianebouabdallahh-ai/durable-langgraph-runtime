@@ -39,21 +39,19 @@ import socket
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Coroutine
-from dataclasses import dataclass, field
 from typing import Any
 
 from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.base import CheckpointMetadata
 from langgraph.errors import GraphRecursionError
 from langgraph.types import Command, interrupt
 
 from agent_runtime.checkpointing import FencedCheckpointer
 from agent_runtime.config import Settings
-from agent_runtime.db import Conn, Pool
+from agent_runtime.db import Pool
 from agent_runtime.fencing import Fence, FencedError, check_fence
 from agent_runtime.graphs import GraphRegistry, GraphSpec
-from agent_runtime.graphs.assistant import AgentInput
+from agent_runtime.graphs.assistant import AgentInput, granted_tools, subagent_graph
 from agent_runtime.runs.events import EventType
 from agent_runtime.runs.fanout import (
     ChildResult,
@@ -66,10 +64,10 @@ from agent_runtime.runs.fanout import (
     is_spawn,
 )
 from agent_runtime.runs.limits import RunLimits, RunOptions, resolve_limits
+from agent_runtime.runs.outbox import Outbox
 from agent_runtime.runs.service import prepare
 from agent_runtime.runs.state import FailureReason, RunStatus
 from agent_runtime.runs.store import (
-    Event,
     FanOutLimits,
     FanOutRejected,
     NewChild,
@@ -78,6 +76,7 @@ from agent_runtime.runs.store import (
     RunTerminal,
 )
 from agent_runtime.streaming.bus import EventBus, publish_events
+from agent_runtime.subagents.orchestrator import SubagentLimits, SubagentOrchestrator
 from agent_runtime.tools.builtin import default_tools
 from agent_runtime.tools.hooks import HookRegistry, default_hooks
 from agent_runtime.tools.invocations import BudgetExceeded
@@ -110,43 +109,6 @@ class LeaseLost(Exception):
     pass
 
 
-# --------------------------------------------------------------------- outbox
-
-
-@dataclass
-class _Outbox:
-    """Events staged during a superstep, committed with its checkpoint."""
-
-    run_id: uuid.UUID
-    fence: Fence
-    committed_steps: int  # steps committed for this run so far (all executions)
-    bus: EventBus | None = None
-    pending: list[tuple[EventType, dict[str, Any]]] = field(default_factory=list)
-    _just_written: list[Event] = field(default_factory=list)
-
-    def stage(self, type: EventType, payload: dict[str, Any]) -> None:
-        self.pending.append((type, payload))
-
-    async def flush(self, repo: RunRepository) -> None:
-        for type, payload in self.pending:
-            await repo.append_event(self.run_id, epoch=self.fence.epoch, type=type, payload=payload)
-        self.pending.clear()
-
-    async def on_commit(self, conn: Conn, metadata: CheckpointMetadata) -> None:
-        """FencedCheckpointer hook: runs inside the checkpoint's transaction."""
-        repo = RunRepository(conn)
-        # Step 0 only maps the input into state; supersteps ≥ 1 executed nodes.
-        if metadata.get("source") == "loop" and metadata.get("step", 0) >= 1:
-            self.committed_steps = await repo.add_steps(self.run_id, 1)
-        await self.flush(repo)
-        self._just_written = repo.emitted  # replaced, not appended: a rollback discards it
-
-    async def after_commit(self) -> None:
-        """FencedCheckpointer hook: the transaction committed; now announce it."""
-        written, self._just_written = self._just_written, []
-        await publish_events(self.bus, written)
-
-
 class _NodeRecorder(AsyncCallbackHandler):
     """Observes node starts and ends; stages node events; enforces max_steps."""
 
@@ -154,7 +116,7 @@ class _NodeRecorder(AsyncCallbackHandler):
 
     def __init__(
         self,
-        outbox: _Outbox,
+        outbox: Outbox,
         max_steps: int,
         check_interrupts: Callable[[], Awaitable[None]],
     ) -> None:
@@ -244,6 +206,7 @@ class RunExecutor:
         self._hooks = hooks or default_hooks()
         self._policy = policy or RiskClassPolicy()
         self._enqueue = enqueue  # send a run that became queued (children, fanned-in parent)
+        self._orchestrator: SubagentOrchestrator | None = None  # set for agents with sub-agents
         self._spawner: Spawner = (
             LocalSpawner(graphs, settings.run_max_children) if local_fanout else RunSpawner()
         )
@@ -289,6 +252,15 @@ class RunExecutor:
         return await self._drive(run, fence)
 
     async def _drive(self, run: Run, fence: Fence) -> Run:
+        try:
+            return await self._drive_graph(run, fence)
+        finally:
+            # Whatever happened (including this task being cancelled, which is how a
+            # test simulates a crash), no sub-agent task outlives this execution.
+            if self._orchestrator is not None:
+                await self._orchestrator.stop()
+
+    async def _drive_graph(self, run: Run, fence: Fence) -> Run:
         # A run that can never execute (graph removed, input or limits no longer
         # valid) must fail, not be retried forever by the reaper (a poison run).
         try:
@@ -301,7 +273,7 @@ class RunExecutor:
             spec.input_model.model_validate(run.input)
         except Exception as exc:
             return await self._fail(fence, FailureReason.ERROR, None, detail=repr(exc))
-        outbox = _Outbox(run.id, fence, committed_steps=run.steps, bus=self._bus)
+        outbox = Outbox(run.id, fence, committed_steps=run.steps, bus=self._bus)
         checkpointer = FencedCheckpointer(
             self._pool, fence, on_commit=outbox.on_commit, after_commit=outbox.after_commit
         )
@@ -320,6 +292,10 @@ class RunExecutor:
         deadline = run.started_at.timestamp() + limits.timeout_s
         if deadline - time.time() <= 0:
             return await self._fail(fence, FailureReason.TIMEOUT, outbox)
+        if self._orchestrator is not None:
+            # Resume every sub-agent that was mid-task when the run last stopped (a
+            # crash, a release, an approval pause) from its own checkpoint (R16.3).
+            await self._orchestrator.recover()
 
         graph_input: Any = None
         pending: Any = None  # the interrupt this run stopped on, if any
@@ -378,7 +354,7 @@ class RunExecutor:
     # ------------------------------------------------------------- child runs
 
     async def _fan_out_or_in(
-        self, run: Run, fence: Fence, payload: dict[str, Any], outbox: _Outbox, limits: RunLimits
+        self, run: Run, fence: Fence, payload: dict[str, Any], outbox: Outbox, limits: RunLimits
     ) -> Run | dict[str, Any]:
         """A Run: the run now waits (or ended). A dict: resume the node with it."""
         try:
@@ -415,7 +391,7 @@ class RunExecutor:
         fence: Fence,
         specs: list[ChildSpec],
         payload: dict[str, Any],
-        outbox: _Outbox,
+        outbox: Outbox,
         limits: RunLimits,
     ) -> Run | dict[str, Any]:
         """Children + waiting_children in one fenced transaction, or a rejection the
@@ -452,25 +428,57 @@ class RunExecutor:
             return {"rejected": exc.reason}
 
     def _agent_context(
-        self, spec: GraphSpec, run: Run, fence: Fence, limits: RunLimits, outbox: _Outbox
+        self, spec: GraphSpec, run: Run, fence: Fence, limits: RunLimits, outbox: Outbox
     ) -> RunContext | WorkflowContext:
         """Everything the graph needs about this run: an agent's grants, hooks and
         budgets, or a workflow's spawner."""
         if spec.agent is None:
             return WorkflowContext(spawner=self._spawner)
-        fm = spec.agent.frontmatter
+        agent = spec.agent
+        fm = agent.frontmatter
+        inp = AgentInput.model_validate(run.input)
+        if agent.subagents:
+            started = run.started_at.timestamp() if run.started_at else time.time()
+            self._orchestrator = SubagentOrchestrator(
+                pool=self._pool, fence=fence, bus=self._bus, main=agent,
+                build=lambda sub, cp: subagent_graph(sub, self._tools, cp),
+                tools=self._tools, hooks=self._hooks, policy=self._policy,
+                run_limits=limits, deadline=started + limits.timeout_s,
+                scripts=inp.subagent_scripts,
+                limits=SubagentLimits(
+                    max_parallel=self._settings.subagent_max_parallel,
+                    max_total=self._settings.subagent_max_total,
+                    default_timeout_s=self._settings.subagent_timeout_s,
+                ),
+            )  # fmt: skip
+        caps = {t.name: t.max_calls for t in fm.tools}
         tools = ToolRunContext(
             fence=fence,
             pool=self._pool,
-            grants={t.name: Grant(max_calls=t.max_calls) for t in fm.tools},
+            grants={name: Grant(max_calls=caps.get(name)) for name in granted_tools(agent)},
             emit=outbox.stage,  # audit events commit with the step's checkpoint
             pre_hooks=[self._hooks.get(h) for h in fm.hooks.pre_tool],
             post_hooks=[self._hooks.get(h) for h in fm.hooks.post_tool],
             max_tool_calls=limits.max_tool_calls,
+            orchestrator=self._orchestrator,
         )
         pipeline = ToolPipeline(self._tools, self._policy, interrupt=interrupt)
-        script = AgentInput.model_validate(run.input).script
-        return RunContext(tools, pipeline, max_model_calls=limits.max_model_calls, script=script)
+        return RunContext(
+            tools, pipeline, max_model_calls=limits.max_model_calls, script=inp.script,
+            orchestrator=self._orchestrator,
+        )  # fmt: skip
+
+    async def _settle_subagents(self, ending: str | None) -> None:
+        """Before the run leaves `running`: the fence only compares epochs, and a pause
+        or release keeps the epoch, so a sub-agent left running could keep writing
+        under a lease nobody holds. `ending`: the run ends (cancel them, R16.9);
+        None: it pauses or is handed off (stop them; they resume later)."""
+        if self._orchestrator is None:
+            return
+        if ending is None:
+            await self._orchestrator.stop()
+        else:
+            await self._orchestrator.cancel_all(ending)
 
     async def _under_lease(
         self, work: Coroutine[Any, Any, Any], fence: Fence, timeout_s: float
@@ -509,7 +517,8 @@ class RunExecutor:
                 except Exception:
                     log.warning("run %s: heartbeat hook failed", fence.run_id, exc_info=True)
 
-    async def _complete(self, fence: Fence, final: dict[str, Any], outbox: _Outbox) -> Run:
+    async def _complete(self, fence: Fence, final: dict[str, Any], outbox: Outbox) -> Run:
+        await self._settle_subagents("the main run completed")
         output = json.loads(json.dumps(final, default=str))  # JSON-safe copy of the state
 
         async def work(repo: RunRepository) -> Run:
@@ -561,9 +570,10 @@ class RunExecutor:
             if await RunRepository(conn).is_cancel_requested(run_id):
                 raise CancelRequested
 
-    async def _pause(self, fence: Fence, payload: Any, outbox: _Outbox) -> Run:
+    async def _pause(self, fence: Fence, payload: Any, outbox: Outbox) -> Run:
         """Durable pause (R1.4): persist what we wait on, release the lease. No worker
         holds the run while a human decides; approval re-queues it."""
+        await self._settle_subagents(None)
         value = payload if isinstance(payload, dict) else {"value": payload}
 
         async def work(repo: RunRepository) -> Run:
@@ -576,8 +586,9 @@ class RunExecutor:
 
         return await self._fenced_then_publish(fence, work)
 
-    async def _release(self, fence: Fence, outbox: _Outbox) -> Run:
+    async def _release(self, fence: Fence, outbox: Outbox) -> Run:
         """Graceful hand-off (R10.7): back to `queued`, lease cleared, not a reclaim."""
+        await self._settle_subagents(None)
 
         async def work(repo: RunRepository) -> Run:
             await outbox.flush(repo)
@@ -592,7 +603,7 @@ class RunExecutor:
         self,
         fence: Fence,
         reason: FailureReason,
-        outbox: _Outbox | None,
+        outbox: Outbox | None,
         detail: str | None = None,
     ) -> Run:
         return await self._end(
@@ -605,9 +616,10 @@ class RunExecutor:
         target: RunStatus,
         event: EventType,
         reason: FailureReason,
-        outbox: _Outbox | None,
+        outbox: Outbox | None,
         detail: str | None = None,
     ) -> Run:
+        await self._settle_subagents(f"the main run ended: {reason}")
         payload: dict[str, Any] = {"reason": str(reason)}
         if detail:
             payload["detail"] = detail[:2000]

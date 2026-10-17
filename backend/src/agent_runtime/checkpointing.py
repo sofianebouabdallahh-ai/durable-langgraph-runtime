@@ -9,16 +9,17 @@ Pattern: Protection Proxy. `FencedCheckpointer` *is* an AsyncPostgresSaver
 (reads are inherited unchanged), but every write goes through a guard:
 
     BEGIN
-      SELECT epoch FROM runs WHERE id = :run_id FOR SHARE   -- fence check
+      SELECT epoch FROM runs WHERE id = :run_id FOR NO KEY UPDATE   -- fence
       -- epoch != ours  → raise FencedError, ROLLBACK, nothing written
       <LangGraph's own checkpoint INSERTs, on this same connection>
     COMMIT
 
-`FOR SHARE` makes the check and the write atomic with respect to a takeover:
+The row lock makes the check and the write atomic with respect to a takeover:
 the lease acquisition `UPDATE runs SET epoch = epoch + 1` needs a row lock that
-conflicts with FOR SHARE, so either the checkpoint commits first (and the new
+conflicts with it, so either the checkpoint commits first (and the new
 owner then resumes from it) or the takeover commits first (and this write sees
-the new epoch and is rejected). There is no window in between.
+the new epoch and is rejected). There is no window in between. (`check_fence`
+explains why the lock is NO KEY UPDATE rather than SHARE.)
 
 Only public LangGraph API is used: a short-lived AsyncPostgresSaver is bound to
 the connection that holds our transaction, and its own aput/aput_writes run

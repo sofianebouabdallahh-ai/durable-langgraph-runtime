@@ -44,6 +44,10 @@ class ToolContext:
     epoch: int
     key: str  # sha256 idempotency key of this call
     pool: Pool
+    # Sub-agent tools (CR-005) only: the run's orchestrator, and the calling
+    # sub-agent when the caller is one. Typed loosely to keep tools free of imports.
+    orchestrator: Any = None
+    subagent: Any = None
 
 
 ToolFn = Callable[[Any, ToolContext], Awaitable[Any]]
@@ -60,6 +64,7 @@ class ToolSpec:
     cache: bool = True  # a completed call with the same key returns the stored result
     max_calls: int | None = None  # per run, across all executions (R14.1)
     isolation: Isolation = "in_process"  # "sandbox" executes in sandboxd (phase 7, CR-002)
+    timeout_s: float | None = None  # overrides the pipeline's default (e.g. wait_subagents)
 
     def json_schema(self) -> dict[str, Any]:
         return self.args_model.model_json_schema()
@@ -91,6 +96,7 @@ class ToolRegistry:
         cache: bool = True,
         max_calls: int | None = None,
         isolation: Isolation = "in_process",
+        timeout_s: float | None = None,
     ) -> Callable[[ToolFn], ToolFn]:
         """Decorator: declare a tool next to its implementation."""
 
@@ -106,6 +112,7 @@ class ToolRegistry:
                     cache=cache,
                     max_calls=max_calls,
                     isolation=isolation,
+                    timeout_s=timeout_s,
                 )
             )
             return fn

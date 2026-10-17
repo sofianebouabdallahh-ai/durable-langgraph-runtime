@@ -51,6 +51,7 @@ from agent_runtime.runs.store import RunRepository
 from agent_runtime.streaming.broker import Broker
 from agent_runtime.streaming.bus import EventBus, RedisEventBus
 from agent_runtime.streaming.session import RunStream
+from agent_runtime.subagents.store import SubagentRepository
 
 # ----------------------------------------------------------------- dependencies
 
@@ -98,7 +99,9 @@ async def create_run(
 @runs.get("/{run_id}", response_model=RunView, summary="Run status")
 async def get_run(run_id: uuid.UUID, pool: PoolDep) -> RunView:
     async with pool.connection() as conn:
-        return RunView.of(await RunRepository(conn).get(run_id))
+        run = await RunRepository(conn).get(run_id)
+        subagents = await SubagentRepository(conn).list(run_id)
+    return RunView.of(run, subagents)
 
 
 @runs.get("/{run_id}/events", response_model=EventsPage, summary="Replay persisted events")

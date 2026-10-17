@@ -57,12 +57,17 @@ Every non-trivial component names the pattern it applies. If no pattern fits, th
 | **Enqueue after commit** | `RunRepository.ready` → `RunExecutor._send`, `RunService._enqueue` | A run that became queued (a spawned child, a fanned-in parent) is sent to Redis only after its transaction commits; the relay sweep repairs a lost send. The same rule as publishing after commit. |
 | **Ordered locking** | Fan-out, fan-in, budget roll-up, cancel cascade | Every transaction that touches several runs of one tree locks them deepest first (child → parent → root), so sibling charges, fan-ins and cancels never deadlock. |
 | **Admission control (backpressure)** | `RunService.create_run` → `Overloaded` → `429` + `Retry-After` | When the queue depth (counted in Postgres) reaches the limit, new runs are refused; workers' own fan-outs are not (R2.9). |
+| **Supervisor (in-process)** | [`subagents/orchestrator.py`](../backend/src/agent_runtime/subagents/orchestrator.py) `SubagentOrchestrator` | Owns its sub-agents' lifecycle: spawn, track, limit (4 parallel, 10 total), time out, cancel, stop, recover. The main agent sees four tools; the sub-agent sees two (CR-005). |
+| **One recovery path** | `stop()` / `recover()` | A pause, a graceful release and a crash all leave sub-agents `running` with a checkpoint; any (re)start resumes every running one from its own thread. Completed handles are never re-run (AC41). |
+| **Shared fence, separate threads** | `FencedCheckpointer(fence = the main run's, thread = <run>/sub/<handle>)` | Sub-agents write under the main run's epoch, so a zombie's sub-agents are fenced along with it; each has its own checkpoint thread and outbox. They are stopped before the main run leaves `running`, because a pause keeps the epoch. |
+| **Context isolation** | `asyncio.create_task(…, context=contextvars.Context())` | A graph started inside a running node otherwise inherits the parent's run: the parent's callbacks see its nodes (measured). Each sub-agent and local child starts in an empty context. |
+| **Lock mode that never upgrades** | `check_fence` → `FOR NO KEY UPDATE` | The mode an `UPDATE` of non-key columns takes anyway: no share-to-exclusive upgrade, so two of a run's concurrent transactions can't deadlock; still conflicts with the takeover; doesn't block FK checks. |
 
 ## Spike: fencing LangGraph checkpoints (phase 1, task 1.4)
 
 **Question:** can we stop a zombie worker's checkpoint writes without forking LangGraph?
 
-**Approach:** wrap each checkpoint write in our own transaction. `SELECT epoch FROM runs … FOR SHARE` runs first; if the epoch isn't ours, raise `FencedError` and roll back. Otherwise LangGraph writes on that same connection. `FOR SHARE` conflicts with the takeover's `UPDATE … epoch = epoch + 1`, so the check and the write are atomic with respect to a takeover.
+**Approach:** wrap each checkpoint write in our own transaction. `SELECT epoch FROM runs … FOR NO KEY UPDATE` runs first; if the epoch isn't ours, raise `FencedError` and roll back. Otherwise LangGraph writes on that same connection. The row lock conflicts with the takeover's `UPDATE … epoch = epoch + 1`, so the check and the write are atomic with respect to a takeover. (Phases 1–5a used `FOR SHARE`. Phase 5b changed it: two concurrent transactions of one run, such as parallel tool calls or sub-agents' checkpoints, each upgrading a share lock, deadlocked.)
 
 **Results** (3-node graph; node `b` triggers a takeover mid-run):
 
@@ -76,7 +81,7 @@ Every non-trivial component names the pattern it applies. If no pattern fits, th
 1. **Fencing works on the public API.** Only `aput`, `aput_writes` and `adelete_thread` write; the other write hooks aren't implemented by the Postgres saver.
 2. **`durability="sync"` is mandatory** for every run. With async durability a zombie executes extra steps (extra side effects) before learning it's fenced, and more progress is lost.
 3. **Fencing bounds what a zombie can *persist*, not what it can *do*:** `b` executed twice. External side effects therefore also need idempotency keys (R2.6, phase 4).
-4. **Cost:** one extra round trip (`SELECT … FOR SHARE`) per checkpoint write, plus a short shared row lock held until that write commits.
+4. **Cost:** one extra round trip (`SELECT … FOR NO KEY UPDATE`) per checkpoint write, plus a short row lock held until that write commits. A run's fenced writers serialise on it, as they already did at the event sequence.
 5. **Ownership:** LangGraph creates and migrates its own tables (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`) through `setup()`; Alembic manages ours. The migrate step will run both (phase 1, task 1.7).
 
 Tests: [`test_fenced_checkpointer.py`](../backend/tests/integration/test_fenced_checkpointer.py), including a control test proving that the unfenced zombie really does corrupt the run.

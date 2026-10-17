@@ -18,6 +18,20 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - CR-004 + ADR-0003 (accepted): agents defined as `backend/agents/*.agent.md` (name, max turns, prompt, tools, limits, hooks); hooks for session start/end, turn start/end and pre/post tool, built on LangChain middleware plus harness-owned session hooks.
 - CR-003 (accepted): harness guardrails. Run budgets with a soft→hard wrap-up, loop detection, ceilings that callers can only tighten, deny-by-default tool grants, least-privilege DB roles, untrusted-content handling, audit trail, kill switch.
 
+### Phase 5b — Sub-agents
+#### Added
+- Sub-agent orchestrator (CR-005 R16.3): sub-agents run as concurrent tasks in the main run's worker, each with its own checkpoint thread under the main run's fence; at most 4 in parallel and 10 per run, a timeout each; one recovery path (stop → recover from checkpoints) for pauses, releases and crashes.
+- Tools granted by the harness: `spawn_subagent` (idempotent), `subagent_status`, `wait_subagents` (≤ 120 s), `cancel_subagent` for the main agent; `report_progress` (rate-limited) and `return_result` for sub-agents.
+- Isolation and least privilege: a sub-agent sees only its prompt and its task, gets only its own tools, and can't pause for approval (`ask` → deny).
+- Budgets: a sub-agent's own limits plus the run's (roll-up); at 80 % of the run's budget sub-agents are asked to wrap up; at the hard limit they are cancelled.
+- Turn guard (R16.9): the main agent can't finish while sub-agents run.
+- `subagent.spawned / progress / completed` events; `GET /runs/{id}` lists sub-agents.
+- Migration `0008` (cooperative cancel); `delegator` fixture agent; e2e `subagents-crash` (AC41); `make demo-subagents`.
+- Scripted model: tool arguments may reference earlier tool results (`${spawn_subagent[0].handle}`).
+
+#### Fixed
+- Deadlock between concurrent transactions of one run (a turn's parallel tool calls; sub-agents' checkpoints): `check_fence` locked the run row `FOR SHARE` and then upgraded it. It now takes `FOR NO KEY UPDATE`. Latent since phase 4.
+
 ### Phase 5a — Child runs & backpressure
 #### Added
 - Child runs (R2.8): `spawn_children` from a workflow node (the `Spawner` port: `RunSpawner`, and `LocalSpawner` for `runtime run --local-fanout`); the fan-out runs in one fenced transaction; the parent waits in `waiting_children` holding no lease; an atomic fan-in counter re-queues it exactly once; it resumes with the children's results, `partial` when some failed, `failed(children_failed)` when all did.

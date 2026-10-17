@@ -25,4 +25,7 @@ class EventType(StrEnum):
     CHILD_COMPLETED = "child.completed"  # on the parent: one child reached a terminal state
     CHILDREN_SPAWNED = "children.spawned"  # R2.8: the parent fanned out and now waits
     CHILDREN_COMPLETED = "children.completed"  # every child ended: the parent is re-queued
+    SUBAGENT_SPAWNED = "subagent.spawned"  # CR-005 R16.3
+    SUBAGENT_PROGRESS = "subagent.progress"
+    SUBAGENT_COMPLETED = "subagent.completed"  # any end: completed, failed, cancelled, timed_out
     # `token` is deliberately absent: it is pub/sub only and never persisted.

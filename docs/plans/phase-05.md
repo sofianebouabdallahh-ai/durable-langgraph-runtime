@@ -1,5 +1,7 @@
 # Phase 5 plan — Sub-runs, sub-agents & backpressure
 
+> **Status: delivered** (PRs 5a and 5b). Every success criterion passed; results are in [progress/phase-05.md](../progress/phase-05.md).
+
 **Goal:** an agent's work can fan out in two ways.
 - **Child runs** are full runs on *any* worker. They are used for the research workflow's fixed fan-out, with distributed fan-in.
 - **Sub-agents** are leaf agents that the main agent spawns at runtime and runs *in its own worker*, with live status, an explicit return, and their own checkpoints, so a crash loses none of their work.

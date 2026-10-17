@@ -7,16 +7,24 @@ which is what durable execution needs from a test double.
 
 LangChain's GenericFakeChatModel can't be used: it has no `bind_tools`, which
 create_agent requires (phase 4 research).
+
+A tool-call argument may reference an earlier tool result:
+`"${spawn_subagent[0].handle}"` is the `handle` field of the first
+`spawn_subagent` result in the conversation. Values a script can't know in
+advance (handles derived from idempotency keys) stay scriptable, and the
+reference is resolved from the messages, so it is replay-stable too.
 """
 
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Sequence
 from typing import Any
 
 from langchain_core.callbacks import AsyncCallbackManagerForLLMRun, CallbackManagerForLLMRun
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -35,6 +43,24 @@ class ScriptTurn(BaseModel):
 
     content: str = ""
     tool_calls: list[ScriptedToolCall] = Field(default_factory=list)
+
+
+_REF = re.compile(r"^\$\{(?P<tool>[a-z_]+)\[(?P<i>\d+)\]\.(?P<field>[a-z_]+)\}$")
+
+
+def _resolve(value: Any, messages: list[BaseMessage]) -> Any:
+    """Replace `${tool[i].field}` references with values from earlier tool results."""
+    if isinstance(value, list):
+        return [_resolve(v, messages) for v in value]
+    if isinstance(value, dict):
+        return {k: _resolve(v, messages) for k, v in value.items()}
+    if not isinstance(value, str) or not (m := _REF.match(value)):
+        return value
+    results = [msg for msg in messages if isinstance(msg, ToolMessage) and msg.name == m["tool"]]
+    try:
+        return json.loads(str(results[int(m["i"])].content))[m["field"]]
+    except (IndexError, KeyError, ValueError, TypeError):
+        return value  # unresolved: the tool's validation reports it to the "model"
 
 
 class ScriptedChatModel(BaseChatModel):
@@ -57,7 +83,12 @@ class ScriptedChatModel(BaseChatModel):
         return AIMessage(
             content=step.content,
             tool_calls=[
-                {"name": c.name, "args": c.args, "id": f"call_{turn}_{i}", "type": "tool_call"}
+                {
+                    "name": c.name,
+                    "args": _resolve(c.args, messages),
+                    "id": f"call_{turn}_{i}",
+                    "type": "tool_call",
+                }
                 for i, c in enumerate(step.tool_calls)
             ],
             usage_metadata={

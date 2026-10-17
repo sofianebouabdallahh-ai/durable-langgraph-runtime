@@ -112,4 +112,6 @@ def default_tools() -> ToolRegistry:
     registry.tool(
         "notify", args=NotifyArgs, risk_class="external_side_effect", side_effect=True, max_calls=5
     )(notify)
-    return registry
+    from agent_runtime.subagents import tools as subagent_tools  # granted by the harness
+
+    return subagent_tools.register(registry)

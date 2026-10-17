@@ -36,11 +36,23 @@ class FencedError(Exception):
 
 
 async def check_fence(conn: Conn, fence: Fence) -> None:
-    """Lock the run row (shared) and verify `fence` still owns it.
+    """Lock the run row and verify `fence` still owns it.
 
-    Must run inside a transaction; the shared lock is held until it ends.
+    Must run inside a transaction; the lock is held until it ends.
+
+    `FOR NO KEY UPDATE`, not `FOR SHARE`: almost every fenced transaction goes on
+    to UPDATE the run row (event seq, counters, status). Upgrading a share lock
+    deadlocks as soon as two of a run's transactions run concurrently (parallel
+    tool calls, sub-agents' checkpoints): each holds the share lock the other's
+    upgrade waits for (found in phase 5b). NO KEY UPDATE is the mode such an
+    UPDATE takes anyway, so there is no upgrade; it still conflicts with the
+    takeover's epoch bump, and it doesn't block foreign-key checks (KEY SHARE)
+    from rows that reference the run. Fenced writers of one run serialise, as
+    they already did at the event sequence.
     """
-    cur = await conn.execute("SELECT epoch FROM runs WHERE id = %s FOR SHARE", (fence.run_id,))
+    cur = await conn.execute(
+        "SELECT epoch FROM runs WHERE id = %s FOR NO KEY UPDATE", (fence.run_id,)
+    )
     row = await cur.fetchone()
     current = None if row is None else int(row["epoch"])
     if current != fence.epoch:

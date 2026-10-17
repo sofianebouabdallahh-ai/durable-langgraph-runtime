@@ -90,6 +90,11 @@ class Settings(AgentSettings):
     # Kill switch / admin endpoints (R14.18): internal only, never routed by the Ingress.
     admin_api_enabled: bool = True
 
+    # Sub-agents per run (CR-005 R16.3): configurable down only (R14.3)
+    subagent_max_parallel: int = Field(default=4, gt=0, le=4)
+    subagent_max_total: int = Field(default=10, gt=0, le=10)
+    subagent_timeout_s: int = Field(default=180, gt=0)  # when the sub-agent's file sets none
+
     # Leases and reclaim (R2.3, R2.4)
     lease_ttl_s: float = Field(default=30.0, gt=0)
     heartbeat_s: float = Field(default=10.0, gt=0)

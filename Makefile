@@ -22,7 +22,7 @@ BACKEND     := cd backend && uv run --frozen
 BACKEND_ENV := cd backend && uv run --frozen --env-file $(ENV_FILE)
 
 .DEFAULT_GOAL := help
-.PHONY: help env hooks up down nuke ps logs migrate migration api worker run-toy demo-crash demo-zombie demo-release demo-replicas demo-tools demo-approval demo-fanout demo-e2e lint fmt typecheck agents-validate test test-unit test-integration coverage check
+.PHONY: help env hooks up down nuke ps logs migrate migration api worker run-toy demo-crash demo-zombie demo-release demo-replicas demo-tools demo-approval demo-fanout demo-subagents demo-e2e lint fmt typecheck agents-validate test test-unit test-integration coverage check
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -98,6 +98,9 @@ demo-approval: env ## AC4: approval survives killing every worker; resumes with 
 demo-fanout: env ## AC6: child runs spread over workers; a crashed child doesn't break the fan-in
 	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e fanout --repeat $(or $(REPEAT),1)
 	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e child-crash --repeat $(or $(REPEAT),1)
+
+demo-subagents: env ## AC41: SIGKILL mid sub-agent task; everything resumes from its checkpoints
+	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e subagents-crash --repeat $(or $(REPEAT),1)
 
 demo-e2e: env ## All end-to-end scenarios
 	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e all --repeat $(or $(REPEAT),1)
