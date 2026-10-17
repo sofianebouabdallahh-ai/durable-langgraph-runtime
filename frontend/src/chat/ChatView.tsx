@@ -166,7 +166,7 @@ function TurnBlock({
                 </div>
               );
             case "tool":
-              return <ToolCard key={item.key} call={item.call} result={item.result} />;
+              return <ToolCard key={item.key} call={item.call} result={item.result} awaitingApproval={item.awaitingApproval} />;
             case "helpers":
               return <HelperCards key={item.key} helpers={item.helpers} />;
             case "approval-request":

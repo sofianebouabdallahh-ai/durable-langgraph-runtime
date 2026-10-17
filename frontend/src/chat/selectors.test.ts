@@ -46,6 +46,11 @@ describe("turns", () => {
     ]);
     const kinds = turns(s)[0]?.items.map((i) => i.kind);
     expect(kinds).toEqual(["tool", "approval-request", "error"]);
+    const tool = turns(s)[0]?.items[0];
+    expect(tool?.kind === "tool" && tool.awaitingApproval).toBe(false); // decided
+    const waiting = state([user(1, "notify"), call(2, "notify", "n1"), msg(3, "interrupt", { kind: "tool_approval", tool: "notify", args: {}, reason: null })]);
+    const held = turns(waiting)[0]?.items[0];
+    expect(held?.kind === "tool" && held.awaitingApproval).toBe(true);
     const request = turns(s)[0]?.items[1];
     expect(request?.kind === "approval-request" && request.decided?.decision).toBe("approve");
     expect(turns(state([msg(1, "user", { text: "x" }, null as unknown as string)]))[0]?.runId).toBe("none");

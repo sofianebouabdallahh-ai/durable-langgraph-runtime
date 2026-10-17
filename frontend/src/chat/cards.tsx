@@ -8,7 +8,15 @@ import type { Helper } from "./transcript";
 
 type Of<T extends Message["type"]> = Extract<Message, { type: T }>;
 
-export function ToolCard({ call, result }: { call: Of<"tool_call">; result: Of<"tool_result"> | null }) {
+export function ToolCard({
+  call,
+  result,
+  awaitingApproval = false,
+}: {
+  call: Of<"tool_call">;
+  result: Of<"tool_result"> | null;
+  awaitingApproval?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const state = result === null ? "running" : result.error ? "failed" : "done";
   return (
@@ -23,7 +31,7 @@ export function ToolCard({ call, result }: { call: Of<"tool_call">; result: Of<"
       >
         <span aria-hidden>{state === "running" ? "⏳" : state === "failed" ? "⚠️" : "🛠️"}</span>
         <span className="font-medium">{toolLabel(call.tool)}</span>
-        {state === "running" && <span className="text-slate-500">working…</span>}
+        {state === "running" && <span className="text-slate-500">{awaitingApproval ? "waiting for your OK" : "working…"}</span>}
         {result?.cached && <Badge tone="indigo">reused</Badge>}
         {result?.durationMs != null && <span className="ml-auto text-xs text-slate-500">{formatMs(result.durationMs)}</span>}
       </button>

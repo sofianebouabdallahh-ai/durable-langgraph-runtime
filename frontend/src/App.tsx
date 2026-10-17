@@ -47,7 +47,7 @@ export function App() {
         </header>
         {menu && (
           <div id="mobile-chats" className="border-b border-slate-200 bg-white md:hidden dark:border-slate-800 dark:bg-slate-900">
-            <div className="max-h-[60vh]">
+            <div className="h-[60vh]">
               <Sidebar current={sessionId} onOpen={open} />
             </div>
           </div>

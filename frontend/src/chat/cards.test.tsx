@@ -24,6 +24,8 @@ describe("ToolCard", () => {
     const c = call(1, "search", "c1") as Of<"tool_call">;
     const { rerender } = render(<ToolCard call={c} result={null} />);
     expect(screen.getByText("working…")).toBeInTheDocument();
+    rerender(<ToolCard call={c} result={null} awaitingApproval />);
+    expect(screen.getByText("waiting for your OK")).toBeInTheDocument();
     rerender(<ToolCard call={c} result={{ ...(result(2, "search", "c1", null) as Of<"tool_result">), error: "down", cached: true, durationMs: 1500 }} />);
     expect(screen.getByText("reused")).toBeInTheDocument();
     expect(screen.getByText("1.5 s")).toBeInTheDocument();

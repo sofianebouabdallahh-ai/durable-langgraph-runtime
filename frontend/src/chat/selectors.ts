@@ -18,7 +18,7 @@ export const HELPER_TOOLS: ReadonlySet<string> = new Set([
 
 export type Item =
   | { kind: "text"; key: string; message: Of<"assistant"> }
-  | { kind: "tool"; key: string; call: Of<"tool_call">; result: Of<"tool_result"> | null }
+  | { kind: "tool"; key: string; call: Of<"tool_call">; result: Of<"tool_result"> | null; awaitingApproval: boolean }
   | { kind: "helpers"; key: string; helpers: Helper[] }
   | { kind: "approval-request"; key: string; message: Of<"interrupt">; decided: Of<"approval"> | null }
   | { kind: "error"; key: string; message: Of<"error"> };
@@ -73,6 +73,11 @@ function items(messages: Message[], helpers: Helper[]): Item[] {
     if (m.type === "tool_result") results.set(m.toolCallId, m);
     if (m.type === "approval") decisions.push(m);
   }
+  // A call held for a person's decision: its approval request has no decision yet.
+  const held = new Set<string>();
+  for (const m of messages) {
+    if (m.type === "interrupt" && m.tool && !decisions.some((d) => d.seq > m.seq)) held.add(m.tool);
+  }
   const out: Item[] = [];
   let helpersShown = false;
   for (const m of messages) {
@@ -87,7 +92,8 @@ function items(messages: Message[], helpers: Helper[]): Item[] {
             helpersShown = true;
           }
         } else {
-          out.push({ kind: "tool", key: m.messageId, call: m, result: results.get(m.toolCallId) ?? null });
+          const result = results.get(m.toolCallId) ?? null;
+          out.push({ kind: "tool", key: m.messageId, call: m, result, awaitingApproval: result === null && held.has(m.tool) });
         }
         break;
       case "interrupt": {
