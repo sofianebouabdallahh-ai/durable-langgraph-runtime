@@ -64,7 +64,7 @@
 
 | # | Criterion | Result |
 |---|---|---|
-| SC1 | Clone → chatting in the browser | ✅ A fresh clone with `./setup.sh --non-interactive --model scripted --build`: healthy in **37 s** (runtime layers cached, UI built from scratch); smoke checks the page, its CSP and a turn through `/api`. Cold time from this PR's CI run |
+| SC1 | Clone → chatting in the browser | ✅ A fresh clone with `./setup.sh --non-interactive --model scripted --build`: **cold on CI: 67 s** (a fresh runner, both images built from scratch, through the smoke turn); 37 s here with the runtime layers cached. The smoke checks the page, its CSP and a turn through `/api` |
 | SC2 | Streaming you can see | ✅ Demo model: the draft is visible before the reply completes, then replaced without a double (5/5). **Live `qwen2.5:7b` (Ollama on this Mac): streamed reply, then a calculator call (437); screen = transcript** |
 | SC3 | **AC20: resume the conversation** | ✅ **5/5 each:** reload mid-reply; the API replica serving the stream `docker kill`ed; the same replica `docker stop`ped (it drains). Each time the screen ends identical to the transcript: same ids, in order, none doubled or missing. **Two fixes on the way** (below) |
 | SC4 | A worker crash, seen from the browser | ✅ 5/5: `docker kill` the owning worker mid tool call; one tool card, exactly one `run.reclaimed`, the reply arrives; "What happened?" tells it |
@@ -77,7 +77,7 @@
 | SC11 | Accessible | ✅ axe: 0 serious or critical violations on the welcome screen and a chat (5/5); new chat, send and approve done from the keyboard |
 | SC12 | Setup and docs | ✅ Re-running setup leaves `.env` byte-identical; the UI port is chosen like the others (`--port`); README, setup guides and troubleshooting updated; container e2e 15/15 through the proxy |
 
-**The browser suite:** 70/70 (14 scenarios × 5) on the final build.
+**The browser suite:** 70/70 (14 scenarios × 5) on the final build here, and 14/14 in CI (PR #17, all 5 jobs green).
 
 ## Bugs found by testing
 
