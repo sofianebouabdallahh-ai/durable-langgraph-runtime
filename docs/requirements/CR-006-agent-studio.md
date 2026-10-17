@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **Proposed** (2026-10-17): open questions in §8 |
+| **Status** | **Accepted in principle** (2026-10-17): decisions in §8; platform design in [architecture/beta-platform.md](../architecture/beta-platform.md) (proposed) |
 | **Date** | 2026-10-17 |
 | **Base document** | [`Project_4_Detailed_Requirements_K8s.pdf`](Project_4_Detailed_Requirements_K8s.pdf) (v1.0 + Kubernetes) |
 | **Depends on** | CR-002 (sandboxes), CR-003 (guardrails), CR-004 (agent definitions), CR-005 (sub-agents), phase 6 (model providers) |
@@ -177,6 +177,9 @@ A **connection** is the user's own access to models:
 
 ## 7. Delivery plan
 
+> Superseded by the phase plan in [beta-platform §6](../architecture/beta-platform.md), which adds fair scheduling, retention and the Azure deployment needed for a beta with real users.
+
+
 | # | Phase | Contents | Estimate |
 |---|---|---|---|
 | 7 | Sandboxes (as planned) | CR-002, now also the runtime for skill scripts | ~10–12 h |
@@ -196,13 +199,23 @@ A **connection** is the user's own access to models:
 - **AC47** · A published version is immutable. A conversation keeps its version across a new publish; the next turn uses the new one.
 - **AC48** · A `user` can't edit an agent or see a connection's key. A `builder` in workspace A can't see anything in workspace B.
 
-## 8. Open questions (decisions needed before planning 7b)
+## 8. Decisions (2026-10-17)
 
-1. **One organisation or public SaaS?** One company's teams lets us use one identity provider and one KMS key per workspace; public multi-tenant means sign-up, per-tenant keys and abuse controls. *Recommendation: one organisation first.*
-2. **Skills with scripts in the first version, or instruction-only first?** *Recommendation: instruction-only first (7c), scripts once phase 7's sandbox is proven.*
-3. **Whose keys?** Per user, per workspace (an admin adds keys, users only pick models), or both. *Recommendation: both, with the workspace as the default.*
-4. **Sharing:** may builders share agents and skills across the workspace (with admin approval for skills)? *Recommendation: yes.*
-5. **Ordering:** Studio before the research agent (phase 8) and Kubernetes (phase 12), as above, or after? *Recommendation: as above. The Studio is the product; the research agent becomes a template built with it.*
+1. **One organisation first**, for a closed beta with invited people. Every row is still workspace-scoped, so going multi-organisation later is a migration.
+2. **Instruction-only skills first.** Skills with scripts come after the sandbox phase.
+3. **Keys:** the workspace key by default (added by an admin), with quotas per tester; a user may add their own key. See [beta-platform §3.4](../architecture/beta-platform.md).
+4. **Sharing agents** (and skills, with admin approval) within a workspace: **yes**.
+5. **Order:** the Studio and the beta platform come **before** the research agent and Kubernetes.
+
+### Gaps to close, each in a named phase
+
+| Gap | What's missing today | Phase |
+|---|---|---|
+| **G1 Who owns what** | Login, workspaces and roles: today there are no users at all | P7 Identity & tenancy |
+| **G2 Keeping users' keys safe** | Each key encrypted under a master key in Azure Key Vault; never shown again after saving, never logged, decrypted only in the worker for the call | P8 Model connections & keys |
+| **G3 Untrusted content** | Instructions users write and skills they upload: limits, scanning, separation, review, sanitised rendering | P9 Studio backend (+ P11 UI rendering) |
+
+The complete gap register (G1–G12) and the revised phase plan are in [beta-platform §4 and §6](../architecture/beta-platform.md).
 
 ## 9. Out of scope / roadmap
 
