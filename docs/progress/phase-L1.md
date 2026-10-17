@@ -48,7 +48,7 @@
 
 | # | Criterion | Result |
 |---|---|---|
-| SC1 | Clone → working chat with only Docker | ✅ A fresh clone, `./setup.sh --non-interactive --model scripted`: healthy stack and a completed smoke turn; **21.8 s warm** on this Mac. The cold time comes from CI's fresh runner (in the PR) |
+| SC1 | Clone → working chat with only Docker | ✅ A fresh clone, `./setup.sh --non-interactive --model scripted`: healthy stack and a completed smoke turn; **cold: 48 s** on CI's fresh runner (no cache, the image built from scratch, through the smoke turn; target < 10 min); **warm: 21.8 s** on this Mac |
 | SC2 | Idempotent | ✅ Re-runs leave `.env` byte-identical (checksums) and recreate nothing. **This took a fix** (below) |
 | SC3 | Actionable failures | ✅ Docker unreachable → "Docker is installed but not running" + the fix, exit 1; an `--api-port` that's taken → a clear message, exit 1; a busy default port → a free one is chosen automatically, with a warning |
 | SC4 | **Least privilege at runtime** | ✅ The smoke turn and the container e2e run as `agent_api` / `agent_worker`; from a worker container `DROP TABLE runs` and `DELETE FROM runs` → `InsufficientPrivilege` |
@@ -58,7 +58,7 @@
 | SC8 | Models through setup | ✅ scripted (offline); **live: `--model ollama` found the Ollama on this machine, and the smoke turn passed on `qwen2.5:7b` (40.2 s, CPU)**; the OpenAI / Foundry / compatible paths write the right `.env` (live only with a key) |
 | SC9 | No secret in the doctor bundle | ✅ A scan of the bundle for every generated password: **0 hits**; unit test with a known password, key and URL credential |
 | SC10 | Developer loop unchanged | ✅ `make up` / `make check` (360 passed) |
-| SC11 | CI | ✅ in the PR: the containers job. ⏳ The tag publish after merge |
+| SC11 | CI | ✅ PR #15: all 4 jobs green (containers job 2 m 48 s: setup, idempotency, Trivy, non-root, container e2e 3/3). ⏳ The tag publish after merge |
 | SC12 | Docs | ✅ Written; the setup was exercised by following them on this Mac |
 
 ## Bugs found by testing
