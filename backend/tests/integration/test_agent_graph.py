@@ -121,4 +121,5 @@ async def test_agent_limits_come_from_the_definition(
     # max_turns 10 → max_model_calls; options tighten max_tool_calls 10 → 3; timeout 300
     assert run.limits == {
         "timeout_s": 300, "max_steps": 200, "max_model_calls": 10, "max_tool_calls": 3,
+        "max_children": 6,
     }  # fmt: skip

@@ -2,18 +2,21 @@
 
 Pattern: Service Layer. Transport code (HTTP handlers, CLI commands) parses
 requests and renders responses; the rules for *creating* a run (graph exists,
-input valid for that graph, options within ceilings) live here once.
+input valid for that graph, options within ceilings) live here once, in
+`prepare`, which the executor also uses to validate child runs (R2.8).
 """
 
 from __future__ import annotations
 
 import logging
+import time
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 from agent_runtime.admin import AdminRepository
-from agent_runtime.config import Settings
+from agent_runtime.config import AgentSettings, Settings
 from agent_runtime.db import Pool
 from agent_runtime.graphs import GraphRegistry
 from agent_runtime.runs.limits import RunOptions, profile_of, resolve_limits
@@ -33,6 +36,48 @@ class AdmissionPaused(Exception):
         self.reason = reason
 
 
+class Overloaded(Exception):
+    """Backpressure (R2.9): too many runs are waiting for a worker."""
+
+    def __init__(self, depth: int, limit: int, retry_after_s: int) -> None:
+        super().__init__(f"{depth} runs are queued (limit {limit}); retry later")
+        self.depth = depth
+        self.limit = limit
+        self.retry_after_s = retry_after_s
+
+
+@dataclass(frozen=True)
+class Prepared:
+    """A run that passed validation and is ready to insert."""
+
+    graph_name: str
+    input: dict[str, Any]
+    options: dict[str, Any]
+    limits: dict[str, Any]
+
+
+def prepare(
+    graphs: GraphRegistry,
+    settings: AgentSettings,
+    graph: str,
+    input: dict[str, Any],
+    options: dict[str, Any] | None,
+) -> Prepared:
+    """Validate a new run: the graph exists, the input is valid for it, the options
+    are within the ceilings. Raises UnknownGraph, pydantic.ValidationError or
+    LimitAboveCeiling."""
+    spec = graphs.get(graph)
+    validated_input = spec.input_model.model_validate(input)
+    run_options = RunOptions.model_validate(options or {})
+    limits = resolve_limits(settings, run_options, profile_of(spec))
+    return Prepared(
+        graph_name=graph,
+        input=validated_input.model_dump(mode="json"),
+        options=run_options.model_dump(exclude_none=True),
+        limits=limits.model_dump(exclude_none=True),
+    )
+
+
 class RunService:
     def __init__(
         self,
@@ -47,6 +92,7 @@ class RunService:
         self._graphs = graphs
         self._relay = relay
         self._bus = bus
+        self._depth: tuple[float, int] | None = None  # (read at, value): cached per replica
 
     async def create_run(
         self,
@@ -58,8 +104,9 @@ class RunService:
     ) -> Run:
         """Validate, create a `queued` run, and hand it to the workers.
 
-        Raises UnknownGraph, pydantic.ValidationError (input or options) or
-        LimitAboveCeiling; the transport layer maps them to 404/422.
+        Raises AdmissionPaused, Overloaded, UnknownGraph, pydantic.ValidationError
+        (input or options) or LimitAboveCeiling; the transport layer maps them to
+        503/429/404/422.
 
         The run is durable once created. Sending its work message is best
         effort: if Redis is unavailable, the outbox relay sends it later.
@@ -68,17 +115,19 @@ class RunService:
             state = await AdminRepository(conn).get()
         if state.paused:
             raise AdmissionPaused(state.reason)
-        spec = self._graphs.get(graph)
-        validated_input = spec.input_model.model_validate(input)
-        run_options = RunOptions.model_validate(options or {})
-        limits = resolve_limits(self._settings, run_options, profile_of(spec))
+        prepared = prepare(self._graphs, self._settings, graph, input, options)
+        depth = await self.queue_depth()
+        if depth >= self._settings.queue_depth_limit:
+            raise Overloaded(
+                depth, self._settings.queue_depth_limit, self._settings.overload_retry_after_s
+            )
         async with self._pool.connection() as conn:
             repo = RunRepository(conn)
             run = await repo.create(
-                graph_name=graph,
-                input=validated_input.model_dump(mode="json"),
-                options=run_options.model_dump(exclude_none=True),
-                limits=limits.model_dump(exclude_none=True),
+                graph_name=prepared.graph_name,
+                input=prepared.input,
+                options=prepared.options,
+                limits=prepared.limits,
             )
         await publish_events(self._bus, repo.emitted)  # after commit (R1.5)
         if enqueue and self._relay is not None:
@@ -89,14 +138,37 @@ class RunService:
                             exc_info=True)  # fmt: skip
         return run
 
+    async def queue_depth(self) -> int:
+        """Runs waiting for a worker (R2.9), cached for `queue_depth_cache_s` so a
+        burst of POST /runs costs one COUNT per replica per second."""
+        now = time.monotonic()
+        if self._depth is not None and now - self._depth[0] < self._settings.queue_depth_cache_s:
+            return self._depth[1]
+        async with self._pool.connection() as conn:
+            depth = await RunRepository(conn).queue_depth()
+        self._depth = (now, depth)
+        return depth
+
     async def cancel(self, run_id: uuid.UUID) -> Run:
         """R1.6: queued or waiting → cancelled now; running → its worker stops at the
-        next node. Raises RunTerminal (→ 409) or RunNotFound (→ 404)."""
+        next node; live descendants are cancelled too (R2.8).
+        Raises RunTerminal (→ 409) or RunNotFound (→ 404)."""
         async with self._pool.connection() as conn:
             repo = RunRepository(conn)
             run = await repo.request_cancel(run_id)
         await publish_events(self._bus, repo.emitted)
+        await self._enqueue(repo.ready)  # a cancelled child may have been its parent's last
         return run
+
+    async def _enqueue(self, run_ids: list[uuid.UUID]) -> None:
+        if self._relay is None:
+            return
+        for run_id in run_ids:
+            try:
+                await self._relay.enqueue(run_id)
+            except Exception:
+                log.warning("run %s is queued but not sent; the relay will send it", run_id,
+                            exc_info=True)  # fmt: skip
 
     async def resume(self, run_id: uuid.UUID) -> Run:
         """R1.3, idempotent: (re)send work for a run that needs it; do nothing for a

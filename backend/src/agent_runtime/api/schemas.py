@@ -41,6 +41,12 @@ class RunView(BaseModel):
         description="What a waiting_approval run waits on (R1.4)"
     )
     limits: dict[str, Any]
+    parent_run_id: uuid.UUID | None = Field(description="Set for child runs (R2.8)")
+    root_run_id: uuid.UUID | None
+    depth: int = Field(description="0 for a root run, parent's + 1 for a child (R14.6)")
+    child_key: str | None
+    child_total: int = Field(description="Children spawned so far")
+    child_done: int = Field(description="Children that have ended")
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
@@ -62,6 +68,12 @@ class RunView(BaseModel):
             cancel_requested=run.cancel_requested,
             interrupt_payload=run.interrupt_payload,
             limits=run.limits,
+            parent_run_id=run.parent_run_id,
+            root_run_id=run.root_run_id,
+            depth=run.depth,
+            child_key=run.child_key,
+            child_total=run.child_total,
+            child_done=run.child_done,
             created_at=run.created_at,
             started_at=run.started_at,
             finished_at=run.finished_at,
@@ -131,3 +143,10 @@ class PauseRequest(BaseModel):
 
 class Health(BaseModel):
     status: str
+
+
+class AdminStatus(BaseModel):
+    paused: bool
+    reason: str | None
+    updated_at: datetime
+    queue_depth: int = Field(description="Runs waiting for a worker (R2.9)")

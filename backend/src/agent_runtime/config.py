@@ -35,8 +35,12 @@ class AgentSettings(BaseSettings):
     # Run limits (R1.7, R2.8, R2.9)
     run_timeout_s: int = Field(default=20 * 60, gt=0)
     run_max_steps: int = Field(default=200, gt=0)
-    run_max_children: int = Field(default=6, gt=0)
-    queue_depth_limit: int = Field(default=100, gt=0)  # above this, POST /runs returns 429
+    run_max_children: int = Field(default=6, gt=0)  # per fan-out (R2.9); options may lower it
+    run_max_depth: int = Field(default=2, ge=0)  # parent → child → grandchild (R14.6)
+    run_max_descendants: int = Field(default=20, gt=0)  # per root run (R14.6)
+    queue_depth_limit: int = Field(default=100, gt=0)  # at this many queued, POST /runs → 429
+    queue_depth_cache_s: float = Field(default=1.0, ge=0)  # per API replica
+    overload_retry_after_s: int = Field(default=5, gt=0)  # the 429's Retry-After
 
     # Server ceilings (R14.3): agent profiles and per-run options may only go below these.
     # Wall-clock and steps ceilings are run_timeout_s and run_max_steps above.

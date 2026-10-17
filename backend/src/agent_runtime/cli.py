@@ -101,14 +101,17 @@ def _print_run(run: Run, events: list[Event]) -> None:
         print(f"  {e.seq:>3} e{e.epoch} {e.type:<16} {detail}")
 
 
-async def _execute_and_report(settings: Settings, run_id: uuid.UUID) -> int:
+async def _execute_and_report(
+    settings: Settings, run_id: uuid.UUID, *, local_fanout: bool = False
+) -> int:
     from agent_runtime.db import create_pool
     from agent_runtime.graphs import default_registry
     from agent_runtime.runs.executor import RunExecutor
 
     async with create_pool(settings) as pool:
         try:
-            run = await RunExecutor(pool, settings, default_registry()).execute(run_id)
+            executor = RunExecutor(pool, settings, default_registry(), local_fanout=local_fanout)
+            run = await executor.execute(run_id)
         except RunTerminal as exc:
             print(exc, file=sys.stderr)
             return 2  # like HTTP 409: valid request, wrong state
@@ -143,7 +146,7 @@ def _run(args: argparse.Namespace) -> int:
         print(exc, file=sys.stderr)
         return 2
     print(f"created run {run_id}", file=sys.stderr)
-    return asyncio.run(_execute_and_report(settings, run_id))
+    return asyncio.run(_execute_and_report(settings, run_id, local_fanout=args.local_fanout))
 
 
 def _execute(args: argparse.Namespace) -> int:
@@ -323,6 +326,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--graph", required=True)
     run.add_argument("--input", type=_json_object, required=True, help="JSON object")
     run.add_argument("--options", type=_json_object, default=None, help="JSON object")
+    run.add_argument(
+        "--local-fanout",
+        action="store_true",
+        help="run child runs in this process instead of queueing them (R2.8)",
+    )
     run.set_defaults(handler=_run)
 
     worker = commands.add_parser("worker", help="run worker process(es) that execute queued runs")

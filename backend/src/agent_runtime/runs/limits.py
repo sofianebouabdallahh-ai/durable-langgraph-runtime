@@ -10,7 +10,7 @@ limits are stored on the run (`runs.limits`), so a run keeps the limits it was
 created with even if the server's settings change during a rolling upgrade.
 
 Budgets for model calls, tool calls, tokens and cost (R14.1) join this model
-in phases 4 and 6, with the same rules.
+in phases 4 and 6, with the same rules. `max_children` (R2.9) since phase 5.
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ class RunOptions(BaseModel):
     max_steps: Annotated[int, Field(gt=0)] | None = None
     max_model_calls: Annotated[int, Field(gt=0)] | None = None
     max_tool_calls: Annotated[int, Field(gt=0)] | None = None
+    max_children: Annotated[int, Field(gt=0)] | None = None  # per fan-out (R2.9)
 
 
 class RunLimits(BaseModel):
@@ -41,6 +42,7 @@ class RunLimits(BaseModel):
     max_steps: Annotated[int, Field(gt=0)]
     max_model_calls: Annotated[int, Field(gt=0)] | None = None  # agent graphs (R14.1)
     max_tool_calls: Annotated[int, Field(gt=0)] | None = None
+    max_children: Annotated[int, Field(gt=0)] | None = None  # None in limits stored before 5a
 
 
 class Profile(BaseModel):
@@ -72,6 +74,7 @@ def resolve_limits(
         "max_steps": settings.run_max_steps,
         "max_model_calls": settings.ceiling_model_calls if profile.max_model_calls else None,
         "max_tool_calls": settings.ceiling_tool_calls if profile.max_tool_calls else None,
+        "max_children": settings.run_max_children,
     }
     resolved: dict[str, Any] = {}
     for field, ceiling in ceilings.items():

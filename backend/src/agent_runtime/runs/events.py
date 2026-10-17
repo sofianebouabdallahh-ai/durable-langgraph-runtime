@@ -22,5 +22,7 @@ class EventType(StrEnum):
     POLICY_DECISION = "policy.decision"  # R14.17: deny / require_approval
     HOOK_DECISION = "hook.decision"  # R15.8: any non-continue hook decision
     CHILD_STARTED = "child.started"
-    CHILD_COMPLETED = "child.completed"
+    CHILD_COMPLETED = "child.completed"  # on the parent: one child reached a terminal state
+    CHILDREN_SPAWNED = "children.spawned"  # R2.8: the parent fanned out and now waits
+    CHILDREN_COMPLETED = "children.completed"  # every child ended: the parent is re-queued
     # `token` is deliberately absent: it is pub/sub only and never persisted.
