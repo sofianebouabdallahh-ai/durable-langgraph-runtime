@@ -1,0 +1,4 @@
+# Its own workspace (the browser tests aren't part of the UI's build). Same supply
+# chain policy as the UI: 14 days before a release is installed; no install scripts.
+minimumReleaseAge: 20160
+onlyBuiltDependencies: []

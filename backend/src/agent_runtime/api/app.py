@@ -28,6 +28,7 @@ from agent_runtime.admin import AdminRepository, AdminState
 from agent_runtime.api import problems
 from agent_runtime.api.problems import ApiDraining, ResultNotReady
 from agent_runtime.api.schemas import (
+    AboutView,
     AdminStatus,
     ApprovalRequest,
     CreateRunRequest,
@@ -245,6 +246,21 @@ health = APIRouter(tags=["health"])
 async def healthz() -> Health:
     # Never checks dependencies (R10.5): a Postgres blip must not restart every pod.
     return Health(status="ok")
+
+
+@health.get("/about", response_model=AboutView, summary="Version and model, for the UI")
+async def about(request: Request) -> AboutView:
+    from importlib import metadata
+
+    settings: Settings = request.app.state.settings
+    try:
+        version: str | None = metadata.version("durable-agent-runtime")
+    except metadata.PackageNotFoundError:
+        version = None
+    return AboutView(
+        version=version, model_provider=settings.model_provider,
+        demo_model=settings.model_provider == "scripted", chat_model=settings.model_chat or None,
+    )  # fmt: skip
 
 
 @health.get(

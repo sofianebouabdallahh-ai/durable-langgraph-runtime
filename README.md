@@ -1,10 +1,12 @@
-# Durable, Distributed Runtime for LangGraph Agents
+# Nuria
+
+**Agents that finish what they start.** Nuria is a chat with AI agents that runs on your own machine, built on a durable, distributed runtime for LangGraph agents.
 
 [![ci](https://github.com/sofianebouabdallahh-ai/durable-langgraph-runtime/actions/workflows/ci.yml/badge.svg)](https://github.com/sofianebouabdallahh-ai/durable-langgraph-runtime/actions/workflows/ci.yml)
 
-A runtime that runs LangGraph agents across a pool of workers and makes them survive what distributed systems throw at them: crashed workers, paused "zombie" workers, restarts, human approvals that take hours, node drains and rolling upgrades. It survives all of these without losing or duplicating work.
+Under the hood, a runtime that runs LangGraph agents across a pool of workers and makes them survive what distributed systems throw at them: crashed workers, paused "zombie" workers, restarts, human approvals that take hours, node drains and rolling upgrades. It survives all of these without losing or duplicating work.
 
-> **Status: Phase 6 (chat sessions + chat agent) complete.** Chat with an agent across many sessions, on a scripted model or a real one (OpenAI, or Ollama locally: `make llm-up && make chat`). Every message is in a durable transcript written with each checkpoint, tokens stream live from any API replica, and a crash mid-turn duplicates nothing. The agent calls tools through one guarded pipeline (budgets with a wrap-up turn, loop detection, retries and a circuit breaker, approvals), delegates to sub-agents that resume after a crash, and fans out child runs across workers. Sandboxes come next. See the [roadmap](docs/roadmap.md) and [phase summaries](docs/progress/).
+> **Status: the local release is under way: one-command setup (L1) and the chat UI (L2) are done.** Clone, run `./setup.sh`, and chat in your browser; kill a worker or an API replica mid-reply and watch nothing get lost. The runtime core (phases 0–6) is complete. Every message is in a durable transcript written with each checkpoint, tokens stream live from any API replica, and a crash mid-turn duplicates nothing. The agent calls tools through one guarded pipeline (budgets with a wrap-up turn, loop detection, retries and a circuit breaker, approvals), delegates to sub-agents that resume after a crash, and fans out child runs across workers. See the [roadmap](docs/roadmap.md) and [phase summaries](docs/progress/).
 
 ## Try it (only Docker needed)
 
@@ -12,10 +14,15 @@ A runtime that runs LangGraph agents across a pool of workers and makes them sur
 git clone https://github.com/sofianebouabdallahh-ai/durable-langgraph-runtime.git
 cd durable-langgraph-runtime
 ./setup.sh            # Windows: .\setup.ps1
-./setup.sh --chat     # chat with an agent in your terminal
 ```
 
-Setup checks your machine, generates private local passwords, asks which model to use (offline demo, a free local model with Ollama, OpenAI, Azure AI Foundry, or any OpenAI-compatible service), starts everything in Docker, and proves it works with a real chat turn. Guides for each OS, models and troubleshooting: [docs/setup/](docs/setup/).
+Then open **http://localhost:3000** (setup opens it for you). Setup checks your machine, generates private local passwords, asks which model to use (an offline demo, a free local model with Ollama, OpenAI, Azure AI Foundry, or any OpenAI-compatible service), starts everything in Docker, and proves it works with a real chat turn. Guides for each OS, models and troubleshooting: [docs/setup/](docs/setup/).
+
+| Home | A chat | An agent and its helpers |
+|---|---|---|
+| ![Home](docs/images/home.png) | ![A chat waiting for approval](docs/images/chat-ui.png) | ![The Nuria agent](docs/images/agent.png) |
+
+**In Nuria:** replies stream in; tool calls show as cards; helpers (sub-agents) show their progress live; anything that reaches the outside world waits for your **Approve**; **Stop** keeps what was written so far; **What happened?** tells each reply's story, including a worker that crashed and the one that took over. **Agents** shows each agent's instructions, tools, limits and helpers (sub-agents); building your own comes next, with the Agent Studio. On the offline demo model, pick a suggestion or say *hello*.
 
 ## How it works (target design)
 
@@ -36,6 +43,7 @@ Requirements: [uv](https://docs.astral.sh/uv/), Docker (Desktop or OrbStack), GN
 make up        # creates .env from .env.example, starts Postgres + Redis, migrates
 make worker    # 2 worker processes that execute queued runs
 make api       # HTTP API on http://127.0.0.1:8000 (docs at /docs); API_PORT=8765 to change
+make ui-dev    # the UI with hot reload on http://127.0.0.1:5173 (Node runs in a container)
 make run-toy   # create and execute one toy run in this process; prints its event log
 make demo-e2e  # crash / zombie / release / multi-replica streaming scenarios (real processes)
 make check     # lint + mypy --strict + agent validation + all tests

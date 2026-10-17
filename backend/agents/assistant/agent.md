@@ -2,6 +2,7 @@
 name: assistant
 description: Phase 4 test assistant. Uses the calculator, keeps notes, and can notify people (with approval).
 version: 1
+hidden: true  # a test fixture, not offered in the UI
 model: chat
 max_turns: 10
 limits:

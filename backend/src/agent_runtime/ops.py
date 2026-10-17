@@ -44,9 +44,13 @@ class SmokeResult:
     steps: list[str] = field(default_factory=list)
 
 
-async def smoke(api: str, settings: Settings, *, timeout_s: float = 180.0) -> SmokeResult:
+async def smoke(
+    api: str, settings: Settings, *, timeout_s: float = 180.0, ui: str | None = None
+) -> SmokeResult:
     started = time.monotonic()
     scripted = settings.model_provider == "scripted"
+    if ui is not None:
+        await check_ui(ui)
     async with httpx.AsyncClient(base_url=api.rstrip("/"), timeout=30) as client:
         ready = await client.get("/readyz")
         if ready.status_code != 200:
@@ -71,6 +75,8 @@ async def smoke(api: str, settings: Settings, *, timeout_s: float = 180.0) -> Sm
                 )
             await asyncio.sleep(0.5)
         messages = (await client.get(f"/sessions/{sid}/messages")).json()["messages"]
+        # Setup's check isn't a conversation of the user's: keep it out of the chat list.
+        await client.patch(f"/sessions/{sid}", json={"status": "archived"})
     kinds = [m["type"] for m in messages]
     if "error" in kinds:
         error = next(m["content"] for m in messages if m["type"] == "error")
@@ -84,6 +90,20 @@ async def smoke(api: str, settings: Settings, *, timeout_s: float = 180.0) -> Sm
         if results != [{"value": 42.0}]:
             raise SmokeFailed(f"the calculator didn't run through the tool pipeline: {results}")
     return SmokeResult(sid, time.monotonic() - started, answer, kinds)
+
+
+async def check_ui(url: str, transport: httpx.AsyncBaseTransport | None = None) -> None:
+    """The web UI serves its page, with the security headers the chat relies on."""
+    async with httpx.AsyncClient(timeout=10, transport=transport) as client:
+        try:
+            page = await client.get(url.rstrip("/") + "/")
+        except httpx.HTTPError as exc:
+            raise SmokeFailed(f"the UI isn't reachable at {url} ({type(exc).__name__})") from exc
+    if page.status_code != 200 or 'id="root"' not in page.text:
+        raise SmokeFailed(f"the UI didn't serve its page (HTTP {page.status_code})")
+    csp = page.headers.get("content-security-policy", "")
+    if "default-src 'self'" not in csp:
+        raise SmokeFailed("the UI's Content-Security-Policy header is missing")
 
 
 def _require(resp: httpx.Response, status: int, what: str) -> None:

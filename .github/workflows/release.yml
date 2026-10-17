@@ -1,6 +1,6 @@
 name: release
 
-# A tag `v*` publishes the runtime image for testers (`./setup.sh` pulls it):
+# A tag `v*` publishes the images for testers (`./setup.sh` pulls them):
 # amd64 + arm64 (Intel and Apple Silicon Macs, Windows, Linux), with an SBOM and
 # build provenance attached, scanned after the push.
 
@@ -14,12 +14,16 @@ permissions:
 
 # Third-party actions are pinned to a full commit SHA (see ci.yml).
 
-env:
-  IMAGE: ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/runtime
-
 jobs:
   image:
-    name: multi-arch image → GHCR
+    name: multi-arch ${{ matrix.image }} → GHCR
+    strategy:
+      matrix:
+        include:
+          - { image: runtime, context: backend }
+          - { image: ui, context: frontend }
+    env:
+      IMAGE: ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/${{ matrix.image }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -44,15 +48,15 @@ jobs:
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          context: backend
+          context: ${{ matrix.context }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           provenance: mode=max
           sbom: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
       - name: Scan the published image (fail on fixable HIGH/CRITICAL)
         # The package is private until made public, so Trivy pulls with the job's token.
         env:

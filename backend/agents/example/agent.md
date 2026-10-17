@@ -2,6 +2,7 @@
 name: example
 description: Minimal example agent used to exercise the loader and the runtime. Has no tools yet.
 version: 1
+hidden: true  # a test fixture, not offered in the UI
 model: chat
 temperature: 0.2
 max_turns: 10

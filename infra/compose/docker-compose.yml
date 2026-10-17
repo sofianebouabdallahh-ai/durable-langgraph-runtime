@@ -2,8 +2,9 @@
 #
 #   default (`make up`):  Postgres + Redis only. Developers run the API and workers
 #                         on the host with uv (`make api`, `make worker`).
-#   profile `app`:        the whole product in containers: migrate (one-shot), api,
-#                         2 workers. This is what `./setup.sh` starts for testers.
+#   profile `app`:        the whole product in containers: migrate (one-shot), the UI
+#                         (the one entry point: http://localhost:3000, /api → API),
+#                         2 API replicas, 2 workers. What `./setup.sh` starts for testers.
 #   profile `llm`:        Ollama in Docker (CPU-only on macOS: prefer the native app).
 #
 # Run it through the root Makefile or setup.sh, which pass the root .env:
@@ -25,6 +26,9 @@ x-runtime: &runtime
     POSTGRES_PORT: "5432"
     REDIS_URL: redis://redis:6379/0
     OLLAMA_BASE_URL: ${CONTAINER_OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+    # The offline demo model streams its replies word by word, like a real one.
+    SCRIPTED_STREAMING: ${SCRIPTED_STREAMING:-true}
+    SCRIPTED_STREAM_DELAY_S: ${SCRIPTED_STREAM_DELAY_S:-0.03}
   extra_hosts:
     - "host.docker.internal:host-gateway" # a model server on the host (Linux; macOS/Windows have it)
   read_only: true
@@ -46,13 +50,15 @@ services:
   api:
     <<: *runtime
     command: ["api", "--host", "0.0.0.0", "--port", "8000"]
+    # Several replicas behind the UI's proxy: any of them serves any stream (AC3), and
+    # losing one mid-reply is invisible to the chat (AC20). No host port of its own.
+    deploy:
+      replicas: ${API_REPLICAS:-2}
     environment:
       <<: *runtime-env
       # Least privilege (R14.13): the API connects as its own login, not the owner.
       POSTGRES_USER: ${API_POSTGRES_USER:?set in .env}
       POSTGRES_PASSWORD: ${API_POSTGRES_PASSWORD:?set in .env}
-    ports:
-      - "127.0.0.1:${API_PORT:-8000}:8000"
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -81,6 +87,27 @@ services:
         condition: service_healthy
     # SIGTERM → finish the current step, release the run to another worker (R10.7).
     stop_grace_period: 40s
+
+  ui:
+    image: ${UI_IMAGE:-ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/ui:latest}
+    build: ../../frontend
+    profiles: ["app"]
+    ports:
+      - "127.0.0.1:${UI_PORT:-3000}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
 
   postgres:
     image: pgvector/pgvector:0.8.0-pg16 # Postgres 16 + pgvector (R4.5)

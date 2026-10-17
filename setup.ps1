@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-  Run the Durable Agent Runtime on this Windows machine. Only Docker Desktop (WSL 2) is needed.
+  Run Nuria on this Windows machine. Only Docker Desktop (WSL 2) is needed.
 
 .DESCRIPTION
   The Windows twin of setup.sh: checks, .env with generated secrets, the model,
-  start, smoke test. Safe to run again: it never overwrites a secret or a setting
+  start, smoke test, then opens the app (http://localhost:3000). Safe to run again: it never overwrites a secret or a setting
   you didn't ask to change.
 
   NOTE: written to mirror setup.sh step for step, but not yet run on a Windows
@@ -13,6 +13,7 @@
 .EXAMPLE
   .\setup.ps1
   .\setup.ps1 -Model ollama
+  .\setup.ps1 -Port 3100
   .\setup.ps1 -NonInteractive -Model scripted
   .\setup.ps1 -Chat | -Stop | -Update | -Doctor | -Reset
 #>
@@ -22,7 +23,8 @@ param(
   [string]$ApiKey = $env:SETUP_API_KEY,
   [string]$BaseUrl = "",
   [string]$ModelName = "",
-  [int]$ApiPort = 0,
+  [int]$Port = 0,
+  [switch]$NoBrowser,
   [switch]$NonInteractive,
   [switch]$Build,
   [switch]$Chat, [switch]$Stop, [switch]$Update, [switch]$Doctor, [switch]$Reset
@@ -114,11 +116,11 @@ function Initialize-EnvFile {
   try { Protect-EnvFile } catch { Warn "couldn't restrict .env permissions: $_" }
 }
 function Select-Ports {
-  $script:ApiPortChosen = Select-Port "api" 8000 "API_PORT" 8000 $ApiPort
+  $script:UiPortChosen = Select-Port "ui" 8080 "UI_PORT" 3000 $Port
   $pg = Select-Port "postgres" 5432 "POSTGRES_PORT" 5432 0
   $redis = Select-Port "redis" 6379 "REDIS_PORT" 6379 0
   Set-EnvValue "REDIS_URL" "redis://localhost:$redis/0"
-  Ok "ports: API $script:ApiPortChosen, Postgres $pg, Redis $redis (all on 127.0.0.1 only)"
+  Ok "ports: app $script:UiPortChosen, Postgres $pg, Redis $redis (all on 127.0.0.1 only)"
 }
 function Read-Answer($q, $default = "") {
   if (-not $Interactive) { return $default }
@@ -181,7 +183,7 @@ function Start-Stack {
     & docker compose --file $ComposeFile --env-file $EnvFile @(Get-ProfileArgs) pull --quiet --ignore-buildable 2>$null
     if ($LASTEXITCODE -ne 0) { Warn "couldn't download the published images; building them here instead..."; Invoke-Compose build }
   }
-  Say "Starting (database, queue, API, 2 workers)..."
+  Say "Starting (database, queue, app, 2 API replicas, 2 workers)..."
   try { Invoke-Compose up -d --wait --remove-orphans | Out-Null } catch {
     & docker compose --file $ComposeFile --env-file $EnvFile @(Get-ProfileArgs) logs --tail 30 migrate api
     Die "the stack didn't become healthy (logs above)." @("Diagnostics: .\setup.ps1 -Doctor")
@@ -191,7 +193,7 @@ function Start-Stack {
 }
 function Test-Smoke {
   Say "Checking a real chat turn end to end..."
-  try { Invoke-Compose run --rm --no-deps -T api smoke --api http://api:8000 --timeout 300 } catch { Die "the smoke test failed (above)." @("Diagnostics: .\setup.ps1 -Doctor") }
+  try { Invoke-Compose run --rm --no-deps -T api smoke --api http://ui:8080/api --ui http://ui:8080 --timeout 300 } catch { Die "the smoke test failed (above)." @("Diagnostics: .\setup.ps1 -Doctor") }
 }
 
 # ------------------------------------------------------------------ actions
@@ -199,7 +201,7 @@ if ($Chat) { Test-Docker; Invoke-Compose run --rm --no-deps api chat; exit 0 }
 if ($Stop) { Test-Docker; Invoke-Compose stop; Ok "stopped (your data is kept)"; exit 0 }
 if ($Doctor) {
   Test-Docker; $out = "diagnostics-$(Get-Date -Format yyyyMMdd-HHmmss)"; New-Item -ItemType Directory $out | Out-Null
-  & docker compose --file $ComposeFile --env-file $EnvFile @(Get-ProfileArgs) run --rm --no-deps -T api doctor --api http://api:8000 > "$out/doctor.json" 2>$null
+  & docker compose --file $ComposeFile --env-file $EnvFile @(Get-ProfileArgs) run --rm --no-deps -T api doctor --api http://ui:8080/api > "$out/doctor.json" 2>$null
   & docker compose --file $ComposeFile --env-file $EnvFile @(Get-ProfileArgs) ps > "$out/services.txt" 2>&1
   & docker compose --file $ComposeFile --env-file $EnvFile @(Get-ProfileArgs) logs --no-color --tail 300 > "$out/logs.txt" 2>&1
   docker version > "$out/docker.txt" 2>&1
@@ -223,8 +225,10 @@ if ($Update) {
 } else { Set-Model }
 Start-Stack; Test-Smoke
 Write-Host ""
-Say "Ready."
-Write-Host "    API and its docs:    http://127.0.0.1:$script:ApiPortChosen/docs"
+Say "Nuria is ready."
+Write-Host "    Open the app:        http://localhost:$script:UiPortChosen" -ForegroundColor Green
+Write-Host "    API docs:            http://localhost:$script:UiPortChosen/docs"
 Write-Host "    Chat in a terminal:  .\setup.ps1 -Chat"
 Write-Host "    Stop / start again:  .\setup.ps1 -Stop  /  .\setup.ps1"
 Write-Host "    Something wrong?     .\setup.ps1 -Doctor   (a report you can attach to an issue)"
+if (-not $NonInteractive -and -not $NoBrowser) { Start-Process "http://localhost:$script:UiPortChosen" }

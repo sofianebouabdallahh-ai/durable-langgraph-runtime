@@ -248,13 +248,31 @@ def _print_live(type_: str, payload: dict[str, Any]) -> None:
         print(f"\n  ◇ {type_.removeprefix('subagent.')} {agent} {detail}", flush=True)
 
 
+def _openapi(args: argparse.Namespace) -> int:
+    """The published contract, for the UI's generated client and its drift check."""
+    from pydantic import SecretStr
+
+    from agent_runtime.api.app import create_app
+    from agent_runtime.config import Settings
+
+    # The defaults, not the environment: the same spec on every machine (the drift
+    # check compares it), and no secret needed to produce it.
+    defaults = Settings.model_construct(postgres_password=SecretStr("unused"))
+    text = json.dumps(create_app(defaults).openapi(), indent=2, sort_keys=True) + "\n"
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
 def _smoke(args: argparse.Namespace) -> int:
     """One real chat turn through the API and the workers (setup's final check)."""
     from agent_runtime.ops import SmokeFailed, smoke
 
     settings = get_settings()
     try:
-        result = asyncio.run(smoke(args.api, settings, timeout_s=args.timeout))
+        result = asyncio.run(smoke(args.api, settings, timeout_s=args.timeout, ui=args.ui))
     except SmokeFailed as exc:
         print(f"smoke test FAILED: {exc}", file=sys.stderr)
         return 1
@@ -476,6 +494,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     smoke = commands.add_parser("smoke", help="one chat turn through the API and workers")
     smoke.add_argument("--api", default="http://127.0.0.1:8000")
+    smoke.add_argument("--ui", help="also check the web UI at this URL (page + headers)")
     smoke.add_argument("--timeout", type=float, default=180.0)
     smoke.set_defaults(handler=_smoke)
 
@@ -483,6 +502,10 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--api", default=None, help="also check this API's /readyz")
     doctor.add_argument("--out", default=None, help="write to this file instead of stdout")
     doctor.set_defaults(handler=_doctor)
+
+    openapi = commands.add_parser("openapi", help="print the API's OpenAPI spec (JSON)")
+    openapi.add_argument("--out", help="write it to this file instead")
+    openapi.set_defaults(handler=_openapi)
 
     chat = commands.add_parser("chat", help="chat with an agent in this terminal")
     chat.add_argument("--agent", default="chat")

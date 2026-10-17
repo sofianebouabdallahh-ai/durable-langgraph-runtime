@@ -1,6 +1,6 @@
-# Run it on your machine
+# Run Nuria on your machine
 
-Everything runs in Docker on your computer: the database, the queue, the API and two workers. Your conversations, agents and keys stay on this machine. You need **only Docker**; no Python, Node or developer tools.
+Everything runs in Docker on your computer: the app, the database, the queue, two API servers and two workers. Your conversations, agents and keys stay on this machine. You need **only Docker**; no Python, Node or developer tools.
 
 | Your computer | Guide |
 |---|---|
@@ -24,18 +24,21 @@ The setup script:
 1. checks Docker and finds free ports;
 2. creates your private `.env`, with passwords generated just for this machine;
 3. asks which model to use;
-4. starts everything and runs a real chat turn to prove it works.
+4. starts everything, runs a real chat turn to prove it works, and opens the app.
 
-When it says **Ready**, open the address it prints, or chat right away in the terminal:
+When it says **Nuria is ready**, the app is at **http://localhost:3000** (or the address it prints, if 3000 was taken). Write your first message (or pick a suggestion). **Agents**, in the sidebar, shows each agent's instructions, tools and helpers. You can also chat in the terminal:
 
 ```bash
 ./setup.sh --chat     # type your messages; Ctrl-D to leave
 ```
 
+The API and its interactive docs are behind the same address: http://localhost:3000/docs.
+
 | Command | Does |
 |---|---|
 | `./setup.sh` | Start (again). Safe to run any time: it never overwrites your settings or passwords |
 | `./setup.sh --model ollama` | Switch the model (`scripted`, `ollama`, `openai`, `foundry`, `compatible`) |
+| `./setup.sh --port 3100` | Put the app on another port |
 | `./setup.sh --stop` | Stop everything; your data is kept |
 | `./setup.sh --update` | Back up the database, get the latest version, migrate, restart |
 | `./setup.sh --doctor` | Make a diagnostics file (passwords and keys removed) to attach to a GitHub issue |

@@ -27,3 +27,23 @@ def test_the_effective_configuration_is_redacted() -> None:
     assert shown["redis_url"] == "redis://[REDACTED]@cache:6379/0"
     assert shown["ollama_base_url"] == "http://127.0.0.1:11434/v1"  # non-secrets stay readable
     assert shown["model_provider"] == "scripted"
+
+
+async def test_the_ui_check_wants_the_page_and_its_csp() -> None:
+    import httpx
+    import pytest
+
+    from agent_runtime.ops import SmokeFailed, check_ui
+
+    def serve(body: str, csp: str | None, status: int = 200) -> httpx.MockTransport:
+        headers = {"content-security-policy": csp} if csp else {}
+        return httpx.MockTransport(lambda _: httpx.Response(status, text=body, headers=headers))
+
+    page = '<div id="root"></div>'
+    await check_ui("http://ui", serve(page, "default-src 'self'; img-src 'self'"))
+    with pytest.raises(SmokeFailed, match="Content-Security-Policy"):
+        await check_ui("http://ui", serve(page, None))
+    with pytest.raises(SmokeFailed, match="didn't serve its page"):
+        await check_ui("http://ui", serve("<html>nginx default</html>", "default-src 'self'"))
+    with pytest.raises(SmokeFailed, match="HTTP 502"):
+        await check_ui("http://ui", serve("bad gateway", None, 502))

@@ -123,12 +123,17 @@ def test_supervisor_starts_n_workers_and_forwards_sigterm(
             proc.kill()
 
 
-def test_chat_streams_a_turn_in_the_terminal(test_settings: Settings, test_db_url: str) -> None:
-    """`runtime chat --message …`: a session, a turn, tokens printed as they stream."""
-    out = runtime(test_settings, "chat", "--message", "hello there",
+def test_chat_streams_a_turn_in_the_terminal(
+    test_settings: Settings, checkpoint_tables: None
+) -> None:  # checkpoint_tables: the schema (ours and LangGraph's), even when run alone
+    """`runtime chat --message …`: a session, turns, tokens printed as they stream. On the
+    scripted provider with no script, the demo responder answers (models/demo.py)."""
+    out = runtime(test_settings, "chat", "--message", "hello there", "--message", "What is 6*7?",
                   env={"SCRIPTED_STREAMING": "true"})  # fmt: skip
     assert out.returncode == 0, out.stderr
     assert "with chat (provider: scripted)" in out.stdout
     assert "you> hello there" in out.stdout
-    assert "chat> (script finished)" in out.stdout  # the streamed reply, live
+    assert "chat> Hi! I'm running on the **demo model**" in out.stdout  # streamed, live
     assert "[completed · 1 model calls · 0 tools" in out.stdout
+    assert '⚙ calculator({"expression": "6*7"})' in out.stdout  # the second turn used a tool
+    assert "6*7 = **42**" in out.stdout

@@ -162,6 +162,15 @@ class Health(BaseModel):
     status: str
 
 
+class AboutView(BaseModel):
+    """What the UI shows about this installation; nothing secret (no keys, no URLs)."""
+
+    version: str | None
+    model_provider: str
+    demo_model: bool = Field(description="The offline demo model (MODEL_PROVIDER=scripted)")
+    chat_model: str | None = Field(description="The chat role's model, when configured")
+
+
 class AdminStatus(BaseModel):
     paused: bool
     reason: str | None
@@ -249,6 +258,18 @@ class TurnAccepted(BaseModel):
     run_id: uuid.UUID
 
 
+class HelperView(BaseModel):
+    """A sub-agent (CR-005), as the UI shows it under its main agent."""
+
+    name: str
+    description: str
+    model: str
+    max_turns: int
+    tools: list[dict[str, Any]]
+    limits: dict[str, Any]
+    prompt: str | None = Field(default=None, description="GET /agents/{name} only")
+
+
 class AgentView(BaseModel):
     name: str
     description: str
@@ -259,4 +280,6 @@ class AgentView(BaseModel):
     limits: dict[str, Any]
     hooks: dict[str, list[str]]
     subagents: list[str]
+    hidden: bool = Field(description="A test or example agent: not offered in the UI")
+    helpers: list[HelperView] = Field(description="The sub-agents in detail")
     prompt: str | None = Field(default=None, description="GET /agents/{name} only")

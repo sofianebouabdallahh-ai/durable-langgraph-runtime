@@ -18,6 +18,25 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - CR-004 + ADR-0003 (accepted): agents defined as `backend/agents/*.agent.md` (name, max turns, prompt, tools, limits, hooks); hooks for session start/end, turn start/end and pre/post tool, built on LangChain middleware plus harness-owned session hooks.
 - CR-003 (accepted): harness guardrails. Run budgets with a soft→hard wrap-up, loop detection, ceilings that callers can only tighten, deny-by-default tool grants, least-privilege DB roles, untrusted-content handling, audit trail, kill switch.
 
+### L2 — Chat UI
+#### Added
+- **The web UI** (`frontend/`): React 19 + TypeScript strict + Vite + Tailwind + TanStack Query; the API client generated from the OpenAPI spec (CI fails on drift).
+  - Sessions sidebar, streaming replies, tool cards, live helper (sub-agent) cards, the approval card, Stop, "What happened?" per reply.
+  - Plain words throughout; dark mode; keyboard- and screen-reader-friendly.
+- **Exactly-once display (AC20):** a pure transcript reducer plus an EventSource adapter that resumes from the last message held, across a reload, a lost connection, an API replica killed or drained, and a worker crash.
+- **Untrusted output is inert:** no raw HTML, sanitised Markdown, safe links only, images never loaded, tool data shown as text, and a strict Content-Security-Policy.
+- **The `ui` image:** unprivileged nginx serving the app and proxying `/api` to **2 API replicas** (one origin, SSE unbuffered, failover). `./setup.sh` prints the address and opens http://localhost:3000.
+- **Backend:**
+  - `turn.status` on the session stream;
+  - the **demo responder** (the offline model answers free text using its tools, deterministically);
+  - `GET /about`;
+  - `runtime openapi`;
+  - `runtime smoke --ui`.
+- **Tests:** Playwright browser tests against the Compose stack (`make ui-e2e`, also in CI); `make ui-check`, `make ui-dev`, `make ui-api`. The Node toolchain runs in a pinned container (pnpm, verified by hash, with a 14-day release cooldown).
+
+#### Changed
+- The API has no host port of its own: everything goes through the UI's address (`/api`, `/docs`). `--api-port` became `--port`.
+
 ### L1 — Containerise & one-command setup
 #### Added
 - `./setup.sh` / `.\setup.ps1`: clone → running stack with only Docker (checks, generated `.env`, free ports, model choice, smoke test, `--chat`, `--stop`, `--update`, `--doctor`, `--reset`).

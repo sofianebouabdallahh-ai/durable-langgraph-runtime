@@ -105,10 +105,32 @@ jobs:
       - name: All tests with coverage (fails under the floor in pyproject.toml)
         run: uv run pytest --cov --cov-report=term
 
-  containers:
-    name: image · scan · setup · container e2e
+  ui:
+    name: ui · lint · types · tests · build · API drift
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Lint, strict types, unit tests with coverage, production build (Node in a pinned container)
+        run: make ui-check
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: The UI's API types match the API (regenerate, then no diff)
+        run: |
+          (cd backend && uv sync --locked)
+          make ui-api
+          git diff --exit-code -- frontend/openapi.json frontend/src/api/schema.d.ts \
+            || { echo "::error::the API changed: run 'make ui-api' and commit the result"; exit 1; }
+
+  containers:
+    name: images · scan · setup · container + browser e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
     defaults:
       run:
         working-directory: .
@@ -125,27 +147,40 @@ jobs:
           $issues = Invoke-ScriptAnalyzer -Path setup.ps1 -Severity Error
           $issues | Format-Table -AutoSize | Out-String -Width 200
           if ($issues) { exit 1 }
-      - name: First run, exactly as a tester does it (builds the image)
+      - name: First run, exactly as a tester does it (builds the images)
         run: ./setup.sh --non-interactive --model scripted --build
       - name: Second run changes nothing (idempotent)
         run: |
           before=$(sha256sum .env)
           ./setup.sh --non-interactive
           [ "$before" = "$(sha256sum .env)" ] || { echo "::error::setup changed .env on a re-run"; exit 1; }
-      - name: Scan the image (fail on fixable HIGH/CRITICAL)
+      - name: Scan the images (fail on fixable HIGH/CRITICAL)
         run: |
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-            aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa \
-            image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress \
-            ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/runtime:latest
-      - name: The image runs as a non-root user
+          for image in runtime ui; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa \
+              image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress \
+              "ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/$image:latest"
+          done
+      - name: The images run as non-root users
         run: |
-          uid=$(docker run --rm --entrypoint id ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/runtime:latest -u)
-          [ "$uid" = "10001" ] || { echo "::error::image runs as uid $uid"; exit 1; }
+          check() { uid=$(docker run --rm --entrypoint id "ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/$1:latest" -u)
+                    [ "$uid" = "$2" ] || { echo "::error::$1 runs as uid $uid"; exit 1; }; }
+          check runtime 10001
+          check ui 101
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - name: Container e2e (kill / stop a worker mid-turn, least privilege)
         working-directory: backend
         run: uv run --locked python -m tests.e2e.compose_e2e all
+      - name: Browser e2e (Playwright in a container, against the stack)
+        working-directory: .
+        run: make ui-e2e
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend/e2e/playwright-report
+          retention-days: 7
       - name: Diagnostics bundle (kept for 7 days)
         if: always()
         run: ./setup.sh --doctor || true

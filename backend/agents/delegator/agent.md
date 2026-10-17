@@ -2,6 +2,7 @@
 name: delegator
 description: Phase 5 test agent. Splits work between its sub-agents and combines their results.
 version: 1
+hidden: true  # a test fixture, not offered in the UI
 model: chat
 max_turns: 12
 limits:

@@ -56,7 +56,8 @@ def say(text: str) -> dict[str, Any]:
 
 
 def sessions(pool: Pool, settings: Settings, bus: EventBus | None = None) -> SessionService:
-    return SessionService(pool, settings, GRAPHS, RunService(pool, settings, GRAPHS), bus=bus)
+    runs = RunService(pool, settings, GRAPHS, bus=bus)  # as in the app: both publish
+    return SessionService(pool, settings, GRAPHS, runs, bus=bus)
 
 
 async def chat(pool: Pool, settings: Settings) -> uuid.UUID:
@@ -429,5 +430,70 @@ async def test_the_session_api_and_stream(
     assert chat_agent["prompt"] is None
     detail = (await c.get("/agents/delegator")).json()
     assert detail["subagents"] == ["mathematician", "napper", "scribe"]
+    helpers = {h["name"]: h for h in detail["helpers"]}  # the sub-agents, for the UI
+    assert set(helpers) == {"mathematician", "napper", "scribe"}
+    assert helpers["mathematician"]["description"] and helpers["mathematician"]["prompt"]
+    assert all(h["prompt"] is None for h in chat_agent["helpers"])  # the list stays light
     assert "coordinate specialists" in detail["prompt"]
     assert (await c.get("/agents/toy")).status_code == 404
+
+
+# ------------------------------------------------- the UI's signals (phase L2)
+
+
+async def _turn_statuses(sub: Any) -> list[str]:
+    out = []
+    while (got := await sub.get(0.05)) is not None:
+        if got[1].type == "turn.status":
+            out.append(got[1].payload["status"])
+    return out
+
+
+async def test_the_session_stream_says_when_a_turn_starts_waits_and_ends(
+    pool: Pool, test_settings: Settings, checkpoint_tables: None
+) -> None:
+    from agent_runtime.streaming.bus import InMemoryEventBus, session_channel
+
+    bus = InMemoryEventBus()
+    service = sessions(pool, test_settings, bus)
+    sid = (await service.create("chat", "signals")).id
+    sub = bus.subscription()
+    await sub.subscribe(session_channel(sid))
+
+    sent = await service.send(sid, "tell ops", script=[
+        tools(call("notify", to="ops", message="hi")), say("Done.")])  # fmt: skip
+    paused = await RunExecutor(pool, test_settings, GRAPHS, bus=bus).execute(sent.run.id)
+    assert paused.status is S.WAITING_APPROVAL
+    assert await _turn_statuses(sub) == ["queued", "running", "waiting_approval"]
+
+    await service.approve(sid, "approve", None)
+    done = await RunExecutor(pool, test_settings, GRAPHS, bus=bus).execute(sent.run.id)
+    assert done.status is S.COMPLETED
+    assert await _turn_statuses(sub) == ["queued", "running", "completed"]
+
+    queued = await service.send(sid, "never mind", script=[say("x")])
+    await service.cancel(sid)
+    assert await _turn_statuses(sub) == ["queued", "cancelled"]
+    await sub.close()
+    assert queued.run.id != sent.run.id
+
+
+async def test_the_demo_model_answers_free_text_with_its_tools(
+    pool: Pool, test_settings: Settings, checkpoint_tables: None
+) -> None:
+    """MODEL_PROVIDER=scripted and no script: the demo responder picks one, and stores
+    it in the run's input (so a replay reads the same script back)."""
+    service = sessions(pool, test_settings)
+    sid = await chat(pool, test_settings)
+    sent = await service.send(sid, "What is 12 * (3 + 4)?")
+    assert sent.run.input["script"][0]["tool_calls"][0]["args"] == {"expression": "12 * (3 + 4)"}
+    done = await RunExecutor(pool, test_settings, GRAPHS).execute(sent.run.id)
+    assert done.status is S.COMPLETED
+    msgs = await transcript(pool, sid)
+    result = next(m for m in msgs if m.type == "tool_result")
+    assert result.content["result"] == {"value": 84.0}
+    assert "**84**" in msgs[-1].content["text"]
+
+    help_turn = await service.send(sid, "hello there")  # nothing matches: how to use it
+    await RunExecutor(pool, test_settings, GRAPHS).execute(help_turn.run.id)
+    assert "demo model" in (await transcript(pool, sid))[-1].content["text"]
