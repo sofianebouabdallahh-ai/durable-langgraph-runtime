@@ -19,11 +19,12 @@ from langgraph.pregel import Pregel
 from pydantic import BaseModel, ConfigDict, Field
 
 from agent_runtime.agents.loader import Ceilings, load_agents
-from agent_runtime.agents.schema import AgentDefinition
+from agent_runtime.agents.schema import AgentDefinition, SubAgentDefinition
 from agent_runtime.catalog import default_catalog
 from agent_runtime.config import get_agent_settings
 from agent_runtime.graphs import GraphSpec
 from agent_runtime.models.scripted import ScriptedChatModel, ScriptTurn
+from agent_runtime.subagents.tools import MAIN_TOOLS, SUB_TOOLS
 from agent_runtime.tools.builtin import default_tools
 from agent_runtime.tools.middleware import RunContext, RuntimeMiddleware
 from agent_runtime.tools.spec import ToolRegistry, ToolSpec
@@ -35,9 +36,11 @@ class AgentInput(BaseModel):
     message: Annotated[str, Field(min_length=1, max_length=8000)]
     # The scripted model's replies (R14.20). Real providers (phase 6) ignore it.
     script: list[ScriptTurn] = Field(default_factory=list)
+    # Each sub-agent's replies, by sub-agent name (CR-005).
+    subagent_scripts: dict[str, list[ScriptTurn]] = Field(default_factory=dict)
 
 
-def render_prompt(agent: AgentDefinition) -> str:
+def render_prompt(agent: AgentDefinition | SubAgentDefinition) -> str:
     """Fill the allow-listed placeholders (R15.3). No template engine, no code."""
     values = {
         "date": datetime.now(UTC).date().isoformat(),
@@ -63,8 +66,33 @@ def _bindable(spec: ToolSpec) -> BaseTool:
     )
 
 
+def granted_tools(agent: AgentDefinition | SubAgentDefinition) -> list[str]:
+    """What the harness grants (R14.9): the file's tools, plus the sub-agent tools
+    (CR-005 R16.4/R16.5) for a main agent with sub-agents, and for every sub-agent."""
+    names = [t.name for t in agent.frontmatter.tools]
+    if isinstance(agent, SubAgentDefinition):
+        return [*names, *SUB_TOOLS]
+    return [*names, *MAIN_TOOLS] if agent.subagents else names
+
+
+def subagent_graph(
+    sub: SubAgentDefinition, tools: ToolRegistry, checkpointer: BaseCheckpointSaver[Any]
+) -> Pregel[Any, Any]:
+    """A sub-agent's graph: its own prompt and tools only (R16.6, R16.7)."""
+    graph: Pregel[Any, Any] = create_agent(
+        ScriptedChatModel(),
+        tools=[_bindable(tools.get(n)) for n in granted_tools(sub)],
+        system_prompt=render_prompt(sub),
+        middleware=[RuntimeMiddleware()],
+        context_schema=RunContext,
+        checkpointer=checkpointer,
+        name=sub.id.replace("/", "."),
+    )
+    return graph
+
+
 def agent_spec(agent: AgentDefinition, tools: ToolRegistry) -> GraphSpec:
-    granted = [_bindable(tools.get(t.name)) for t in agent.frontmatter.tools]
+    granted = [_bindable(tools.get(name)) for name in granted_tools(agent)]
 
     def compile_graph(checkpointer: BaseCheckpointSaver[Any] | None) -> Pregel[Any, Any]:
         graph: Pregel[Any, Any] = create_agent(

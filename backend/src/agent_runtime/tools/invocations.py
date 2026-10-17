@@ -20,6 +20,7 @@ used by fan-out and fan-in too, so sibling charges never deadlock.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -58,7 +59,7 @@ async def _lock_chain(conn: Conn, run_id: Any) -> list[dict[str, Any]]:
            OR id = (SELECT parent_run_id FROM runs WHERE id = %(id)s)
            OR id = (SELECT root_run_id FROM runs WHERE id = %(id)s)
         ORDER BY depth DESC
-        FOR UPDATE
+        FOR NO KEY UPDATE
         """,
         {"id": run_id},
     )
@@ -86,6 +87,7 @@ async def begin(
     tool: str,
     max_total: int | None,
     max_for_tool: int | None,
+    extra_charge: Callable[[Conn, str], Awaitable[None]] | None = None,
 ) -> Cached | Started:
     async with conn.transaction():
         await check_fence(conn, fence)
@@ -111,6 +113,8 @@ async def begin(
             raise BudgetExceeded(
                 "budget:tool_calls", f"max_calls={max_for_tool} for tool {tool!r} reached"
             )
+        if extra_charge is not None:
+            await extra_charge(conn, tool)  # may raise BudgetExceeded: all rolls back
         await conn.execute(
             "INSERT INTO tool_invocations (key, run_id, tool, status, epoch) "
             "VALUES (%s, %s, %s, 'in_progress', %s)",

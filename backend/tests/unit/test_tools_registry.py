@@ -19,7 +19,15 @@ def test_default_registry_declares_risk_and_side_effects() -> None:
         "calculator": "read",
         "notify": "external_side_effect",
         "save_note": "write_internal",
+        # sub-agent tools (CR-005), granted by the harness
+        "spawn_subagent": "write_internal",
+        "subagent_status": "read",
+        "wait_subagents": "read",
+        "cancel_subagent": "write_internal",
+        "report_progress": "write_internal",
+        "return_result": "write_internal",
     }
+    assert reg.get("wait_subagents").timeout_s == 125  # blocks up to 120 s
     assert reg.get("save_note").side_effect and not reg.get("calculator").side_effect
     assert reg.get("notify").max_calls == 5
     with pytest.raises(UnknownTool):

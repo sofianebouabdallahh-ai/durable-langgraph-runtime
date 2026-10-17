@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from agent_runtime.runs.state import RunStatus
 from agent_runtime.runs.store import Event, Run
+from agent_runtime.subagents.store import Invocation
 
 
 class CreateRunRequest(BaseModel):
@@ -22,6 +23,17 @@ class CreateRunRequest(BaseModel):
 
 class CreateRunResponse(BaseModel):
     run_id: uuid.UUID
+
+
+class SubagentView(BaseModel):
+    handle: uuid.UUID
+    agent: str
+    status: str
+    progress: str | None = Field(description="The latest report_progress message")
+    percent: int | None
+    elapsed_s: float
+    usage: dict[str, Any]
+    result: dict[str, Any] | None
 
 
 class RunView(BaseModel):
@@ -50,9 +62,12 @@ class RunView(BaseModel):
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    subagents: list[SubagentView] = Field(
+        default_factory=list, description="Sub-agent invocations of this run (CR-005 R16.10)"
+    )
 
     @classmethod
-    def of(cls, run: Run) -> RunView:
+    def of(cls, run: Run, subagents: list[Invocation] | None = None) -> RunView:
         return cls(
             id=run.id,
             graph=run.graph_name,
@@ -77,6 +92,7 @@ class RunView(BaseModel):
             created_at=run.created_at,
             started_at=run.started_at,
             finished_at=run.finished_at,
+            subagents=[SubagentView(**i.view(), result=i.result) for i in subagents or []],
         )
 
 

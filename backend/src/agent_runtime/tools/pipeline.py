@@ -32,13 +32,13 @@ import hashlib
 import json
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from pydantic import ValidationError
 
-from agent_runtime.db import Pool
+from agent_runtime.db import Conn, Pool
 from agent_runtime.fencing import Fence
 from agent_runtime.runs.events import EventType
 from agent_runtime.tools import invocations
@@ -76,6 +76,14 @@ class ToolRunContext:
     pre_hooks: list[HookSpec] = field(default_factory=list)
     post_hooks: list[HookSpec] = field(default_factory=list)
     max_tool_calls: int | None = None
+    node: str = "tools"  # part of the idempotency key: one per checkpoint thread
+    # Sub-agents (CR-005 R16.7) can't pause for a human: RequireApproval / ask → deny.
+    approvals: bool = True
+    orchestrator: Any = None  # given to sub-agent tools (ToolContext)
+    subagent: Any = None
+    # Charged in the ledger's transaction when a call is first recorded (a
+    # sub-agent's own budget, on top of the run's).
+    extra_charge: Callable[[Conn, str], Awaitable[None]] | None = None
 
 
 @dataclass(frozen=True)
@@ -164,6 +172,11 @@ class ToolPipeline:
             return self._deny(call, ctx, "policy", decision.reason, "policy")
         if isinstance(decision, RequireApproval) or isinstance(pre.decision, Ask):
             reason = decision.reason if isinstance(decision, RequireApproval) else "hook asked"
+            if not ctx.approvals:
+                return self._deny(
+                    call, ctx, "approval_unavailable",
+                    f"{reason}; approval is only available to the main agent", "policy",
+                )  # fmt: skip
             ctx.emit(
                 EventType.POLICY_DECISION,
                 {
@@ -207,6 +220,7 @@ class ToolPipeline:
                 tool=spec.name,
                 max_total=ctx.max_tool_calls,
                 max_for_tool=min(caps) if caps else None,
+                extra_charge=ctx.extra_charge,
             )  # BudgetExceeded propagates: the run fails (R14.1)
 
         cached = isinstance(begun, invocations.Cached)
@@ -228,7 +242,14 @@ class ToolPipeline:
             status, result = await self._execute(
                 spec,
                 args,
-                ToolContext(run_id=ctx.fence.run_id, epoch=ctx.fence.epoch, key=key, pool=ctx.pool),
+                ToolContext(
+                    run_id=ctx.fence.run_id,
+                    epoch=ctx.fence.epoch,
+                    key=key,
+                    pool=ctx.pool,
+                    orchestrator=ctx.orchestrator,
+                    subagent=ctx.subagent,
+                ),
             )
             async with ctx.pool.connection() as conn:
                 await invocations.finish(
@@ -282,12 +303,13 @@ class ToolPipeline:
     async def _execute(
         self, spec: ToolSpec, args: dict[str, Any], tctx: ToolContext
     ) -> tuple[Literal["done", "failed"], Any]:
+        timeout = spec.timeout_s or self._timeout
         try:
             parsed = spec.args_model.model_validate(args)
-            result = await asyncio.wait_for(spec.fn(parsed, tctx), timeout=self._timeout)
+            result = await asyncio.wait_for(spec.fn(parsed, tctx), timeout=timeout)
             return "done", json.loads(json.dumps(result, default=str))
         except TimeoutError:
-            return "failed", {"error": f"tool timed out after {self._timeout:g}s"}
+            return "failed", {"error": f"tool timed out after {timeout:g}s"}
         except Exception as exc:
             return "failed", {"error": f"{type(exc).__name__}: {exc}"[:2000]}
 
