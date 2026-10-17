@@ -18,6 +18,18 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - CR-004 + ADR-0003 (accepted): agents defined as `backend/agents/*.agent.md` (name, max turns, prompt, tools, limits, hooks); hooks for session start/end, turn start/end and pre/post tool, built on LangChain middleware plus harness-owned session hooks.
 - CR-003 (accepted): harness guardrails. Run budgets with a soft→hard wrap-up, loop detection, ceilings that callers can only tighten, deny-by-default tool grants, least-privilege DB roles, untrusted-content handling, audit trail, kill switch.
 
+### L1 — Containerise & one-command setup
+#### Added
+- `./setup.sh` / `.\setup.ps1`: clone → running stack with only Docker (checks, generated `.env`, free ports, model choice, smoke test, `--chat`, `--stop`, `--update`, `--doctor`, `--reset`).
+- The `runtime` image (non-root, read-only, tini, Debian 13, digest-pinned); the Compose `app` profile (`migrate`, `api`, 2 workers) with **per-component database logins**.
+- `runtime db init`, `runtime smoke`, `runtime doctor` (secrets redacted).
+- Container e2e (`make demo-compose`): kill / stop a worker container mid-turn; least-privilege probe.
+- CI `containers` job (setup from scratch, idempotency, Trivy, non-root, container e2e); the `release` workflow (multi-arch images to GHCR with SBOM and provenance). Every action pinned by commit SHA.
+- `docs/setup/`: macOS, Windows, Linux, models (incl. Azure AI Foundry), troubleshooting.
+
+#### Fixed
+- The CLI looked for `alembic.ini` next to its source, which fails in an installed package (`RUNTIME_HOME`).
+
 ### Phase 6c — Real models & the chat agent
 #### Added
 - `ModelProvider` (R3.1): `MODEL_PROVIDER=scripted|openai|ollama`, model per role (`MODEL_CHAT`, …), `embed()`; one OpenAI-compatible adapter for OpenAI and Ollama; Ollama 0.34.4 as an opt-in Compose profile (`make llm-up`).

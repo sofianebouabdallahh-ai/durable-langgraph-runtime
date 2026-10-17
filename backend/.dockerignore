@@ -1,0 +1,13 @@
+# Only what the image needs: the package, its lockfile, migrations, agents, fixtures.
+.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+htmlcov
+.coverage*
+tests
+*.md
+!README.md
+!agents/**/*.md

@@ -1,6 +1,6 @@
 # Local release plan: clone it, run it, tell us what you think
 
-**Status:** Proposed (2026-10-17) · **Comes before:** the [beta platform](../architecture/beta-platform.md), which waits for this release's feedback · **Builds on:** phases 0–6 · **Product scope:** [CR-006](../requirements/CR-006-agent-studio.md), in single-user form
+**Status:** Accepted (2026-10-17); **L1 delivered** ([summary](../progress/phase-L1.md)) · **Comes before:** the [beta platform](../architecture/beta-platform.md), which waits for this release's feedback · **Builds on:** phases 0–6 · **Product scope:** [CR-006](../requirements/CR-006-agent-studio.md), in single-user form
 
 ## 1. Goal
 
