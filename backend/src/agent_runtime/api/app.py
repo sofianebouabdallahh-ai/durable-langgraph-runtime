@@ -28,6 +28,7 @@ from agent_runtime.admin import AdminRepository, AdminState
 from agent_runtime.api import problems
 from agent_runtime.api.problems import ApiDraining, ResultNotReady
 from agent_runtime.api.schemas import (
+    AdminStatus,
     ApprovalRequest,
     CreateRunRequest,
     CreateRunResponse,
@@ -269,10 +270,14 @@ async def readyz(request: Request, pool: PoolDep, response: Response) -> Health:
 admin = APIRouter(prefix="/admin", tags=["admin (internal)"])
 
 
-@admin.get("/state", summary="Kill-switch state")
-async def admin_state(pool: PoolDep) -> AdminState:
+@admin.get("/state", summary="Kill-switch state and queue depth")
+async def admin_state(pool: PoolDep) -> AdminStatus:
     async with pool.connection() as conn:
-        return await AdminRepository(conn).get()
+        state = await AdminRepository(conn).get()
+        depth = await RunRepository(conn).queue_depth()
+    return AdminStatus(
+        paused=state.paused, reason=state.reason, updated_at=state.updated_at, queue_depth=depth
+    )
 
 
 @admin.post("/pause", summary="Stop admission and claiming (R14.18)")

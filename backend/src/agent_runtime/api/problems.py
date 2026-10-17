@@ -18,7 +18,7 @@ from pydantic import ValidationError
 
 from agent_runtime.graphs import UnknownGraph
 from agent_runtime.runs.limits import LimitAboveCeiling
-from agent_runtime.runs.service import AdmissionPaused
+from agent_runtime.runs.service import AdmissionPaused, Overloaded
 from agent_runtime.runs.store import NotWaitingForApproval, RunNotFound, RunTerminal
 
 log = logging.getLogger(__name__)
@@ -83,6 +83,15 @@ def install(app: FastAPI) -> None:
     async def _paused(_: Request, exc: AdmissionPaused) -> JSONResponse:
         response = problem(503, "paused", "Runtime paused", str(exc))
         response.headers["Retry-After"] = "30"
+        return response
+
+    @app.exception_handler(Overloaded)
+    async def _overloaded(_: Request, exc: Overloaded) -> JSONResponse:
+        response = problem(
+            429, "overloaded", "Too many runs waiting", str(exc),
+            queue_depth=exc.depth, limit=exc.limit,
+        )  # fmt: skip
+        response.headers["Retry-After"] = str(exc.retry_after_s)
         return response
 
     @app.exception_handler(UnknownGraph)

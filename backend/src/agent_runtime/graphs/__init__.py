@@ -75,6 +75,7 @@ class GraphRegistry:
 
 def default_registry() -> GraphRegistry:
     from agent_runtime.graphs.assistant import specs as agent_specs
+    from agent_runtime.graphs.fanout import SPEC as FANOUT
     from agent_runtime.graphs.toy import SPEC as TOY
 
-    return GraphRegistry([TOY, *agent_specs()])
+    return GraphRegistry([TOY, FANOUT, *agent_specs()])

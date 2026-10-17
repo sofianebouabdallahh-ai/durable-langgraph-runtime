@@ -11,6 +11,11 @@ are atomic with respect to concurrent calls of the same run:
 Counting happens exactly when a key is first recorded. LangGraph re-runs a tool
 step on resume (measured in the phase 4 research), and that must not consume
 budget twice.
+
+Roll-up (R14.1, CR-003 amendment to R2.8): a child run's usage also counts for
+its parent and root, and each ancestor's own limit applies to its whole tree.
+Every charge locks the chain deepest first (run → parent → root), the order
+used by fan-out and fan-in too, so sibling charges never deadlock.
 """
 
 from __future__ import annotations
@@ -43,6 +48,36 @@ class Started:
     taken_over: bool  # True: re-executing a call a dead owner left in_progress
 
 
+async def _lock_chain(conn: Conn, run_id: Any) -> list[dict[str, Any]]:
+    """This run and its ancestors (depth ≤ 2: at most 3 rows), locked deepest first.
+    The run itself is the first row."""
+    cur = await conn.execute(
+        """
+        SELECT id, depth, model_calls, tool_calls_total, tool_calls, limits FROM runs
+        WHERE id = %(id)s
+           OR id = (SELECT parent_run_id FROM runs WHERE id = %(id)s)
+           OR id = (SELECT root_run_id FROM runs WHERE id = %(id)s)
+        ORDER BY depth DESC
+        FOR UPDATE
+        """,
+        {"id": run_id},
+    )
+    rows = list(await cur.fetchall())
+    assert rows and rows[0]["id"] == run_id  # check_fence just found it; deepest first
+    return rows
+
+
+def _over(
+    chain: list[dict[str, Any]], used: str, limit_key: str, own_limit: int | None
+) -> str | None:
+    """Which run of the chain would pass its limit with one more charge, if any."""
+    for i, row in enumerate(chain):
+        limit = own_limit if i == 0 else row["limits"].get(limit_key)
+        if limit is not None and row[used] + 1 > limit:
+            return f"{limit_key}={limit} reached" + ("" if i == 0 else f" by ancestor {row['id']}")
+    return None
+
+
 async def begin(
     conn: Conn,
     *,
@@ -54,12 +89,8 @@ async def begin(
 ) -> Cached | Started:
     async with conn.transaction():
         await check_fence(conn, fence)
-        cur = await conn.execute(
-            "SELECT tool_calls_total, tool_calls FROM runs WHERE id = %s FOR UPDATE",
-            (fence.run_id,),
-        )
-        run = await cur.fetchone()
-        assert run is not None  # check_fence just found it
+        chain = await _lock_chain(conn, fence.run_id)
+        run = chain[0]
         cur = await conn.execute(
             "SELECT status, result, epoch FROM tool_invocations WHERE key = %s FOR UPDATE", (key,)
         )
@@ -73,9 +104,9 @@ async def begin(
             )
             return Started(taken_over=row["epoch"] < fence.epoch)
 
-        total, per_tool = int(run["tool_calls_total"]), dict(run["tool_calls"])
-        if max_total is not None and total + 1 > max_total:
-            raise BudgetExceeded("budget:tool_calls", f"max_tool_calls={max_total} reached")
+        per_tool = dict(run["tool_calls"])
+        if over := _over(chain, "tool_calls_total", "max_tool_calls", max_total):
+            raise BudgetExceeded("budget:tool_calls", over)
         if max_for_tool is not None and per_tool.get(tool, 0) + 1 > max_for_tool:
             raise BudgetExceeded(
                 "budget:tool_calls", f"max_calls={max_for_tool} for tool {tool!r} reached"
@@ -87,9 +118,11 @@ async def begin(
         )
         per_tool[tool] = per_tool.get(tool, 0) + 1
         await conn.execute(
-            "UPDATE runs SET tool_calls_total = tool_calls_total + 1, tool_calls = %s "
-            "WHERE id = %s",
-            (Jsonb(per_tool), fence.run_id),
+            "UPDATE runs SET tool_calls = %s WHERE id = %s", (Jsonb(per_tool), fence.run_id)
+        )
+        await conn.execute(
+            "UPDATE runs SET tool_calls_total = tool_calls_total + 1 WHERE id = ANY(%s)",
+            ([r["id"] for r in chain],),
         )
         return Started(taken_over=False)
 
@@ -114,13 +147,11 @@ async def charge_model_call(conn: Conn, *, fence: Fence, max_calls: int | None) 
     """
     async with conn.transaction():
         await check_fence(conn, fence)
-        cur = await conn.execute(
-            "UPDATE runs SET model_calls = model_calls + 1 "
-            "WHERE id = %(id)s AND (%(max)s::int IS NULL OR model_calls < %(max)s) "
-            "RETURNING model_calls",
-            {"id": fence.run_id, "max": max_calls},
+        chain = await _lock_chain(conn, fence.run_id)
+        if over := _over(chain, "model_calls", "max_model_calls", max_calls):
+            raise BudgetExceeded("budget:model_calls", over)
+        await conn.execute(
+            "UPDATE runs SET model_calls = model_calls + 1 WHERE id = ANY(%s)",
+            ([r["id"] for r in chain],),
         )
-        row = await cur.fetchone()
-    if row is None:
-        raise BudgetExceeded("budget:model_calls", f"max_model_calls={max_calls} reached")
-    return int(row["model_calls"])
+    return int(chain[0]["model_calls"]) + 1

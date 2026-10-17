@@ -142,6 +142,7 @@ class Worker:
             self._pool, self._settings, self._graphs, owner=self.consumer,
             on_heartbeat=lambda: self._queue.touch(self.consumer, delivery.message_id),
             release_requested=self._draining, bus=self._bus,
+            enqueue=self._relay.enqueue,  # children; a parent whose children all ended
         )  # fmt: skip
         try:
             run = await executor.execute(delivery.run_id)

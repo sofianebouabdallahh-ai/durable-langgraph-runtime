@@ -21,6 +21,12 @@ Patterns:
 
 `durability="sync"` is mandatory: the spike showed that with async durability a
 fenced-off zombie executes extra steps before noticing.
+
+Child runs (R2.8): a node's `spawn_children` interrupt is turned into a fan-out
+(`_fan_out`: children + waiting_children in one fenced transaction). When the
+parent is re-queued, `_resume_value` computes the fan-in from the children's
+results, and LangGraph re-runs the node with it. Runs that become queued are
+sent to the work queue only after their transaction commits (`enqueue`).
 """
 
 from __future__ import annotations
@@ -34,7 +40,6 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from typing import Any
 
 from langchain_core.callbacks import AsyncCallbackHandler
@@ -50,9 +55,28 @@ from agent_runtime.fencing import Fence, FencedError, check_fence
 from agent_runtime.graphs import GraphRegistry, GraphSpec
 from agent_runtime.graphs.assistant import AgentInput
 from agent_runtime.runs.events import EventType
+from agent_runtime.runs.fanout import (
+    ChildResult,
+    ChildSpec,
+    FanIn,
+    LocalSpawner,
+    RunSpawner,
+    Spawner,
+    WorkflowContext,
+    is_spawn,
+)
 from agent_runtime.runs.limits import RunLimits, RunOptions, resolve_limits
+from agent_runtime.runs.service import prepare
 from agent_runtime.runs.state import FailureReason, RunStatus
-from agent_runtime.runs.store import Event, Run, RunRepository, RunTerminal
+from agent_runtime.runs.store import (
+    Event,
+    FanOutLimits,
+    FanOutRejected,
+    NewChild,
+    Run,
+    RunRepository,
+    RunTerminal,
+)
 from agent_runtime.streaming.bus import EventBus, publish_events
 from agent_runtime.tools.builtin import default_tools
 from agent_runtime.tools.hooks import HookRegistry, default_hooks
@@ -206,6 +230,8 @@ class RunExecutor:
         tools: ToolRegistry | None = None,
         hooks: HookRegistry | None = None,
         policy: ToolPolicy | None = None,
+        enqueue: Callable[[uuid.UUID], Awaitable[object]] | None = None,
+        local_fanout: bool = False,
     ) -> None:
         self._pool = pool
         self._settings = settings
@@ -217,6 +243,10 @@ class RunExecutor:
         self._tools = tools or default_tools()
         self._hooks = hooks or default_hooks()
         self._policy = policy or RiskClassPolicy()
+        self._enqueue = enqueue  # send a run that became queued (children, fanned-in parent)
+        self._spawner: Spawner = (
+            LocalSpawner(graphs, settings.run_max_children) if local_fanout else RunSpawner()
+        )
 
     async def execute(self, run_id: uuid.UUID) -> Run:
         """Run (or resume) `run_id` to a stopping point and return its final state.
@@ -285,27 +315,43 @@ class RunExecutor:
             # Our step budget governs; LangGraph's recursion limit is only a backstop.
             "recursion_limit": limits.max_steps + 5,
         }
-        resuming = await checkpointer.aget_tuple(config) is not None
-        graph_input: Any = (
-            None if resuming else spec.to_graph_input(spec.input_model.model_validate(run.input))
-        )
-        if resuming and (await graph.aget_state(config)).interrupts:
-            # Paused on an approval (R1.4) and since approved: LangGraph re-runs the
-            # interrupted step and interrupt() returns the human's decision.
-            graph_input = Command(resume=run.resume_value)
         if run.started_at is None:  # set by the queued → running transition
             raise RuntimeError(f"run {run.id} is running without started_at")
-        elapsed = (datetime.now(UTC) - run.started_at).total_seconds()
-        remaining = limits.timeout_s - elapsed
-        if remaining <= 0:
+        deadline = run.started_at.timestamp() + limits.timeout_s
+        if deadline - time.time() <= 0:
             return await self._fail(fence, FailureReason.TIMEOUT, outbox)
 
+        graph_input: Any = None
+        pending: Any = None  # the interrupt this run stopped on, if any
+        if await checkpointer.aget_tuple(config) is not None:
+            state = await graph.aget_state(config)
+            pending = state.interrupts[0].value if state.interrupts else None
+        else:
+            graph_input = spec.to_graph_input(spec.input_model.model_validate(run.input))
+
         try:
-            final = await self._under_lease(
-                graph.ainvoke(graph_input, config, durability="sync", context=context),
-                fence,
-                remaining,
-            )
+            while True:
+                if is_spawn(pending):
+                    # Stopped on a fan-out: either it was never carried out (a crash, or
+                    # a rejection, before waiting_children) → do it now; or the children
+                    # have all ended → resume the node with their results.
+                    step = await self._fan_out_or_in(run, fence, pending, outbox, limits)
+                    if isinstance(step, Run):
+                        return step
+                    graph_input = Command(resume=step)
+                elif pending is not None:
+                    # Paused on an approval (R1.4) and since approved: LangGraph re-runs
+                    # the interrupted step and interrupt() returns the human's decision.
+                    graph_input = Command(resume=run.resume_value)
+                final = await self._under_lease(
+                    graph.ainvoke(graph_input, config, durability="sync", context=context),
+                    fence,
+                    deadline - time.time(),
+                )
+                interrupts = final.get("__interrupt__")
+                pending = interrupts[0].value if interrupts else None
+                if not is_spawn(pending):
+                    break
         except ReleaseRequested:
             return await self._release(fence, outbox)
         except CancelRequested:
@@ -325,16 +371,93 @@ class RunExecutor:
         except Exception as exc:
             log.exception("run %s failed", run.id)
             return await self._fail(fence, FailureReason.ERROR, outbox, detail=repr(exc))
-        if interrupts := final.get("__interrupt__"):
-            return await self._pause(fence, interrupts[0].value, outbox)
+        if pending is not None:
+            return await self._pause(fence, pending, outbox)
         return await self._complete(fence, spec.to_output(final), outbox)
+
+    # ------------------------------------------------------------- child runs
+
+    async def _fan_out_or_in(
+        self, run: Run, fence: Fence, payload: dict[str, Any], outbox: _Outbox, limits: RunLimits
+    ) -> Run | dict[str, Any]:
+        """A Run: the run now waits (or ended). A dict: resume the node with it."""
+        try:
+            specs = [ChildSpec.model_validate(c) for c in payload.get("children", [])]
+        except Exception as exc:
+            return {"rejected": f"invalid fan-out: {exc}"}
+        keys = [c.key for c in specs]
+        async with self._pool.connection() as conn:
+            existing = await RunRepository(conn).children(run.id, keys)
+        if not existing:
+            return await self._fan_out(run, fence, specs, payload, outbox, limits)
+        if run.interrupt_payload != payload:  # not the fan-out these children belong to
+            return {"rejected": "child keys must be unique within a run"}
+        if any(not c.status.is_terminal for c in existing) or len(existing) != len(keys):
+            raise RuntimeError(f"run {run.id} resumed before its children ended")
+        results = [
+            ChildResult.model_validate(
+                {"key": c.key, "run_id": c.run_id, "status": str(c.status),
+                 "reason": c.reason, "output": c.output}
+            )
+            for c in existing
+        ]  # fmt: skip
+        if not any(r.status == "completed" for r in results):
+            return await self._fail(
+                fence, FailureReason.CHILDREN_FAILED, outbox,
+                detail=f"all {len(results)} children failed or were cancelled",
+            )  # fmt: skip
+        fan_in = FanIn(children=results, partial=any(r.status != "completed" for r in results))
+        return fan_in.model_dump(mode="json")
+
+    async def _fan_out(
+        self,
+        run: Run,
+        fence: Fence,
+        specs: list[ChildSpec],
+        payload: dict[str, Any],
+        outbox: _Outbox,
+        limits: RunLimits,
+    ) -> Run | dict[str, Any]:
+        """Children + waiting_children in one fenced transaction, or a rejection the
+        node sees (R14.6). Children may not outlive their parent's deadline."""
+        assert run.started_at is not None
+        remaining = int(run.started_at.timestamp() + limits.timeout_s - time.time())
+        if remaining < 1:
+            return {"rejected": "no time left for children before the run's timeout"}
+        try:
+            children: list[NewChild] = []
+            for c in specs:
+                options = dict(c.options or {})
+                options["timeout_s"] = min(options.get("timeout_s", remaining), remaining)
+                p = prepare(self._graphs, self._settings, c.graph, c.input, options)
+                children.append(NewChild(c.key, p.graph_name, p.input, p.options, p.limits))
+        except Exception as exc:  # unknown graph, invalid input, option above a ceiling
+            return {"rejected": f"invalid child: {exc}"}
+        fan_out = FanOutLimits(
+            max_children=limits.max_children or self._settings.run_max_children,
+            max_depth=self._settings.run_max_depth,
+            max_descendants=self._settings.run_max_descendants,
+        )
+
+        async def work(repo: RunRepository) -> Run:
+            await outbox.flush(repo)
+            await repo.spawn_children(run, fence, children, fan_out, payload)
+            return await repo.get(run.id)
+
+        staged = list(outbox.pending)
+        try:
+            return await self._fenced_then_publish(fence, work)
+        except FanOutRejected as exc:
+            outbox.pending[:] = staged  # the transaction rolled back: they are still due
+            return {"rejected": exc.reason}
 
     def _agent_context(
         self, spec: GraphSpec, run: Run, fence: Fence, limits: RunLimits, outbox: _Outbox
-    ) -> RunContext | None:
-        """Everything an agent graph needs about this run (None for plain graphs)."""
+    ) -> RunContext | WorkflowContext:
+        """Everything the graph needs about this run: an agent's grants, hooks and
+        budgets, or a workflow's spawner."""
         if spec.agent is None:
-            return None
+            return WorkflowContext(spawner=self._spawner)
         fm = spec.agent.frontmatter
         tools = ToolRunContext(
             fence=fence,
@@ -391,7 +514,8 @@ class RunExecutor:
 
         async def work(repo: RunRepository) -> Run:
             await outbox.flush(repo)
-            await repo.save_result(fence.run_id, output)
+            partial = await repo.has_unsuccessful_children(fence.run_id)
+            await repo.save_result(fence.run_id, output, partial=partial)
             return await repo.transition(
                 fence.run_id, RunStatus.COMPLETED, event=EventType.RUN_COMPLETED,
                 fence=fence, payload={"steps": outbox.committed_steps},
@@ -413,9 +537,22 @@ class RunExecutor:
                     await check_fence(conn, fence)
                     run = await work(repo)
                 await publish_events(self._bus, repo.emitted)
-                return run
+            await self._send(repo.ready)
+            return run
         except FencedError:
             return await self._current(fence.run_id)
+
+    async def _send(self, run_ids: list[uuid.UUID]) -> None:
+        """After COMMIT: hand runs that became queued to the work queue. Best effort;
+        the outbox relay re-sends any that are lost."""
+        if self._enqueue is None:
+            return
+        for run_id in run_ids:
+            try:
+                await self._enqueue(run_id)
+            except Exception:
+                log.warning("run %s is queued but not sent; the relay will send it", run_id,
+                            exc_info=True)  # fmt: skip
 
     async def _check_interrupts(self, run_id: uuid.UUID) -> None:
         if self._release_requested.is_set():

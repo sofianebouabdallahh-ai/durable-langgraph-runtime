@@ -51,7 +51,11 @@ def settings() -> Settings:
 
 @pytest.fixture(scope="session")
 def test_settings(settings: Settings) -> Settings:
-    return settings.model_copy(update={"postgres_db": f"{settings.postgres_db}_test"})
+    # Queued runs accumulate in the shared test database, so admission control (R2.9)
+    # is effectively off; tests of it set their own limit.
+    return settings.model_copy(
+        update={"postgres_db": f"{settings.postgres_db}_test", "queue_depth_limit": 1_000_000}
+    )
 
 
 @pytest.fixture(scope="session")

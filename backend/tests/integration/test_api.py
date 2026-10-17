@@ -42,7 +42,7 @@ async def test_create_run_returns_202_with_location(client: httpx.AsyncClient) -
 
     run = (await client.get(f"/runs/{run_id}")).json()
     assert (run["status"], run["graph"], run["epoch"]) == ("queued", "toy", 0)
-    assert run["limits"] == {"timeout_s": 1200, "max_steps": 200}
+    assert run["limits"] == {"timeout_s": 1200, "max_steps": 200, "max_children": 6}
 
 
 async def test_full_lifecycle_through_the_api(

@@ -52,6 +52,54 @@ class NotWaitingForApproval(Exception):
         self.run = run
 
 
+class FanOutRejected(Exception):
+    """A fan-out breached a limit (R14.6) or was malformed. Nothing was created; the
+    spawning node sees this as an error it can handle, never as a crash."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+@dataclass(frozen=True, slots=True)
+class NewChild:
+    """A validated child run, ready to insert (see RunService.prepare)."""
+
+    key: str
+    graph_name: str
+    input: dict[str, Any]
+    options: dict[str, Any]
+    limits: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class ChildOutcome:
+    key: str
+    run_id: uuid.UUID
+    graph_name: str
+    status: RunStatus
+    reason: str | None
+    output: dict[str, Any] | None  # run_results.output when completed
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> ChildOutcome:
+        return cls(
+            key=row["child_key"],
+            run_id=row["id"],
+            graph_name=row["graph_name"],
+            status=RunStatus(row["status"]),
+            reason=row["reason"],
+            output=row["output"],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class FanOutLimits:
+    max_children: int
+    max_depth: int
+    max_descendants: int
+
+
 class RunNotFound(LookupError):
     def __init__(self, run_id: uuid.UUID) -> None:
         super().__init__(f"run {run_id} not found")
@@ -84,6 +132,16 @@ class Run:
     message_id: str | None = None
     interrupt_payload: dict[str, Any] | None = None  # what the run is waiting on (R1.4)
     resume_value: dict[str, Any] | None = None  # the human's decision, for Command(resume=…)
+    # the run tree (R2.8, R14.6): a root has no parent, root_run_id None and depth 0
+    root_run_id: uuid.UUID | None = None
+    depth: int = 0
+    child_key: str | None = None
+    child_total: int = 0
+    child_done: int = 0
+
+    @property
+    def root_id(self) -> uuid.UUID:
+        return self.root_run_id or self.id
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> Run:
@@ -112,6 +170,11 @@ class Run:
             message_id=row["message_id"],
             interrupt_payload=row["interrupt_payload"],
             resume_value=row["resume_value"],
+            root_run_id=row["root_run_id"],
+            depth=row["depth"],
+            child_key=row["child_key"],
+            child_total=row["child_total"],
+            child_done=row["child_done"],
         )
 
 
@@ -157,7 +220,7 @@ _RUN_COLUMNS = """
     id, graph_name, kind, thread_id, status, reason, epoch, owner, lease_expires_at,
     input, options, limits, steps, parent_run_id, session_id,
     created_at, started_at, finished_at, cancel_requested, reclaims, releases, message_id,
-    interrupt_payload, resume_value
+    interrupt_payload, resume_value, root_run_id, depth, child_key, child_total, child_done
 """
 
 
@@ -170,6 +233,11 @@ class RunRepository:
         # transaction commits (R1.5), never before: an event must exist in
         # Postgres before anyone hears about it, and a rolled-back one never.
         self.emitted: list[Event] = []
+        # Runs that became `queued` (spawned children; a parent whose children all
+        # ended). Like events, they are sent to the work queue only AFTER COMMIT:
+        # a message must never point at a row that might still roll back. The
+        # outbox relay re-sends any that are lost.
+        self.ready: list[uuid.UUID] = []
 
     async def create(
         self,
@@ -180,10 +248,14 @@ class RunRepository:
         options: dict[str, Any] | None = None,
         limits: dict[str, Any] | None = None,
         session_id: uuid.UUID | None = None,
-        parent_run_id: uuid.UUID | None = None,
+        parent: Run | None = None,
+        child_key: str | None = None,
         traceparent: str | None = None,
     ) -> Run:
-        """Insert a `queued` run and its `run.created` event, atomically."""
+        """Insert a `queued` run and its `run.created` event, atomically.
+
+        A child (`parent` + `child_key`) joins its parent's tree. Use
+        `spawn_children`, which also enforces the fan-out limits."""
         run_id = new_id()
         # R1.2: a chat turn continues its session's thread; anything else is its own thread.
         thread_id = str(session_id) if session_id is not None else str(run_id)
@@ -191,8 +263,9 @@ class RunRepository:
             cur = await self._conn.execute(
                 f"""
                 INSERT INTO runs (id, graph_name, kind, thread_id, input, options, limits,
-                                  session_id, parent_run_id, traceparent)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                  session_id, parent_run_id, root_run_id, depth, child_key,
+                                  traceparent)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING {_RUN_COLUMNS}
                 """,
                 (
@@ -204,12 +277,18 @@ class RunRepository:
                     Jsonb(options or {}),
                     Jsonb(limits or {}),
                     session_id,
-                    parent_run_id,
+                    parent.id if parent else None,
+                    parent.root_id if parent else None,
+                    parent.depth + 1 if parent else 0,
+                    child_key,
                     traceparent,
                 ),
             )
             row = _required(await cur.fetchone(), "INSERT INTO runs … RETURNING")
-            await self.append_event(run_id, epoch=0, type=EventType.RUN_CREATED, payload={})
+            await self.append_event(
+                run_id, epoch=0, type=EventType.RUN_CREATED,
+                payload={"parent_run_id": str(parent.id), "key": child_key} if parent else {},
+            )  # fmt: skip
         return Run.from_row(row)
 
     async def append_event(
@@ -298,27 +377,189 @@ class RunRepository:
                 current = await self.get(run_id)  # raises RunNotFound
                 raise InvalidTransition(current.status, target)
             await self.append_event(run_id, epoch=row["epoch"], type=event, payload=payload or {})
+            if target.is_terminal and row["parent_run_id"] is not None:
+                await self._child_ended(Run.from_row(row))
         return Run.from_row(row)
 
+    async def _child_ended(self, child: Run) -> None:
+        """Fan-in (R2.8), in the child's terminal transaction.
+
+        Every terminal transition goes through `transition`, so no path (worker,
+        reaper, API cancel) can forget this. The parent's row lock serialises
+        siblings: exactly one of them sees child_done reach child_total and
+        re-queues the parent, even when all finish at once. A parent that is no
+        longer waiting (cancelled) is left alone.
+        """
+        assert child.parent_run_id is not None
+        cur = await self._conn.execute(
+            """
+            UPDATE runs SET child_done = child_done + 1
+            WHERE id = %s AND status = 'waiting_children'
+            RETURNING epoch, child_done, child_total
+            """,
+            (child.parent_run_id,),
+        )
+        parent = await cur.fetchone()
+        if parent is None:
+            return
+        await self.append_event(
+            child.parent_run_id,
+            epoch=parent["epoch"],
+            type=EventType.CHILD_COMPLETED,
+            payload={"child_run_id": str(child.id), "key": child.child_key,
+                     "status": str(child.status), "reason": child.reason},
+        )  # fmt: skip
+        if parent["child_done"] == parent["child_total"]:
+            await self.transition(
+                child.parent_run_id, RunStatus.QUEUED, event=EventType.CHILDREN_COMPLETED,
+                payload={"children": parent["child_total"]},
+            )  # fmt: skip
+            self.ready.append(child.parent_run_id)
+
+    # ------------------------------------------------------------- the run tree
+
+    async def spawn_children(
+        self,
+        parent: Run,
+        fence: Fence,
+        children: list[NewChild],
+        limits: FanOutLimits,
+        payload: dict[str, Any],
+    ) -> list[Run]:
+        """Fan out (R2.8) in ONE fenced transaction: insert the children, count them,
+        and move the parent to waiting_children (its lease released). All or nothing.
+
+        Raises FanOutRejected for a breached limit (R14.6) or a reused key; the
+        transaction then rolls back and nothing exists.
+        """
+        n = len(children)
+        keys = [c.key for c in children]
+        if n == 0:
+            raise FanOutRejected("a fan-out needs at least one child")
+        if len(set(keys)) != n:
+            raise FanOutRejected("child keys must be unique")
+        if n > limits.max_children:
+            raise FanOutRejected(f"max_children={limits.max_children} exceeded ({n} children)")
+        if parent.depth + 1 > limits.max_depth:
+            raise FanOutRejected(f"max sub-run depth {limits.max_depth} exceeded")
+        async with self._conn.transaction():
+            await check_fence(self._conn, fence)
+            # Lock order everywhere is deepest first (child → parent → root): here the
+            # parent holds its fence lock, then the root.
+            cur = await self._conn.execute(
+                "SELECT descendants FROM runs WHERE id = %s FOR UPDATE", (parent.root_id,)
+            )
+            root = _required(await cur.fetchone(), "SELECT root")
+            if root["descendants"] + n > limits.max_descendants:
+                raise FanOutRejected(
+                    f"max {limits.max_descendants} descendants per root run exceeded"
+                )
+            created: list[Run] = []
+            for child in children:
+                run = await self.create(
+                    graph_name=child.graph_name, input=child.input,
+                    options=child.options, limits=child.limits,
+                    parent=parent, child_key=child.key,
+                )  # fmt: skip
+                created.append(run)
+            await self._conn.execute(
+                "UPDATE runs SET descendants = descendants + %s WHERE id = %s",
+                (n, parent.root_id),
+            )
+            await self._conn.execute(
+                "UPDATE runs SET child_total = child_total + %s, interrupt_payload = %s "
+                "WHERE id = %s",
+                (n, Jsonb(payload), parent.id),
+            )
+            await self.transition(
+                parent.id, RunStatus.WAITING_CHILDREN, event=EventType.CHILDREN_SPAWNED,
+                fence=fence,
+                payload={"children": [{"key": r.child_key, "run_id": str(r.id),
+                                       "graph": r.graph_name} for r in created]},
+            )  # fmt: skip
+            self.ready.extend(r.id for r in created)
+        return created
+
+    async def children(self, parent_id: uuid.UUID, keys: list[str]) -> list[ChildOutcome]:
+        """The children with these keys, in the order of `keys`, with their results."""
+        cur = await self._conn.execute(
+            """
+            SELECT r.id, r.child_key, r.graph_name, r.status, r.reason, rr.output
+            FROM runs r LEFT JOIN run_results rr ON rr.run_id = r.id
+            WHERE r.parent_run_id = %s AND r.child_key = ANY(%s)
+            """,
+            (parent_id, keys),
+        )
+        by_key = {row["child_key"]: ChildOutcome.from_row(row) for row in await cur.fetchall()}
+        return [by_key[k] for k in keys if k in by_key]
+
+    async def has_unsuccessful_children(self, parent_id: uuid.UUID) -> bool:
+        """`partial` (R2.8): some child of this run did not complete."""
+        cur = await self._conn.execute(
+            "SELECT EXISTS (SELECT 1 FROM runs WHERE parent_run_id = %s "
+            "AND status <> 'completed') AS partial",
+            (parent_id,),
+        )
+        row = await cur.fetchone()
+        return bool(row and row["partial"])
+
+    async def queue_depth(self) -> int:
+        """Runs waiting for a worker (R2.9). Counted in Postgres, the source of
+        truth: right even when Redis is down or holds duplicate messages."""
+        cur = await self._conn.execute("SELECT count(*) AS n FROM runs WHERE status = 'queued'")
+        row = await cur.fetchone()
+        return int(row["n"]) if row else 0
+
     async def request_cancel(self, run_id: uuid.UUID) -> Run:
-        """Cooperative cancel (R1.6). A run nobody is executing ends now; a
-        running one is flagged and its worker cancels it before its next node."""
+        """Cooperative cancel (R1.6), cascading to every live descendant (R2.8).
+
+        A run nobody is executing ends now; a running one is flagged and its
+        worker cancels it before its next node.
+
+        Locks are taken deepest first (grandchildren, children, then this run),
+        the same order as a child's fan-in (child → parent), so a cancel racing a
+        finishing child can't deadlock. Cancels are then APPLIED shallowest first:
+        once the parent is cancelled, a child that ends no longer re-queues it.
+        """
         async with self._conn.transaction():
             cur = await self._conn.execute(
-                f"UPDATE runs SET cancel_requested = true WHERE id = %s "
-                f"AND status NOT IN ('completed', 'failed', 'cancelled') RETURNING {_RUN_COLUMNS}",
-                (run_id,),
+                """
+                WITH RECURSIVE tree AS (
+                    SELECT id FROM runs WHERE parent_run_id = %(id)s
+                    UNION ALL
+                    SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id
+                )
+                SELECT r.id, r.depth FROM runs r JOIN tree USING (id)
+                WHERE r.status NOT IN ('completed', 'failed', 'cancelled')
+                ORDER BY r.depth DESC, r.id
+                FOR UPDATE OF r
+                """,
+                {"id": run_id},
             )
-            row = await cur.fetchone()
-            if row is None:
+            descendants = sorted(await cur.fetchall(), key=lambda r: (r["depth"], r["id"]))
+            run = await self._cancel_one(run_id)
+            if run is None:
                 raise RunTerminal(await self.get(run_id))  # or RunNotFound
-            run = Run.from_row(row)
-            if run.status is RunStatus.RUNNING:
-                return run
-            return await self.transition(
-                run_id, RunStatus.CANCELLED, event=EventType.RUN_CANCELLED,
-                reason="cancel_requested", payload={"reason": "cancel_requested"},
-            )  # fmt: skip
+            for d in descendants:
+                await self._cancel_one(d["id"])
+            return run
+
+    async def _cancel_one(self, run_id: uuid.UUID) -> Run | None:
+        cur = await self._conn.execute(
+            f"UPDATE runs SET cancel_requested = true WHERE id = %s "
+            f"AND status NOT IN ('completed', 'failed', 'cancelled') RETURNING {_RUN_COLUMNS}",
+            (run_id,),
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return None  # ended meanwhile
+        run = Run.from_row(row)
+        if run.status is RunStatus.RUNNING:
+            return run
+        return await self.transition(
+            run_id, RunStatus.CANCELLED, event=EventType.RUN_CANCELLED,
+            reason="cancel_requested", payload={"reason": "cancel_requested"},
+        )  # fmt: skip
 
     async def set_interrupt(self, run_id: uuid.UUID, payload: dict[str, Any] | None) -> None:
         """Record what the run waits on. Call inside the pause's fenced transaction."""
