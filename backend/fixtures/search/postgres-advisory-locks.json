@@ -1,0 +1,21 @@
+{
+  "query": "postgres advisory locks",
+  "aliases": [
+    "advisory locks postgresql",
+    "pg advisory lock"
+  ],
+  "results": [
+    {
+      "title": "Advisory locks in PostgreSQL",
+      "url": "https://docs.example.org/postgres/advisory-locks",
+      "snippet": "Application-defined locks identified by a 64-bit key, held per session or per transaction.",
+      "content": "pg_advisory_lock(key) blocks until the lock is free; pg_try_advisory_lock returns at once. Session-level locks survive transactions and must be released; transaction-level locks (pg_advisory_xact_lock) end with the transaction. They don't lock rows: they are for coordinating application work."
+    },
+    {
+      "title": "Row locks vs advisory locks",
+      "url": "https://blog.example.org/row-vs-advisory-locks",
+      "snippet": "SELECT ... FOR UPDATE locks real rows; advisory locks lock an idea.",
+      "content": "Prefer row locks when the thing you protect is a row: they compose with your data. Advisory locks fit leader election and one-at-a-time jobs. Neither replaces fencing tokens when a lock holder can pause and wake up after its lock was taken over."
+    }
+  ]
+}

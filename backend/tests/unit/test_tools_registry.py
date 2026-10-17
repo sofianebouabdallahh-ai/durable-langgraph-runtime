@@ -17,6 +17,7 @@ def test_default_registry_declares_risk_and_side_effects() -> None:
     reg = default_tools()
     assert reg.catalog() == {
         "calculator": "read",
+        "search": "read",
         "notify": "external_side_effect",
         "save_note": "write_internal",
         # sub-agent tools (CR-005), granted by the harness
@@ -76,3 +77,12 @@ def test_calculator_refuses_anything_but_arithmetic(expr: str) -> None:
 async def test_calculator_tool() -> None:
     ctx = ToolContext(run_id=uuid.uuid4(), epoch=1, key="k" * 64, pool=None)  # type: ignore[arg-type]
     assert await calculator(CalculatorArgs(expression="6*7"), ctx) == {"value": 42.0}
+
+
+def test_return_result_accepts_any_json_value() -> None:
+    """Live finding: a 7B model returned `result: 48`; a dict-only schema rejected it
+    until the sub-agent timed out."""
+    from agent_runtime.subagents.tools import ReturnArgs
+
+    for value in (48, 4.5, "48 slots", [1, 2], {"total": 48}, None):
+        assert ReturnArgs.model_validate({"summary": "s", "result": value}).result == value

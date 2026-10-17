@@ -1,0 +1,27 @@
+{
+  "query": "redis streams vs kafka",
+  "aliases": [
+    "kafka vs redis streams",
+    "redis streams kafka comparison"
+  ],
+  "results": [
+    {
+      "title": "Redis Streams: an append-only log inside Redis",
+      "url": "https://docs.example.org/redis/streams-intro",
+      "snippet": "Streams are an append-only data structure with consumer groups, acknowledgements and pending lists.",
+      "content": "Redis Streams store entries in memory with optional AOF persistence. Consumer groups give each message to one consumer; unacknowledged messages stay in a pending list and can be claimed with XAUTOCLAIM after an idle time. Retention is by length or ID, so a stream is usually short-lived work, not a long-term log."
+    },
+    {
+      "title": "Kafka: partitions, retention and replay",
+      "url": "https://docs.example.org/kafka/design",
+      "snippet": "Kafka keeps a replicated, partitioned log on disk for days or forever, and consumers track offsets.",
+      "content": "Kafka partitions a topic across brokers and replicates each partition. Consumers in a group split the partitions; ordering holds within a partition. Data is retained by time or size, so consumers can replay history. It scales to very high throughput, at the cost of running a cluster (and, historically, ZooKeeper or KRaft)."
+    },
+    {
+      "title": "Choosing a queue for background jobs",
+      "url": "https://blog.example.org/choosing-a-job-queue",
+      "snippet": "For a work queue with a small team, Redis Streams are often enough; Kafka shines for event history and fan-out.",
+      "content": "Rule of thumb: if you need a durable event history many services replay, use Kafka. If you need a work queue with acknowledgements and you already run Redis, Streams are simpler. Either way, keep the source of truth in your database and treat the queue as delivery."
+    }
+  ]
+}

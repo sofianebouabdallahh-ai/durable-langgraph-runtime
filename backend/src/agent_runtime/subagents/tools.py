@@ -51,7 +51,10 @@ class ProgressArgs(ToolArgs):
 
 class ReturnArgs(ToolArgs):
     summary: Annotated[str, Field(min_length=1, max_length=4000)]
-    result: dict[str, Any] | None = None
+    # Any JSON value: models naturally return `48` or a list, not only objects. (Found
+    # in the first live run: `result: 48` was rejected until the sub-agent timed out.)
+    # It is checked against the sub-agent's `output_schema` once schemas are registered.
+    result: Any = None
     status: Literal["success", "partial", "failed"] = "success"
 
 

@@ -61,6 +61,8 @@ class AgentSettings(BaseSettings):
 
     # Agent definitions (R15.1): one folder per agent, relative to the working directory.
     agents_dir: Path = Path("agents")
+    # The fixture search tool's data (R3.3), relative to the working directory.
+    search_fixtures_dir: Path = Path("fixtures/search")
 
 
 class Settings(AgentSettings):
@@ -103,6 +105,20 @@ class Settings(AgentSettings):
     admin_api_enabled: bool = True
 
     # Models (R3.1, R14.1, R14.7)
+    model_provider: Literal["scripted", "openai", "ollama"] = "scripted"  # CI: keyless
+    openai_api_key: SecretStr | None = None
+    openai_base_url: str = "https://api.openai.com/v1"
+    ollama_base_url: str = "http://127.0.0.1:11434/v1"
+    # Model per role (agent files say `model: <role>`); empty: the provider's default.
+    model_chat: str = ""
+    model_planner: str = ""
+    model_researcher: str = ""
+    model_critic: str = ""
+    model_synthesizer: str = ""
+    model_embed: str = ""
+    token_flush_ms: int = Field(default=20, gt=0)  # coalesce streamed tokens (R12.3)
+    scripted_streaming: bool = False  # the scripted model streams word by word (tests)
+    scripted_stream_delay_s: float = Field(default=0.0, ge=0)  # per streamed word (tests)
     # USD per million tokens, by model name; models not listed cost 0.
     model_prices: dict[str, ModelPrice] = Field(
         default_factory=lambda: {"scripted": ModelPrice(input_per_mtok=0, output_per_mtok=0)}

@@ -36,6 +36,7 @@ from langchain.agents.middleware.types import (
     ModelResponse,
     ToolCallRequest,
 )
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.runtime import Runtime
 from langgraph.types import Command
@@ -97,6 +98,14 @@ class RunContext:
     limits: RunLimits | None = None  # the run's budgets, for the soft limit (R14.2)
     soft_limit_ratio: float = 0.8
     record_usage: Callable[[str, int, int], None] | None = None  # (model, in, out tokens)
+    # The chat model for one call (the provider's; R3.1). Given the scripted model's
+    # offset; the default is the scripted model with this run's script.
+    chat_model: Callable[[int], BaseChatModel] | None = None
+
+    def model_for(self, offset: int) -> BaseChatModel:
+        if self.chat_model is not None:
+            return self.chat_model(offset)
+        return ScriptedChatModel(script=self.script, offset=offset)
 
     async def soft_limit(self) -> str | None:
         """The first budget at ≥ soft_limit_ratio of its limit, as a failure reason."""
@@ -185,9 +194,7 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
         sub = ctx.subagent
         if sub is not None and sub.returned is not None:  # return_result: end the loop here
             return ModelResponse(result=[AIMessage(content=str(sub.returned["summary"]))])
-        model = ScriptedChatModel(
-            script=ctx.script, offset=script_offset(request.state.get("messages", []))
-        )
+        model = ctx.model_for(script_offset(request.state.get("messages", [])))
         wrap_up: list[str | None] = [None]
 
         async def charge() -> None:

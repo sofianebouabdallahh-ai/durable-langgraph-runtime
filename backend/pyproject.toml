@@ -9,6 +9,7 @@ dependencies = [
     "alembic>=1.20.0",
     "fastapi>=0.141.1",
     "langchain>=1.4.2",
+    "langchain-openai>=1.0",
     "langgraph>=1.2.12",
     "langgraph-checkpoint-postgres>=3.1.2",
     "psycopg-pool>=3.3.3",
@@ -95,6 +96,7 @@ testpaths = ["tests"]
 markers = [
     "integration: needs Postgres/Redis running (make up)",
     "e2e: real API and worker processes (tests/e2e); also marked integration",
+    "live: needs a real model provider (make llm-up); never in CI",
 ]
 addopts = "-ra --strict-markers"
 asyncio_mode = "auto"

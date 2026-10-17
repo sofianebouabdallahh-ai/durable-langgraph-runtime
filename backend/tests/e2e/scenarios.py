@@ -624,6 +624,77 @@ async def chat_crash(c: Cluster) -> Report:
     return r
 
 
+# ------------------------------------------------------ phase 6c: the chat agent
+
+
+async def chat_subagents(c: Cluster) -> Report:
+    """AC37 / SC21: in one chat turn the chat agent spawns `researcher` and
+    `data-analyst`; both run concurrently in the main run's worker; their progress
+    reaches the session stream (on another replica) while they run; the answer
+    uses both results."""
+    r = Report("parallel sub-agents in a chat (AC37)")
+    sid = await _session(c)
+    h = "${spawn_subagent[%d].handle}"
+    script = [
+        {"tool_calls": [
+            {"name": "spawn_subagent", "args": {"agent": "researcher",
+                                                "task": "What are Redis Streams for?"}},
+            {"name": "spawn_subagent", "args": {"agent": "data-analyst",
+                                                "task": "12 workers x 4 slots: total?"}},
+        ]},
+        {"tool_calls": [{"name": "wait_subagents",
+                         "args": {"handles": [h % 0, h % 1], "timeout_s": 60}}]},
+        {"tool_calls": [{"name": "save_note",
+                         "args": {"text": "Both: ${wait_subagents[0].completed}"}}]},
+        {"content": "Combined."},
+    ]  # fmt: skip
+    subs = {
+        "researcher": [
+            {"tool_calls": [{"name": "search", "args": {"query": "redis streams vs kafka"}}]},
+            {"tool_calls": [{"name": "report_progress", "args": {"message": "read the sources",
+                                                                 "percent": 80}}]},
+            {"tool_calls": [{"name": "save_note", "args": {"text": "not mine"}}]},  # denied
+            {"tool_calls": [{"name": "return_result", "args": {"summary": "Work queues."}}]},
+        ],
+        "data-analyst": [
+            {"tool_calls": [{"name": "calculator", "args": {"expression": "12*4"}}]},
+            {"tool_calls": [{"name": "return_result", "args": {"summary": "48 slots."}}]},
+        ],
+    }  # fmt: skip
+    stream = asyncio.create_task(read_sse(c.clients[1], f"/sessions/{sid}/stream",
+                                          stop_after=11, timeout_s=90))  # fmt: skip
+    await asyncio.sleep(0.5)
+    resp = await c.client.post(f"/sessions/{sid}/messages", json={
+        "content": "research and compute", "script": script, "subagent_scripts": subs})  # fmt: skip
+    resp.raise_for_status()
+    run_id = str(resp.json()["run_id"])
+    await c.wait(lambda: c.status_is(run_id, "completed", "failed"), timeout_s=60,
+                 what="the turn completes")  # fmt: skip
+
+    run, events = await c.run(run_id), await c.events(run_id)
+    owner = next(e for e in events if e["type"] == "run.started")["payload"]["owner"]
+    workers = {e["payload"]["worker"] for e in events if e["type"] == "subagent.spawned"}
+    got = await stream
+    live = [e.get("event") for e in got.events]
+    notes = await c.rows("SELECT text FROM notes WHERE run_id = %s", run_id)
+    r.check("the turn completed", run["status"] == "completed", run["status"])
+    r.check("both sub-agents ran in the main run's worker", workers == {owner}, str(workers))
+    statuses = sorted(s["status"] for s in run["subagents"])
+    r.check("both completed", statuses == ["completed", "completed"], str(statuses))
+    progress_at = live.index("subagent.progress") if "subagent.progress" in live else -1
+    done_at = max((i for i, t in enumerate(live) if t == "subagent.completed"), default=-1)
+    seen = [t for t in live if t and t.startswith("sub")]
+    r.check("progress reached the session stream (other replica) while they ran",
+            0 <= progress_at < done_at, str(seen))  # fmt: skip
+    text = notes[0]["text"] if notes else ""
+    r.check("the answer uses both results", "Work queues." in text and "48 slots." in text,
+            text[:120])  # fmt: skip
+    denied = [e["payload"] for e in events if e["type"] == "policy.decision"]
+    refused = any(p["tool"] == "save_note" and p["kind"] == "not_granted" for p in denied)
+    r.check("a sub-agent can't use the chat agent's tools", refused)
+    return r
+
+
 SCENARIOS: dict[str, tuple[Callable[[Cluster], Awaitable[Report]], dict[str, Any]]] = {
     "crash": (crash, {}),
     "zombie": (zombie, {}),
@@ -638,6 +709,7 @@ SCENARIOS: dict[str, tuple[Callable[[Cluster], Awaitable[Report]], dict[str, Any
     "subagents-crash": (subagents_crash, {}),
     "chat-sessions": (chat_sessions, {"api_replicas": [{}, {}]}),
     "chat-crash": (chat_crash, {}),
+    "chat-subagents": (chat_subagents, {"api_replicas": [{}, {}]}),
 }
 
 

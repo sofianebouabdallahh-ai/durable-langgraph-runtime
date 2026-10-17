@@ -1,0 +1,15 @@
+{
+  "query": "python asyncio taskgroup",
+  "aliases": [
+    "asyncio task group",
+    "asyncio structured concurrency"
+  ],
+  "results": [
+    {
+      "title": "asyncio.TaskGroup",
+      "url": "https://docs.example.org/python/asyncio-taskgroup",
+      "snippet": "Structured concurrency: tasks started in the group are awaited, and one failure cancels the rest.",
+      "content": "async with asyncio.TaskGroup() as tg: tg.create_task(...). On exit the group waits for its tasks; if one raises, the others are cancelled and the errors are raised together as an ExceptionGroup. Prefer it to bare gather() for new code."
+    }
+  ]
+}

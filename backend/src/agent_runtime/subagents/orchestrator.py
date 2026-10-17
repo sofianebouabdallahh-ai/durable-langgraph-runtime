@@ -49,7 +49,7 @@ from agent_runtime.db import Conn, Pool
 from agent_runtime.fencing import Fence, FencedError, check_fence
 from agent_runtime.models.scripted import ScriptTurn
 from agent_runtime.runs.outbox import Outbox
-from agent_runtime.streaming.bus import EventBus, publish_events
+from agent_runtime.streaming.bus import EventBus, StreamEvent, publish_events, session_channel
 from agent_runtime.subagents.store import Invocation, SpawnRefused, Status, SubagentRepository
 from agent_runtime.subagents.tools import SUB_TOOLS, SubagentToolError
 from agent_runtime.tools.hooks import HookRegistry
@@ -138,7 +138,7 @@ class SubagentRuntime:
         async with o.pool.connection() as conn:
             repo = SubagentRepository(conn)
             dropped = await repo.report_progress(o.fence, self.handle, message, percent)
-        await publish_events(o.bus, repo.emitted)
+        await o.announce(repo.emitted)
         return dropped
 
     async def return_result(self, result: dict[str, Any]) -> None:
@@ -173,8 +173,11 @@ class SubagentOrchestrator:
         deadline: float,  # the main run's timeout, as a time.time() value
         scripts: dict[str, list[ScriptTurn]] | None = None,
         limits: SubagentLimits | None = None,
+        worker: str | None = None,  # the main run's owner, recorded on subagent.spawned
+        session_id: uuid.UUID | None = None,  # chat turns: events also go to the session
         model_caller: Callable[[], Any] | None = None,  # retries + breaker (R14.7)
         usage_recorder: Callable[[Outbox], Callable[[str, int, int], None]] | None = None,
+        chat_model: Callable[[str, float, list[ScriptTurn]], Callable[[int], Any]] | None = None,
     ) -> None:
         self.pool = pool
         self.fence = fence
@@ -188,8 +191,11 @@ class SubagentOrchestrator:
         self._policy = policy
         self._deadline = deadline
         self._scripts = scripts or {}
+        self.worker = worker
+        self._session_id = session_id
         self._model_caller = model_caller
         self._usage_recorder = usage_recorder
+        self._chat_model = chat_model
         self._tasks: dict[uuid.UUID, asyncio.Task[None]] = {}
         self._sem = asyncio.Semaphore(self.limits.max_parallel)
         self.wrap_up = False  # the soft limit was reached (R16.8)
@@ -243,11 +249,11 @@ class SubagentOrchestrator:
                 repo = SubagentRepository(conn)
                 inv, _ = await repo.spawn(
                     self.fence, key=key, agent=self._defs[agent].id, task=task,
-                    context=context, max_total=self.limits.max_total,
+                    context=context, max_total=self.limits.max_total, worker=self.worker,
                 )  # fmt: skip
         except SpawnRefused as exc:
             raise SubagentToolError(str(exc)) from None
-        await publish_events(self.bus, repo.emitted)
+        await self.announce(repo.emitted)
         if inv.is_running and inv.handle not in self._tasks:
             self._start(inv)  # replayed spawn of a live handle: already running here
         return inv
@@ -281,6 +287,23 @@ class SubagentOrchestrator:
         await self._list([handle])
         async with self.pool.connection() as conn:
             return await SubagentRepository(conn).request_cancel(self.fence, handle, reason)
+
+    async def announce(self, events: list[Any]) -> None:
+        """After commit: the run's channel (persisted events), and, for a chat turn,
+        the session's channel as transient events, so the chat shows sub-agents'
+        progress live (CR-005 R16.10, AC37)."""
+        await publish_events(self.bus, events)
+        if self.bus is None or self._session_id is None:
+            return
+        for e in events:
+            try:
+                await self.bus.publish(session_channel(self._session_id), StreamEvent(
+                    run_id=e.run_id, seq=None, ts=e.ts, epoch=e.epoch, type=str(e.type),
+                    payload=e.payload, after_seq=0,
+                ))  # fmt: skip
+            except Exception:
+                log.warning("session relay of %s failed (transient: dropped)", e.type,
+                            exc_info=True)  # fmt: skip
 
     @staticmethod
     def outcome(inv: Invocation) -> dict[str, Any]:
@@ -402,6 +425,10 @@ class SubagentOrchestrator:
             extras["caller"] = self._model_caller()
         if self._usage_recorder is not None:  # its tokens and cost roll up into the run
             extras["record_usage"] = self._usage_recorder(outbox)
+        if self._chat_model is not None:  # its own model role (R16.2: `model:` in its file)
+            extras["chat_model"] = self._chat_model(
+                fm.model, fm.temperature, self._scripts.get(inv.name, [])
+            )
         return RunContext(
             tools, pipeline, max_model_calls=self.run_limits.max_model_calls,
             script=self._scripts.get(inv.name, []), subagent=runtime, **extras,
@@ -442,7 +469,7 @@ class SubagentOrchestrator:
                     if outbox is not None:
                         await outbox.flush(repo.runs)  # what its last, unfinished step staged
                     await repo.finish(self.fence, handle, status, result)
-            await publish_events(self.bus, repo.emitted)
+            await self.announce(repo.emitted)
         except FencedError:
             log.info("sub-agent %s: not finished here (fenced off)", handle)
 
