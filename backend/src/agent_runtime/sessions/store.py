@@ -284,6 +284,15 @@ class SessionRepository:
         )
         return [Message.from_row(r) for r in await cur.fetchall()]
 
+    async def recent_user_messages(self, session_id: uuid.UUID, *, within_s: float) -> int:
+        cur = await self._conn.execute(
+            "SELECT count(*) AS n FROM session_messages WHERE session_id = %s AND type = 'user' "
+            "AND created_at > now() - make_interval(secs => %s)",
+            (session_id, within_s),
+        )
+        row = await cur.fetchone()
+        return int(row["n"]) if row else 0
+
     async def add_usage(self, session_id: uuid.UUID, tokens: int, cost: float) -> None:
         await self._conn.execute(
             "UPDATE sessions SET tokens = tokens + %s, cost = cost + %s WHERE id = %s",

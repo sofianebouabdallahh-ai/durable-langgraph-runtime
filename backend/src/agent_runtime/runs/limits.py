@@ -32,6 +32,8 @@ class RunOptions(BaseModel):
     max_steps: Annotated[int, Field(gt=0)] | None = None
     max_model_calls: Annotated[int, Field(gt=0)] | None = None
     max_tool_calls: Annotated[int, Field(gt=0)] | None = None
+    max_tokens: Annotated[int, Field(gt=0)] | None = None
+    max_cost_usd: Annotated[float, Field(gt=0)] | None = None
     max_children: Annotated[int, Field(gt=0)] | None = None  # per fan-out (R2.9)
 
 
@@ -42,6 +44,8 @@ class RunLimits(BaseModel):
     max_steps: Annotated[int, Field(gt=0)]
     max_model_calls: Annotated[int, Field(gt=0)] | None = None  # agent graphs (R14.1)
     max_tool_calls: Annotated[int, Field(gt=0)] | None = None
+    max_tokens: Annotated[int, Field(gt=0)] | None = None  # agent graphs (R14.1)
+    max_cost_usd: Annotated[float, Field(gt=0)] | None = None
     max_children: Annotated[int, Field(gt=0)] | None = None  # None in limits stored before 5a
 
 
@@ -53,6 +57,8 @@ class Profile(BaseModel):
     timeout_s: int | None = None
     max_model_calls: int | None = None
     max_tool_calls: int | None = None
+    max_tokens: int | None = None
+    max_cost_usd: float | None = None
 
 
 class LimitAboveCeiling(ValueError):
@@ -69,11 +75,14 @@ def resolve_limits(
     """ceiling ≥ profile ≥ options. An option above its CEILING is rejected (422);
     otherwise the effective limit is the tightest of the three that are set."""
     profile = profile or Profile()
-    ceilings: dict[str, int | None] = {
+    agent = profile.max_model_calls is not None  # agent graphs have a model-call profile
+    ceilings: dict[str, float | None] = {
         "timeout_s": settings.run_timeout_s,
         "max_steps": settings.run_max_steps,
         "max_model_calls": settings.ceiling_model_calls if profile.max_model_calls else None,
         "max_tool_calls": settings.ceiling_tool_calls if profile.max_tool_calls else None,
+        "max_tokens": settings.ceiling_tokens if agent else None,
+        "max_cost_usd": settings.ceiling_cost_usd if agent else None,
         "max_children": settings.run_max_children,
     }
     resolved: dict[str, Any] = {}
@@ -95,4 +104,6 @@ def profile_of(spec: GraphSpec) -> Profile | None:
         timeout_s=fm.limits.timeout_s,
         max_model_calls=fm.max_turns,
         max_tool_calls=fm.limits.max_tool_calls,
+        max_tokens=fm.limits.max_tokens,
+        max_cost_usd=fm.limits.max_cost_usd,
     )

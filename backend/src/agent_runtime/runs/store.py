@@ -679,6 +679,29 @@ class RunRepository:
             raise RunNotFound(run_id)
         return int(row["steps"])
 
+    async def add_usage(self, run_id: uuid.UUID, tokens: int, cost: float) -> None:
+        """Tokens and cost of a committed step (R14.1), for the run and its ancestors
+        (roll-up), and for its session. Inside the step's (fenced) transaction; the run
+        row is already locked, ancestors are locked here, deepest first."""
+        await self._conn.execute(
+            """
+            UPDATE runs SET tokens = tokens + %(t)s, cost = cost + %(c)s
+            WHERE id IN (
+                SELECT id FROM runs
+                WHERE id = %(id)s
+                   OR id = (SELECT parent_run_id FROM runs WHERE id = %(id)s)
+                   OR id = (SELECT root_run_id FROM runs WHERE id = %(id)s)
+                ORDER BY depth DESC FOR NO KEY UPDATE
+            )
+            """,
+            {"id": run_id, "t": tokens, "c": cost},
+        )
+        await self._conn.execute(
+            "UPDATE sessions SET tokens = tokens + %(t)s, cost = cost + %(c)s "
+            "WHERE id = (SELECT session_id FROM runs WHERE id = %(id)s)",
+            {"id": run_id, "t": tokens, "c": cost},
+        )
+
     async def save_result(
         self, run_id: uuid.UUID, output: dict[str, Any], *, partial: bool = False
     ) -> None:

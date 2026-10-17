@@ -52,6 +52,7 @@ from agent_runtime.db import Conn, Pool
 from agent_runtime.fencing import Fence, FencedError, check_fence
 from agent_runtime.graphs import GraphRegistry, GraphSpec
 from agent_runtime.graphs.assistant import AgentInput, granted_tools, subagent_graph
+from agent_runtime.models.retry import CircuitOpen, ModelCaller, breaker_for
 from agent_runtime.runs.events import EventType
 from agent_runtime.runs.fanout import (
     ChildResult,
@@ -89,7 +90,7 @@ from agent_runtime.tools.hooks import (
     default_hooks,
     run_observers,
 )
-from agent_runtime.tools.invocations import BudgetExceeded
+from agent_runtime.tools.invocations import BudgetExceeded, LoopDetected
 from agent_runtime.tools.middleware import RunContext, TurnDenied, TurnInfo
 from agent_runtime.tools.pipeline import Grant, ToolPipeline, ToolRunContext
 from agent_runtime.tools.policy import RiskClassPolicy, ToolPolicy
@@ -189,6 +190,14 @@ async def _transcript_stats(conn: Conn, session_id: uuid.UUID) -> tuple[dict[str
     return stats, row["text"] if row else None
 
 
+def _budget_limited(state: dict[str, Any]) -> str | None:
+    """The reason, if the run's last answer is a budget-limited wrap-up (R14.2)."""
+    messages = state.get("messages") or []
+    last = messages[-1] if messages else None
+    reason = getattr(last, "additional_kwargs", {}).get("budget_limited")
+    return str(reason) if reason else None
+
+
 def _written_by(metadata: Any, run: Run) -> bool:
     """Is the thread's latest checkpoint this run's own (so: resume it)?"""
     if "run_id" in metadata:
@@ -241,6 +250,9 @@ class RunExecutor:
         self._enqueue = enqueue  # send a run that became queued (children, fanned-in parent)
         self._orchestrator: SubagentOrchestrator | None = None  # set for agents with sub-agents
         self._transcript: TranscriptWriter | None = None  # set for chat turns
+        # A release the worker must NOT re-send at once (an open circuit breaker): the
+        # outbox relay re-sends it once its message is stale, which is the backoff.
+        self.deferred = False
         self._spawner: Spawner = (
             LocalSpawner(graphs, settings.run_max_children) if local_fanout else RunSpawner()
         )
@@ -382,6 +394,12 @@ class RunExecutor:
                     break
         except ReleaseRequested:
             return await self._release(fence, outbox)
+        except CircuitOpen as exc:  # R14.7: the provider is failing; don't burn retries
+            log.warning("run %s: %s; releasing it", run.id, exc)
+            self.deferred = True  # the relay re-sends it later (a natural backoff)
+            return await self._release(fence, outbox, reason="circuit_open")
+        except LoopDetected as exc:  # R14.4
+            return await self._fail(fence, FailureReason.LOOP_DETECTED, outbox, detail=str(exc))
         except CancelRequested:
             return await self._end(
                 fence, RunStatus.CANCELLED, EventType.RUN_CANCELLED,
@@ -403,6 +421,12 @@ class RunExecutor:
             return await self._fail(fence, FailureReason.ERROR, outbox, detail=repr(exc))
         if pending is not None:
             return await self._pause(fence, pending, outbox)
+        if reason := _budget_limited(final):
+            # R14.2: the wrap-up answer is stored, and the run ends failed(budget:*).
+            return await self._complete(
+                fence, spec.to_output(final) | {"budget_limited": True}, outbox,
+                failed=FailureReason(reason),
+            )  # fmt: skip
         return await self._complete(fence, spec.to_output(final), outbox)
 
     # ------------------------------------------------------------- child runs
@@ -504,6 +528,8 @@ class RunExecutor:
                     max_total=self._settings.subagent_max_total,
                     default_timeout_s=self._settings.subagent_timeout_s,
                 ),
+                model_caller=self._model_caller,
+                usage_recorder=self._usage_recorder,
             )  # fmt: skip
         caps = {t.name: t.max_calls for t in fm.tools}
         tools = ToolRunContext(
@@ -524,8 +550,29 @@ class RunExecutor:
         )  # fmt: skip
         return RunContext(
             tools, pipeline, max_model_calls=limits.max_model_calls, script=inp.script,
-            orchestrator=self._orchestrator, turn=turn,
+            orchestrator=self._orchestrator, turn=turn, caller=self._model_caller(),
+            limits=limits, soft_limit_ratio=self._settings.soft_limit_ratio,
+            record_usage=self._usage_recorder(outbox),
         )  # fmt: skip
+
+    def _model_caller(self) -> ModelCaller:
+        s = self._settings
+        return ModelCaller(
+            attempts=s.model_retry_attempts, base_s=s.model_retry_base_s,
+            cap_s=s.model_retry_cap_s,
+            breaker=breaker_for("scripted", failures=s.breaker_failures,
+                                window_s=s.breaker_window_s, open_s=s.breaker_open_s),
+        )  # fmt: skip
+
+    def _usage_recorder(self, outbox: Outbox) -> Callable[[str, int, int], None]:
+        prices = self._settings.model_prices
+
+        def record(model: str, tokens_in: int, tokens_out: int) -> None:
+            price = prices.get(model)
+            cost = price.cost(tokens_in, tokens_out) if price else 0.0
+            outbox.add_usage(tokens_in + tokens_out, cost)
+
+        return record
 
     # ------------------------------------------------------- sessions (R15.6)
 
@@ -625,7 +672,16 @@ class RunExecutor:
                 except Exception:
                     log.warning("run %s: heartbeat hook failed", fence.run_id, exc_info=True)
 
-    async def _complete(self, fence: Fence, final: dict[str, Any], outbox: Outbox) -> Run:
+    async def _complete(
+        self,
+        fence: Fence,
+        final: dict[str, Any],
+        outbox: Outbox,
+        *,
+        failed: FailureReason | None = None,
+    ) -> Run:
+        """Store the output and end the run: completed, or failed(budget:*) when the
+        output is a budget-limited wrap-up answer (R14.2)."""
         await self._settle_subagents("the main run completed")
         output = json.loads(json.dumps(final, default=str))  # JSON-safe copy of the state
 
@@ -633,6 +689,14 @@ class RunExecutor:
             await outbox.flush(repo)
             partial = await repo.has_unsuccessful_children(fence.run_id)
             await repo.save_result(fence.run_id, output, partial=partial)
+            if failed is not None:
+                payload = {"reason": str(failed), "budget_limited": True}
+                if self._transcript is not None:
+                    await self._transcript.write_event(repo.conn, "error", payload)
+                return await repo.transition(
+                    fence.run_id, RunStatus.FAILED, event=EventType.RUN_FAILED, fence=fence,
+                    reason=str(failed), payload=payload,
+                )  # fmt: skip
             return await repo.transition(
                 fence.run_id, RunStatus.COMPLETED, event=EventType.RUN_COMPLETED,
                 fence=fence, payload={"steps": outbox.committed_steps},
@@ -701,7 +765,7 @@ class RunExecutor:
 
         return await self._fenced_then_publish(fence, work)
 
-    async def _release(self, fence: Fence, outbox: Outbox) -> Run:
+    async def _release(self, fence: Fence, outbox: Outbox, *, reason: str = "draining") -> Run:
         """Graceful hand-off (R10.7): back to `queued`, lease cleared, not a reclaim."""
         await self._settle_subagents(None)
 
@@ -709,7 +773,7 @@ class RunExecutor:
             await outbox.flush(repo)
             return await repo.transition(
                 fence.run_id, RunStatus.QUEUED, event=EventType.RUN_RELEASED,
-                fence=fence, payload={"owner": self.owner},
+                fence=fence, payload={"owner": self.owner, "reason": reason},
             )  # fmt: skip
 
         return await self._fenced_then_publish(fence, work)

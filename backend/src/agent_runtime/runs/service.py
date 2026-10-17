@@ -12,7 +12,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from agent_runtime.admin import AdminRepository
@@ -37,13 +37,22 @@ class AdmissionPaused(Exception):
 
 
 class Overloaded(Exception):
-    """Backpressure (R2.9): too many runs are waiting for a worker."""
+    """Admission control: backpressure (R2.9) or a rate / cost ceiling (R14.8)."""
 
-    def __init__(self, depth: int, limit: int, retry_after_s: int) -> None:
-        super().__init__(f"{depth} runs are queued (limit {limit}); retry later")
+    def __init__(
+        self,
+        depth: int,
+        limit: int,
+        retry_after_s: int,
+        *,
+        reason: str = "queue_depth",
+        detail: str | None = None,
+    ) -> None:
+        super().__init__(detail or f"{depth} runs are queued (limit {limit}); retry later")
         self.depth = depth
         self.limit = limit
         self.retry_after_s = retry_after_s
+        self.reason = reason  # queue_depth | rate_limited | daily_budget
 
 
 @dataclass(frozen=True)
@@ -146,6 +155,24 @@ class RunService:
             raise Overloaded(
                 depth, self._settings.queue_depth_limit, self._settings.overload_retry_after_s
             )
+        if (ceiling := self._settings.global_daily_cost_usd) is not None:
+            spent = await self.cost_today()
+            if spent >= ceiling:  # R14.8: new runs are refused; runs in flight finish
+                raise Overloaded(
+                    depth, self._settings.queue_depth_limit, retry_after_s=_until_midnight_s(),
+                    reason="daily_budget",
+                    detail=f"today's cost ceiling (${ceiling:g}) is reached (${spent:.4f})",
+                )  # fmt: skip
+
+    async def cost_today(self) -> float:
+        """Spend since midnight UTC, over root runs only (children roll up into them)."""
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT coalesce(sum(cost), 0) AS spent FROM runs WHERE parent_run_id IS NULL "
+                "AND created_at >= date_trunc('day', now() AT TIME ZONE 'utc') AT TIME ZONE 'utc'"
+            )
+            row = await cur.fetchone()
+        return float(row["spent"]) if row else 0.0
 
     async def queue_depth(self) -> int:
         """Runs waiting for a worker (R2.9), cached for `queue_depth_cache_s` so a
@@ -230,3 +257,9 @@ class RunService:
         if run.status is RunStatus.QUEUED and self._relay is not None:
             await self._relay.enqueue(run.id)
         return run
+
+
+def _until_midnight_s() -> int:
+    now = datetime.now(UTC)
+    tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return max(1, int((tomorrow - now).total_seconds()))

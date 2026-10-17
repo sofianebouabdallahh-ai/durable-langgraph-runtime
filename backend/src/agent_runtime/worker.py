@@ -165,15 +165,18 @@ class Worker:
             log.exception("run %s: execution failed; leaving the message for the reaper",
                           delivery.run_id)  # fmt: skip
             return
-        await self._settle(delivery, run)
+        await self._settle(delivery, run, deferred=executor.deferred)
         self.handled += 1
 
-    async def _settle(self, delivery: Delivery, run: Run) -> None:
+    async def _settle(self, delivery: Delivery, run: Run, *, deferred: bool = False) -> None:
         if run.status in _DONE:
             await self._queue.ack(delivery.message_id)
         elif run.status is RunStatus.QUEUED and run.owner is None:
-            # Released by us: hand it straight to another worker, then drop ours.
-            await self._relay.enqueue(run.id)
+            # Released by us: hand it straight to another worker, then drop ours. A
+            # deferred release (open circuit breaker) is left to the relay: it re-sends
+            # the run once its message is stale, which is the backoff (R14.7).
+            if not deferred:
+                await self._relay.enqueue(run.id)
             await self._queue.ack(delivery.message_id)
         elif run.owner is not None and run.owner != self.consumer:
             # Another live worker owns the run. Our message is a duplicate *unless* the new
