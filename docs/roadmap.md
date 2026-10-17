@@ -168,6 +168,8 @@ Estimates are focused hours and only rough guesses; we'll correct them as we go.
 
 **Done when:** **AC18**, **AC19**, **AC26–AC28** (runaway agent, loop, ceilings), **AC33–AC35** (definitions, tool hooks, session hooks) and **AC37**, **AC39** (parallel sub-agents, isolation) pass.
 
+> **Re-plan (proposed, 2026-10-17):** after phase 6 comes a **local release** that people clone and run on their own machine ([plans/local-release.md](plans/local-release.md): L1 containerise & setup → L2 local Studio backend → L3 UI → L4 dashboards & local Kubernetes → L5 v0.1 & feedback). Then, shaped by that feedback, the **hosted beta** ([architecture/beta-platform.md](architecture/beta-platform.md)). The phases below are kept for reference until that plan is accepted.
+
 ### Phase 7 — Sandboxes · ~10–12 h
 **Goal:** risky tools run in a disposable, locked-down container per run.
 - `sandbox-python` image, hardened (R13.3)
