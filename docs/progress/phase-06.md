@@ -108,5 +108,5 @@
 
 ### Known issues & follow-ups
 
-- **One unexplained test failure.** One full coverage run (run right after the 5× e2e loop) had 1 failing test out of 323. Its output wasn't kept, and **5 further full runs passed** (323/323 each). The flaky test is not identified yet. Failure output is now always kept so the next occurrence names it.
+- **One unexplained test failure.** One full coverage run (run right after the 5× e2e loop) had 1 failing test out of 323. pytest named it (`-ra`), but my log filter matched only the summary line, so the name was lost. **5 further full runs passed** (323/323 each). The flaky test is not identified yet. Full logs are kept from now on, so the next occurrence will name it.
 - **No token streaming yet:** `run.status` / `token` transient events and the partial reply on cancel come with real models in 6c.
