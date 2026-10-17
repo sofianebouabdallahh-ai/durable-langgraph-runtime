@@ -64,7 +64,7 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 | 1 | Durable single run | ✅ Done — [summary](progress/phase-01.md) |
 | 2 | Distributed workers | ✅ Done — [summary](progress/phase-02.md) |
 | 3 | Streaming across replicas | ✅ Done — [summary](progress/phase-03.md) |
-| 4 | Tools & human-in-the-loop | ⏳ Next |
+| 4 | Tools & human-in-the-loop | 🚧 In progress (`feat/phase-04-tools-hitl`) |
 | 5 | Sub-runs, sub-agents & backpressure | — |
 | 6 | Chat sessions + chat agent | — |
 | 7 | Sandboxes | — |
