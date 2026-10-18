@@ -1,0 +1,35 @@
+# OpenTelemetry Collector (phase L4a): the API and the workers send spans here over
+# OTLP/HTTP; the collector batches them and forwards them to Jaeger. In Kubernetes
+# (L4b) the same collector adds the pod's resource attributes.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 200
+  batch:
+    timeout: 1s
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true # inside the Compose network only
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/jaeger]

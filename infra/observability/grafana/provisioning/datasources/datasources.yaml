@@ -1,0 +1,14 @@
+# Grafana data sources, provisioned from files (phase L4a).
+# Traces are not a Grafana data source: Jaeger 2.21 serves only its v3 query API, which
+# Grafana's Jaeger plugin doesn't call. The dashboard links to Jaeger's own UI instead,
+# and so does "Open the trace" in Nuria.
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      timeInterval: 5s

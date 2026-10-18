@@ -1,0 +1,10 @@
+# Dashboards are files in infra/observability/grafana/dashboards, read-only in Grafana:
+# change the JSON in the repository, not in the UI.
+apiVersion: 1
+providers:
+  - name: nuria
+    folder: Nuria
+    type: file
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

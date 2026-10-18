@@ -15,6 +15,7 @@
   .\setup.ps1 -Model ollama
   .\setup.ps1 -Port 3100
   .\setup.ps1 -NonInteractive -Model scripted
+  .\setup.ps1 -Observability     (also traces, metrics and a Grafana dashboard; -NoObservability: off)
   .\setup.ps1 -Chat | -Stop | -Update | -Doctor | -Reset
 #>
 [CmdletBinding()]
@@ -27,6 +28,7 @@ param(
   [switch]$NoBrowser,
   [switch]$NonInteractive,
   [switch]$Build,
+  [switch]$Observability, [switch]$NoObservability,
   [switch]$Chat, [switch]$Stop, [switch]$Update, [switch]$Doctor, [switch]$Reset
 )
 $ErrorActionPreference = "Stop"
@@ -181,6 +183,27 @@ function Set-Model {
     }
   }
 }
+function Test-Profile($name) { (",$(Get-EnvValue COMPOSE_PROFILES),") -like "*,$name,*" }
+
+function Set-Observability {  # -Observability / -NoObservability; remembered in .env
+  $profiles = ((Get-EnvValue COMPOSE_PROFILES) -split "," | Where-Object { $_ -and $_ -ne "observability" }) -join ","
+  if (-not $profiles) { $profiles = "app" }
+  if ($NoObservability) {
+    Set-EnvValue COMPOSE_PROFILES $profiles; Set-EnvValue OTEL_ENDPOINT ""
+    Set-EnvValue TRACE_UI_URL ""; Set-EnvValue DASHBOARD_URL ""
+    Ok "observability off (traces and metrics stop being collected)"; return
+  }
+  if (-not $Observability -and -not (Test-Profile observability)) { return }
+  Set-EnvValue COMPOSE_PROFILES "$profiles,observability"
+  Set-EnvValue OTEL_ENDPOINT "http://otel-collector:4318"
+  $jaeger = Select-Port jaeger 16686 JAEGER_PORT 16686 0
+  $grafana = Select-Port grafana 3000 GRAFANA_PORT 3001 0
+  $prometheus = Select-Port prometheus 9090 PROMETHEUS_PORT 9090 0
+  Set-EnvValue TRACE_UI_URL "http://localhost:$jaeger"
+  Set-EnvValue DASHBOARD_URL "http://localhost:$grafana/d/nuria"
+  Ok "observability: traces $jaeger, dashboard $grafana, metrics $prometheus"
+}
+
 function Start-Stack {
   if ($Build) { Say "Building the images (first time: a few minutes)..."; Invoke-Compose build }
   else {
@@ -227,6 +250,7 @@ if ($Update) {
   & docker compose --file $ComposeFile --env-file $EnvFile @(Get-ProfileArgs) exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > $backup
   if ($LASTEXITCODE -eq 0) { Ok "database backed up to $backup" } else { Warn "no backup taken (is the stack running?)" }
 } else { Set-Model }
+Set-Observability
 Start-Stack; Test-Smoke
 Write-Host ""
 Say "Nuria is ready."
@@ -235,4 +259,9 @@ Write-Host "    API docs:            http://localhost:$script:UiPortChosen/docs"
 Write-Host "    Chat in a terminal:  .\setup.ps1 -Chat"
 Write-Host "    Stop / start again:  .\setup.ps1 -Stop  /  .\setup.ps1"
 Write-Host "    Something wrong?     .\setup.ps1 -Doctor   (a report you can attach to an issue)"
+if (Test-Profile observability) {
+  Write-Host "    Dashboard:           $(Get-EnvValue DASHBOARD_URL)"
+  Write-Host "    Traces:              $(Get-EnvValue TRACE_UI_URL)   (or 'Open the trace' under a reply's 'What happened?')"
+  Write-Host "    Metrics:             http://localhost:$(Get-EnvValue PROMETHEUS_PORT)"
+}
 if (-not $NonInteractive -and -not $NoBrowser) { Start-Process "http://localhost:$script:UiPortChosen" }
