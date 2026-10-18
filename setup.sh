@@ -8,6 +8,7 @@
 #   ./setup.sh --non-interactive --model scripted     no questions (CI, scripts)
 #   ./setup.sh --chat               chat in this terminal
 #   ./setup.sh --observability      also traces (Jaeger), metrics and a Grafana dashboard
+#   ./setup.sh --kubernetes         on a local Kubernetes cluster (kind) instead of Compose
 #   ./setup.sh --stop | --update | --doctor | --reset | --help
 #
 # Safe to run again: it never overwrites a secret or a setting you didn't ask to change.
@@ -27,7 +28,7 @@ ok()   { printf '%s\n' "  ${G}✓${N} $*"; }
 warn() { printf '%s\n' "  ${Y}!${N} $*"; }
 die()  { printf '%s\n' "  ${R}✗ $1${N}" >&2; [ $# -gt 1 ] && printf '    %s\n' "${@:2}" >&2; exit 1; }
 
-usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
 # ------------------------------------------------------------------ options
 ACTION=start; MODEL=""; INTERACTIVE=1; BUILD=0; OBSERVABILITY=""
@@ -49,6 +50,7 @@ while [ $# -gt 0 ]; do
     --chat) ACTION=chat ;;
     --observability) OBSERVABILITY=on ;;
     --no-observability) OBSERVABILITY=off ;;
+    --kubernetes) ACTION=kubernetes ;;
     -h|--help) usage ;;
     *) die "unknown option: $1" "Run ./setup.sh --help" ;;
   esac
@@ -275,6 +277,14 @@ case "$ACTION" in
       elif command -v xdg-open >/dev/null 2>&1; then xdg-open "http://localhost:$UI_PORT" >/dev/null 2>&1 || true
       fi
     fi
+    ;;
+  kubernetes)
+    # The same images on a local multi-node cluster (L4b): kind, Helm, KEDA, Traefik.
+    # The tools are downloaded, pinned and verified, into .tools/ (infra/kind/tools.sh).
+    say "Checking this machine…"; check_docker
+    make_env; configure_model
+    PATH="$(dirname "$DOCKER"):$PATH" infra/kind/cluster.sh all
+    echo "    Stop it (deletes the cluster): infra/kind/cluster.sh down   ·   Demos: make k8s-demo-podkill (drain, scale, upgrade)"
     ;;
   chat)  check_docker; compose run --rm --no-deps api chat ;;
   stop)  check_docker; compose stop; ok "stopped (your data is kept)" ;;

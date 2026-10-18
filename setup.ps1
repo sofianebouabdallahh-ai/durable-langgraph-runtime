@@ -16,6 +16,7 @@
   .\setup.ps1 -Port 3100
   .\setup.ps1 -NonInteractive -Model scripted
   .\setup.ps1 -Observability     (also traces, metrics and a Grafana dashboard; -NoObservability: off)
+  .\setup.ps1 -Kubernetes        (on a local Kubernetes cluster with kind; needs Git Bash or WSL for infra/kind/cluster.sh)
   .\setup.ps1 -Chat | -Stop | -Update | -Doctor | -Reset
 #>
 [CmdletBinding()]
@@ -28,7 +29,7 @@ param(
   [switch]$NoBrowser,
   [switch]$NonInteractive,
   [switch]$Build,
-  [switch]$Observability, [switch]$NoObservability,
+  [switch]$Observability, [switch]$NoObservability, [switch]$Kubernetes,
   [switch]$Chat, [switch]$Stop, [switch]$Update, [switch]$Doctor, [switch]$Reset
 )
 $ErrorActionPreference = "Stop"
@@ -239,6 +240,16 @@ if ($Reset) {
   Test-Docker
   if ($Interactive -and (Read-Answer "This DELETES all conversations, agents and downloaded models. Type 'delete' to confirm") -ne "delete") { Die "cancelled; nothing was deleted." }
   Invoke-Compose down -v --remove-orphans; Ok "everything deleted (.env kept)"; exit 0
+}
+
+if ($Kubernetes) {
+  Say "Checking this machine..."; Test-Docker; Initialize-EnvFile; Set-Model
+  # The cluster script is bash (kind, helm and kubectl are the same on every OS).
+  $bash = Get-Command bash -ErrorAction SilentlyContinue
+  if (-not $bash) { Die "-Kubernetes needs bash (Git for Windows or WSL)." @("Install Git for Windows, then run .\setup.ps1 -Kubernetes again.") }
+  & $bash.Source infra/kind/cluster.sh all
+  if ($LASTEXITCODE -ne 0) { Die "the cluster didn't come up (above)." }
+  exit 0
 }
 
 Say "Checking this machine..."; Test-Docker
