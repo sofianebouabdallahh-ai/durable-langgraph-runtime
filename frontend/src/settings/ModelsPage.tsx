@@ -84,7 +84,7 @@ function DefaultModel({ connections }: { connections: readonly Connection[] }) {
           className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 dark:border-stone-700 dark:bg-stone-950"
           aria-label="Default model"
         >
-          <option value="">The model chosen in setup ({current.data?.setup_provider ?? "…"})</option>
+          <option value="">The model chosen in setup ({setupLabel(current.data?.setup_provider)})</option>
           {ready.flatMap((c) =>
             c.models.map((m) => (
               <option key={`${c.id}|${m}`} value={`${c.id}|${m}`}>
@@ -257,7 +257,7 @@ function AddDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const choose = async (k: Kind) => {
     setKind(k);
     setName(KINDS[k].label);
-    setUrl(KINDS[k].url);
+    setUrl(k === "ollama" || k === "openai" ? KINDS[k].url : ""); // others: an example, not a value
     setResult(null);
     setSuggested([]);
     if (k === "ollama") {
@@ -345,6 +345,7 @@ function AddDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
           <TextField
             label={kind === "azure_foundry" ? "Endpoint" : "Address"}
             value={url}
+            placeholder={k.url}
             required
             onChange={(e) => {
               setUrl(e.target.value);
@@ -486,4 +487,11 @@ function EditDialog({ open, connection: c, onClose }: { open: boolean; connectio
       </form>
     </Dialog>
   );
+}
+
+function setupLabel(provider: string | undefined): string {
+  if (provider === "scripted") return "the offline demo model";
+  if (provider === "ollama") return "Ollama";
+  if (provider === "openai") return "OpenAI";
+  return provider ?? "…";
 }

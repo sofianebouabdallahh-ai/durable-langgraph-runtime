@@ -54,6 +54,7 @@ Kind = Literal["ollama", "openai", "azure_foundry", "compatible"]
 Status = Literal["untested", "ready", "failed"]
 WORKSPACE = "local"
 TEST_TIMEOUT_S = 30.0
+LOCAL_TEST_TIMEOUT_S = 120.0
 RUN_TIMEOUT_S = 60.0  # a model call in a run (R14.5)
 OLLAMA_PROBES = (
     "http://host.docker.internal:11434",  # the app on the host (macOS, Windows)
@@ -396,11 +397,13 @@ class ConnectionService:
         tool calling at once (agents need tools). The outcome is saved."""
         connection = await self.get(cid)
         started = time.monotonic()
+        # A local model's first call loads it into memory: on a CPU that takes a while.
+        timeout = LOCAL_TEST_TIMEOUT_S if connection.kind == "ollama" else TEST_TIMEOUT_S
         try:
-            provider = self.provider(connection, model)
-            result = await asyncio.wait_for(_ping(provider), TEST_TIMEOUT_S)
+            provider = self.provider(connection, model, timeout_s=timeout)
+            result = await asyncio.wait_for(_ping(provider), timeout)
         except TimeoutError:
-            result = TestResult(False, f"Didn't answer in {TEST_TIMEOUT_S:.0f} s", model, 0)
+            result = TestResult(False, f"Didn't answer in {timeout:.0f} s", model, 0)
         except (MasterKeyMissing, SecretUnavailable):
             result = TestResult(
                 False,

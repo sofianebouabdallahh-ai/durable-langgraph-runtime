@@ -315,6 +315,7 @@ function HelperCard({
           <span className="block truncate text-xs text-stone-500">{helper.description || "No description yet"}</span>
         </span>
         {issues.length > 0 && <Pill tone="rose">{issues.length} to fix</Pill>}
+        {ownModel(helper.model) && <Pill className="hidden max-w-40 truncate sm:inline-flex">{ownModel(helper.model)}</Pill>}
         <Pill>{(helper.tools ?? []).length} tools</Pill>
         <ChevronDown aria-hidden className={`size-4 text-stone-400 transition ${open ? "rotate-180" : ""}`} />
       </button>
@@ -478,6 +479,12 @@ export function ProtectionsSection({ doc, dispatch, catalog, readOnly, issues }:
 }
 
 /** A role ("chat", …) means "the default model"; `<connection>:<model>` picks one. */
+/** "<connection>:<model>" → the model; a role (the default) → nothing to show. */
+function ownModel(model: string | null | undefined): string | null {
+  const at = model?.indexOf(":") ?? -1;
+  return model && at > 0 ? model.slice(at + 1) : null;
+}
+
 export function ModelPicker({
   value,
   onChange,
@@ -496,7 +503,7 @@ export function ModelPicker({
   const choices = modelChoices(connections.data ?? []);
   const isRole = !value.includes(":");
   const known = isRole || choices.some((c) => c.value === value);
-  const current = fallback.data?.connection ? `${fallback.data.connection.display_name} · ${fallback.data.model ?? ""}` : "the model chosen in setup";
+  const current = fallback.data?.connection ? `${fallback.data.connection.display_name} · ${fallback.data.model ?? ""}` : "Nuria's model";
   const chosen = choices.find((c) => c.value === value);
   return (
     <div>
