@@ -128,3 +128,16 @@ export async function expectScreenMatchesTranscript(page: Page, request: APIRequ
   await expect(page.getByTestId("draft")).toHaveCount(0);
   return messages;
 }
+
+/** A published user agent (a copy of Nuria), made through the Studio API. */
+export async function publishedAgent(request: APIRequestContext): Promise<{ id: string; name: string }> {
+  const created = await request.post("/api/studio/agents", { data: { display_name: `Crash test ${Date.now().toString(36)}`, copy_of: "chat" } });
+  expect(created.status()).toBe(201);
+  const agent = (await created.json()) as { id: string; name: string };
+  const chat = (await (await request.post(`/api/studio/agents/${agent.id}/test-chat`)).json()) as { id: string };
+  await request.post(`/api/sessions/${chat.id}/messages`, { data: { content: "hi", script: [{ content: "hello" }] } });
+  await waitTurnOver(request, chat.id);
+  const published = await request.post(`/api/studio/agents/${agent.id}/publish`, { data: { changelog: "for the crash test" } });
+  expect(published.status()).toBe(200);
+  return agent;
+}
