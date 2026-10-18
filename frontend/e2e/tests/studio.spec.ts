@@ -94,7 +94,7 @@ test("issues show next to their field, and editing after a test needs a new test
   await page.getByLabel("Instructions", { exact: true }).fill("Hi {{secret}}");
   await saved(page);
   const instructions = page.getByTestId("section-instructions");
-  await expect(instructions.getByTestId("field-issues")).toContainText("unknown placeholder");
+  await expect(instructions.getByTestId("field-issues")).toContainText("{{secret}} isn't something it can fill in");
   await page.getByLabel("Instructions", { exact: true }).fill("Hi. Today is {{date}}.");
   await saved(page);
   await expect(page.getByTestId("field-issues")).toHaveCount(0);
@@ -115,7 +115,7 @@ test("copy a built-in agent, publish twice, restore the first version", async ({
   await nuria.getByRole("button", { name: "Copy" }).click();
   const name = `My Nuria ${Date.now().toString(36)}`;
   await page.getByRole("dialog").getByLabel("Name").fill(name);
-  await page.getByRole("button", { name: "Copy", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Copy", exact: true }).click();
   await expect(page).toHaveURL(/#\/studio\//);
   await expect(page.getByTestId("helper-editor")).toHaveCount(2); // the helpers came along
   await saved(page).catch(() => undefined);

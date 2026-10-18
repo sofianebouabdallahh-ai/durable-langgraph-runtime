@@ -374,6 +374,16 @@ def _plain(issue: Issue) -> PlainIssue:
 
 
 _PLAIN = [
+    (
+        re.compile(r"unknown placeholder (\{\{[^}]*\}\}).*"),
+        r"\1 isn't something it can fill in: use the Insert buttons below the instructions.",
+    ),
+    (
+        re.compile(r"'(\w+)' needs human approval; sub-agents can't use it"),
+        r"Helpers can't use \1: it needs your approval, and only the main agent can ask for it.",
+    ),
+    (re.compile(r"unknown tool '(\w+)'"), r"There's no tool called \1."),
+    (re.compile(r"(\d+) exceeds the server ceiling (\d+)"), r"At most \2 here (\1 is too many)."),
     (re.compile(r"String should have at least 1 character"), "Required."),
     (re.compile(r"String should match pattern"), "Use lowercase letters, digits and dashes."),
     (re.compile(r"the body \(system prompt\) is empty"), "Write the instructions."),
@@ -386,7 +396,10 @@ def plain(message: str) -> str:
     """The validator's messages, as a person reads them next to a field."""
     for pattern, replacement in _PLAIN:
         if pattern.search(message):
-            return pattern.sub(replacement, message) if "\\" in replacement else replacement
+            out = pattern.sub(replacement, message) if "\\" in replacement else replacement
+            for tool, (label, _) in TOOLS.items():  # tools by the names people see
+                out = re.sub(rf"\b{tool}\b", label, out)
+            return out
     return message[:1].upper() + message[1:]
 
 
