@@ -28,6 +28,9 @@ from agent_runtime.runs.service import AdmissionPaused, Overloaded
 from agent_runtime.runs.store import NotWaitingForApproval, RunNotFound, RunTerminal
 from agent_runtime.sessions.service import DuplicateSend, NotAnAgent
 from agent_runtime.sessions.store import NoActiveTurn, SessionArchived, SessionNotFound, TurnActive
+from agent_runtime.skills.service import BuiltInSkill, SkillBlocked, SkillExists, SkillInvalid
+from agent_runtime.skills.spec import SkillRejected
+from agent_runtime.skills.store import SkillNotFound
 
 log = logging.getLogger(__name__)
 
@@ -93,6 +96,34 @@ def install(app: FastAPI) -> None:
     @app.exception_handler(ConnectionInvalid)
     async def _connection_invalid(_: Request, exc: ConnectionInvalid) -> JSONResponse:
         return problem(422, "connection-invalid", "This model connection can't be saved", str(exc))
+
+    @app.exception_handler(SkillNotFound)
+    async def _skill_not_found(_: Request, exc: SkillNotFound) -> JSONResponse:
+        return problem(404, "skill-not-found", "Skill not found", str(exc))
+
+    @app.exception_handler(SkillInvalid)
+    async def _skill_invalid(_: Request, exc: SkillInvalid) -> JSONResponse:
+        issues = [{"field": i.field, "message": i.message, "blocking": i.blocking}
+                  for i in exc.issues]  # fmt: skip
+        return problem(422, "skill-invalid", "This skill can't be saved", str(exc), issues=issues)
+
+    @app.exception_handler(SkillBlocked)
+    async def _skill_blocked(_: Request, exc: SkillBlocked) -> JSONResponse:
+        scan = exc.report.as_json()
+        detail = "; ".join(f["message"] for f in scan["findings"] if f["severity"] == "block")
+        return problem(422, "skill-blocked", "The scan blocked this skill", detail, scan=scan)
+
+    @app.exception_handler(SkillRejected)
+    async def _skill_rejected(_: Request, exc: SkillRejected) -> JSONResponse:
+        return problem(422, "skill-rejected", "This file can't be read as a skill", str(exc))
+
+    @app.exception_handler(SkillExists)
+    async def _skill_exists(_: Request, exc: SkillExists) -> JSONResponse:
+        return problem(409, "skill-exists", "That name is taken", str(exc))
+
+    @app.exception_handler(BuiltInSkill)
+    async def _built_in_skill(_: Request, exc: BuiltInSkill) -> JSONResponse:
+        return problem(409, "skill-built-in", "Built-in skills can't be changed", str(exc))
 
     @app.exception_handler(MasterKeyMissing)
     async def _master_key_missing(_: Request, exc: MasterKeyMissing) -> JSONResponse:

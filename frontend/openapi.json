@@ -845,6 +845,54 @@
         "title": "EditConnection",
         "type": "object"
       },
+      "EditSkill": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "files": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "maxLength": 200000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "path \u2192 new text, or null to remove the file",
+            "maxProperties": 20,
+            "title": "Files",
+            "type": "object"
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "maxLength": 60000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instructions"
+          }
+        },
+        "title": "EditSkill",
+        "type": "object"
+      },
       "EventView": {
         "properties": {
           "epoch": {
@@ -900,6 +948,74 @@
           "next_after_seq"
         ],
         "title": "EventsPage",
+        "type": "object"
+      },
+      "FileView": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "reference",
+              "asset",
+              "script",
+              "other"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "kind"
+        ],
+        "title": "FileView",
+        "type": "object"
+      },
+      "Finding": {
+        "properties": {
+          "check": {
+            "title": "Check",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "block",
+              "review"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "where": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Where"
+          }
+        },
+        "required": [
+          "check",
+          "severity",
+          "message",
+          "where"
+        ],
+        "title": "Finding",
         "type": "object"
       },
       "GraphEdge": {
@@ -1230,6 +1346,44 @@
           "next_after_seq"
         ],
         "title": "MessagesPage",
+        "type": "object"
+      },
+      "NewSkill": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "maxLength": 2000,
+            "title": "Description",
+            "type": "string"
+          },
+          "files": {
+            "additionalProperties": {
+              "maxLength": 200000,
+              "type": "string"
+            },
+            "description": "Reference files typed in the form: path \u2192 text",
+            "maxProperties": 20,
+            "title": "Files",
+            "type": "object"
+          },
+          "instructions": {
+            "maxLength": 60000,
+            "title": "Instructions",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "instructions"
+        ],
+        "title": "NewSkill",
         "type": "object"
       },
       "OllamaView": {
@@ -1597,6 +1751,52 @@
         "title": "RunView",
         "type": "object"
       },
+      "SavedView": {
+        "properties": {
+          "skill": {
+            "$ref": "#/components/schemas/SkillDetail"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/Warning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "skill",
+          "warnings"
+        ],
+        "title": "SavedView",
+        "type": "object"
+      },
+      "ScanView": {
+        "properties": {
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "clean",
+              "review",
+              "blocked"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "findings"
+        ],
+        "title": "ScanView",
+        "type": "object"
+      },
       "SendMessageRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1778,6 +1978,209 @@
           "ended_at"
         ],
         "title": "SessionView",
+        "type": "object"
+      },
+      "SkillDetail": {
+        "properties": {
+          "allowed_tools": {
+            "description": "What it asks for; never granted by it",
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Tools",
+            "type": "array"
+          },
+          "description": {
+            "description": "What it does and when to use it",
+            "title": "Description",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/FileView"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "instructions": {
+            "title": "Instructions",
+            "type": "string"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "title": "Meta",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "created",
+              "uploaded",
+              "imported",
+              "built_in"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "scan": {
+            "$ref": "#/components/schemas/ScanView"
+          },
+          "tokens": {
+            "description": "About how long its instructions are",
+            "title": "Tokens",
+            "type": "integer"
+          },
+          "trust": {
+            "enum": [
+              "private",
+              "built_in"
+            ],
+            "title": "Trust",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "used_by": {
+            "description": "Agents whose draft or published version use it",
+            "items": {
+              "type": "string"
+            },
+            "title": "Used By",
+            "type": "array"
+          },
+          "version": {
+            "description": "The current version's content hash",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "trust",
+          "origin",
+          "version",
+          "files",
+          "allowed_tools",
+          "meta",
+          "tokens",
+          "scan",
+          "used_by",
+          "updated_at",
+          "instructions"
+        ],
+        "title": "SkillDetail",
+        "type": "object"
+      },
+      "SkillView": {
+        "properties": {
+          "allowed_tools": {
+            "description": "What it asks for; never granted by it",
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Tools",
+            "type": "array"
+          },
+          "description": {
+            "description": "What it does and when to use it",
+            "title": "Description",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/FileView"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "title": "Meta",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "created",
+              "uploaded",
+              "imported",
+              "built_in"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "scan": {
+            "$ref": "#/components/schemas/ScanView"
+          },
+          "tokens": {
+            "description": "About how long its instructions are",
+            "title": "Tokens",
+            "type": "integer"
+          },
+          "trust": {
+            "enum": [
+              "private",
+              "built_in"
+            ],
+            "title": "Trust",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "used_by": {
+            "description": "Agents whose draft or published version use it",
+            "items": {
+              "type": "string"
+            },
+            "title": "Used By",
+            "type": "array"
+          },
+          "version": {
+            "description": "The current version's content hash",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "trust",
+          "origin",
+          "version",
+          "files",
+          "allowed_tools",
+          "meta",
+          "tokens",
+          "scan",
+          "used_by",
+          "updated_at"
+        ],
+        "title": "SkillView",
         "type": "object"
       },
       "StudioAgentView": {
@@ -2253,6 +2656,24 @@
           "published_at"
         ],
         "title": "VersionView",
+        "type": "object"
+      },
+      "Warning": {
+        "properties": {
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "message"
+        ],
+        "title": "Warning",
         "type": "object"
       }
     }
@@ -3848,6 +4269,389 @@
         "summary": "The session's live stream (SSE, R12.5)",
         "tags": [
           "sessions"
+        ]
+      }
+    },
+    "/skills": {
+      "get": {
+        "operationId": "library_skills_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkillView"
+                  },
+                  "title": "Response Library Skills Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "The skill library",
+        "tags": [
+          "skills"
+        ]
+      },
+      "post": {
+        "operationId": "create_skills_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSkill"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create a skill from the form",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/upload": {
+      "post": {
+        "operationId": "upload_skills_upload_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Filename",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload a skill (a zip of its folder, or a SKILL.md) as the body",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}": {
+      "delete": {
+        "operationId": "archive_skills__skill_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archive (published agents keep the version they use)",
+        "tags": [
+          "skills"
+        ]
+      },
+      "get": {
+        "operationId": "get_skills__skill_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One skill",
+        "tags": [
+          "skills"
+        ]
+      },
+      "patch": {
+        "operationId": "edit_skills__skill_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditSkill"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Edit (saves a new version; the name stays)",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/export": {
+      "get": {
+        "operationId": "export_skills__skill_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "application/zip": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download the skill's folder (zip)",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/files/{path}": {
+      "get": {
+        "operationId": "file_skills__skill_id__files__path__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "application/octet-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download one of its files",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/upload": {
+      "post": {
+        "operationId": "replace_skills__skill_id__upload_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Filename",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "A new version of this skill from an upload (same name)",
+        "tags": [
+          "skills"
         ]
       }
     },

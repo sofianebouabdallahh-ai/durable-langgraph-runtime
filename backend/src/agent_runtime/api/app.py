@@ -46,8 +46,9 @@ from agent_runtime.api.schemas import (
 )
 from agent_runtime.api.sessions import agents as agents_router
 from agent_runtime.api.sessions import sessions as sessions_router
+from agent_runtime.api.skills import skills_router
 from agent_runtime.api.studio import studio as studio_router
-from agent_runtime.config import Settings, get_settings
+from agent_runtime.config import Settings, get_agent_settings, get_settings
 from agent_runtime.db import Pool, create_pool
 from agent_runtime.graphs import GraphRegistry, GraphSpec, default_registry
 from agent_runtime.models.connections import ConnectionService
@@ -56,6 +57,7 @@ from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.service import RunService
 from agent_runtime.runs.store import RunRepository
 from agent_runtime.sessions.service import SessionService
+from agent_runtime.skills.service import SkillService
 from agent_runtime.streaming.broker import Broker
 from agent_runtime.streaming.bus import EventBus, RedisEventBus
 from agent_runtime.streaming.session import RunStream
@@ -360,10 +362,12 @@ def create_app(
         try:
             if pool is not None:
                 _wire(app, pool, work_queue, event_bus)
+                await app.state.skills.sync_builtins(get_agent_settings().skills_dir)
                 yield
                 return
             async with create_pool(settings) as owned:
                 _wire(app, owned, work_queue, event_bus)
+                await app.state.skills.sync_builtins(get_agent_settings().skills_dir)
                 yield
         finally:
             await broker.stop()
@@ -377,6 +381,7 @@ def create_app(
         app.state.sessions = SessionService(p, settings, graphs, app.state.service, relay, b)
         app.state.studio = StudioService(p, app.state.service.agents, app.state.sessions, settings)
         app.state.connections = ConnectionService(p, settings)
+        app.state.skills = SkillService(p)
 
     app = FastAPI(
         title="Agent Runtime API",
@@ -397,6 +402,7 @@ def create_app(
     app.include_router(agents_router)
     app.include_router(studio_router)
     app.include_router(models_router)
+    app.include_router(skills_router)
     app.include_router(graphs_router)
     app.include_router(health)
     if settings.admin_api_enabled:

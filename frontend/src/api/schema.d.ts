@@ -558,6 +558,111 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The skill library */
+        get: operations["library_skills_get"];
+        put?: never;
+        /** Create a skill from the form */
+        post: operations["create_skills_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/skills/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload a skill (a zip of its folder, or a SKILL.md) as the body */
+        post: operations["upload_skills_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/skills/{skill_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One skill */
+        get: operations["get_skills__skill_id__get"];
+        put?: never;
+        post?: never;
+        /** Archive (published agents keep the version they use) */
+        delete: operations["archive_skills__skill_id__delete"];
+        options?: never;
+        head?: never;
+        /** Edit (saves a new version; the name stays) */
+        patch: operations["edit_skills__skill_id__patch"];
+        trace?: never;
+    };
+    "/skills/{skill_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download the skill's folder (zip) */
+        get: operations["export_skills__skill_id__export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/skills/{skill_id}/files/{path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download one of its files */
+        get: operations["file_skills__skill_id__files__path__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/skills/{skill_id}/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** A new version of this skill from an upload (same name) */
+        post: operations["replace_skills__skill_id__upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/studio/agents": {
         parameters: {
             query?: never;
@@ -1102,6 +1207,20 @@ export interface components {
             /** Models */
             models?: string[] | null;
         };
+        /** EditSkill */
+        EditSkill: {
+            /** Description */
+            description?: string | null;
+            /**
+             * Files
+             * @description path → new text, or null to remove the file
+             */
+            files?: {
+                [key: string]: string | null;
+            };
+            /** Instructions */
+            instructions?: string | null;
+        };
         /** EventView */
         EventView: {
             /** Epoch */
@@ -1129,6 +1248,32 @@ export interface components {
              * @description Pass as `after_seq` to fetch the next page
              */
             next_after_seq: number;
+        };
+        /** FileView */
+        FileView: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "reference" | "asset" | "script" | "other";
+            /** Path */
+            path: string;
+            /** Size */
+            size: number;
+        };
+        /** Finding */
+        Finding: {
+            /** Check */
+            check: string;
+            /** Message */
+            message: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "block" | "review";
+            /** Where */
+            where: string | null;
         };
         /** GraphEdge */
         GraphEdge: {
@@ -1273,6 +1418,22 @@ export interface components {
             messages: components["schemas"]["MessageView"][];
             /** Next After Seq */
             next_after_seq: number | null;
+        };
+        /** NewSkill */
+        NewSkill: {
+            /** Description */
+            description: string;
+            /**
+             * Files
+             * @description Reference files typed in the form: path → text
+             */
+            files?: {
+                [key: string]: string;
+            };
+            /** Instructions */
+            instructions: string;
+            /** Name */
+            name: string;
         };
         /** OllamaView */
         OllamaView: {
@@ -1424,6 +1585,22 @@ export interface components {
              */
             subagents?: components["schemas"]["SubagentView"][];
         };
+        /** SavedView */
+        SavedView: {
+            skill: components["schemas"]["SkillDetail"];
+            /** Warnings */
+            warnings: components["schemas"]["Warning"][];
+        };
+        /** ScanView */
+        ScanView: {
+            /** Findings */
+            findings: components["schemas"]["Finding"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "clean" | "review" | "blocked";
+        };
         /** SendMessageRequest */
         SendMessageRequest: {
             /** Content */
@@ -1486,6 +1663,122 @@ export interface components {
             title: string | null;
             /** Tokens */
             tokens: number;
+        };
+        /** SkillDetail */
+        SkillDetail: {
+            /**
+             * Allowed Tools
+             * @description What it asks for; never granted by it
+             */
+            allowed_tools: string[];
+            /**
+             * Description
+             * @description What it does and when to use it
+             */
+            description: string;
+            /** Files */
+            files: components["schemas"]["FileView"][];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Instructions */
+            instructions: string;
+            /** Meta */
+            meta: {
+                [key: string]: unknown;
+            };
+            /** Name */
+            name: string;
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "created" | "uploaded" | "imported" | "built_in";
+            scan: components["schemas"]["ScanView"];
+            /**
+             * Tokens
+             * @description About how long its instructions are
+             */
+            tokens: number;
+            /**
+             * Trust
+             * @enum {string}
+             */
+            trust: "private" | "built_in";
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Used By
+             * @description Agents whose draft or published version use it
+             */
+            used_by: string[];
+            /**
+             * Version
+             * @description The current version's content hash
+             */
+            version: string;
+        };
+        /** SkillView */
+        SkillView: {
+            /**
+             * Allowed Tools
+             * @description What it asks for; never granted by it
+             */
+            allowed_tools: string[];
+            /**
+             * Description
+             * @description What it does and when to use it
+             */
+            description: string;
+            /** Files */
+            files: components["schemas"]["FileView"][];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Meta */
+            meta: {
+                [key: string]: unknown;
+            };
+            /** Name */
+            name: string;
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "created" | "uploaded" | "imported" | "built_in";
+            scan: components["schemas"]["ScanView"];
+            /**
+             * Tokens
+             * @description About how long its instructions are
+             */
+            tokens: number;
+            /**
+             * Trust
+             * @enum {string}
+             */
+            trust: "private" | "built_in";
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Used By
+             * @description Agents whose draft or published version use it
+             */
+            used_by: string[];
+            /**
+             * Version
+             * @description The current version's content hash
+             */
+            version: string;
         };
         /** StudioAgentView */
         StudioAgentView: {
@@ -1660,6 +1953,13 @@ export interface components {
              * @enum {string}
              */
             state: "draft" | "published" | "archived";
+        };
+        /** Warning */
+        Warning: {
+            /** Field */
+            field: string;
+            /** Message */
+            message: string;
         };
     };
     responses: never;
@@ -2768,6 +3068,283 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    library_skills_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillView"][];
+                };
+            };
+        };
+    };
+    create_skills_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewSkill"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_skills_upload_post: {
+        parameters: {
+            query: {
+                filename: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_skills__skill_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_skills__skill_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_skills__skill_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditSkill"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_skills__skill_id__export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "application/zip": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    file_skills__skill_id__files__path__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "application/octet-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replace_skills__skill_id__upload_post: {
+        parameters: {
+            query: {
+                filename: string;
+            };
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

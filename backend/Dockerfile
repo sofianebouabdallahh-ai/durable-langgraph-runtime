@@ -3,7 +3,7 @@
 #
 #   builder:  uv resolves the locked dependencies into /app/.venv (cached layer),
 #             then installs the package itself, non-editable.
-#   runtime:  a slim Python with only the venv, migrations, agents and fixtures;
+#   runtime:  a slim Python with only the venv, migrations, agents, skills and fixtures;
 #             no uv, no compiler, no tests; non-root; tini as PID 1 so SIGTERM
 #             reaches the process (graceful release, R10.7).
 #
@@ -46,6 +46,7 @@ COPY --from=builder --chown=root:root /app/.venv /app/.venv
 COPY --chown=root:root alembic.ini ./
 COPY --chown=root:root migrations ./migrations
 COPY --chown=root:root agents ./agents
+COPY --chown=root:root skills ./skills
 COPY --chown=root:root fixtures ./fixtures
 ENV PATH=/app/.venv/bin:$PATH \
     RUNTIME_HOME=/app \
