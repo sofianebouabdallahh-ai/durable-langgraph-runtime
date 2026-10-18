@@ -1,5 +1,7 @@
 # Phase L3a plan — Agent Studio: agents & helpers
 
+> **Status: delivered.** Results: [progress/phase-L3a.md](../progress/phase-L3a.md). (The plan's `AgentCatalog` is named `AgentResolver` in the code, to avoid confusion with the tool `Catalog`.)
+
 **Goal:** in Nuria, a person who doesn't code can:
 - **create an agent and its helpers** (sub-agents) with a form: name, purpose, instructions, tools, helpers, limits, protections;
 - **try it** in a test chat;

@@ -4,6 +4,7 @@ import { Info, Loader2, WifiOff } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { api, ApiError, unwrap } from "../api/client";
+import { sendMessage } from "../api/send";
 import type { ConnectionState } from "../stream/connection";
 import type { TurnStatus } from "../stream/events";
 import { Markdown } from "../ui/Markdown";
@@ -58,9 +59,7 @@ export function ChatView({
   const send = async (text: string): Promise<boolean> => {
     setNotice(null);
     try {
-      const accepted = await unwrap(
-        api.POST("/sessions/{session_id}/messages", { params: { path: { session_id: sessionId } }, body: { content: text } }),
-      );
+      const accepted = await sendMessage(sessionId, text);
       dispatch({ kind: "sent", runId: accepted.run_id });
       setSentCount((n) => n + 1);
       return true;

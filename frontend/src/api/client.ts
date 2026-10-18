@@ -17,7 +17,12 @@ export type AboutView = Schemas["AboutView"];
 /** Same origin: nginx (or Vite in dev) proxies /api to the API, so there is no CORS. */
 export const API_BASE = "/api";
 
-export const api = createClient<paths>({ baseUrl: API_BASE });
+// Absolute (same origin): a relative base works in browsers but not everywhere (tests).
+// `fetch` is looked up per call, not captured at import (tests can stub it).
+export const api = createClient<paths>({
+  baseUrl: new URL(API_BASE, window.location.origin).href.replace(/\/$/, ""),
+  fetch: (request: Request) => globalThis.fetch(request),
+});
 
 /** RFC 9457 problem details, as the API returns them. */
 interface Problem {

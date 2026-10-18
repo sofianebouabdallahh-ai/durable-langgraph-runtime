@@ -4,6 +4,7 @@ import { Bell, Calculator, NotebookPen, Users } from "lucide-react";
 import { useState } from "react";
 
 import { api, unwrap } from "../api/client";
+import { sendMessage } from "../api/send";
 import { type Route } from "../app/route";
 import { Mark } from "../ui/Logo";
 import { agentLabel } from "../ui/words";
@@ -34,7 +35,7 @@ export function Home({ go }: { go: (route: Route) => void }) {
     setNotice(null);
     try {
       const session = await unwrap(api.POST("/sessions", { body: { agent, title: titleFrom(text) } }));
-      await unwrap(api.POST("/sessions/{session_id}/messages", { params: { path: { session_id: session.id } }, body: { content: text } }));
+      await sendMessage(session.id, text);
       void queryClient.invalidateQueries({ queryKey: ["sessions"] });
       go({ page: "chat", sessionId: session.id });
       return true;

@@ -26,7 +26,7 @@ The setup script:
 3. asks which model to use;
 4. starts everything, runs a real chat turn to prove it works, and opens the app.
 
-When it says **Nuria is ready**, the app is at **http://localhost:3000** (or the address it prints, if 3000 was taken). Write your first message (or pick a suggestion). **Agents**, in the sidebar, shows each agent's instructions, tools and helpers. You can also chat in the terminal:
+When it says **Nuria is ready**, the app is at **http://localhost:3000** (or the address it prints, if 3000 was taken). Write your first message (or pick a suggestion). **Agents**, in the sidebar, is where you build your own: see [Build your own agent](agents.md). You can also chat in the terminal:
 
 ```bash
 ./setup.sh --chat     # type your messages; Ctrl-D to leave
