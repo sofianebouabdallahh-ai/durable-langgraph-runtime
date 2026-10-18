@@ -17,6 +17,7 @@ Pattern: Chain of Responsibility with a FIXED order (CR-004 R15.7):
     9 execute     in-process (phase 7 adds isolation: sandbox), with a timeout (R14.5)
    10 post_tool   hooks: continue · modify(result) · deny        (also for cached results)
    11 truncate    ≤ max_result_chars to the model, with a marker (R14.5)
+   12 mark        as untrusted data, in delimiters the text can't close (R14.15)
 
 Every non-trivial decision is staged as an audit event (R14.17), committed with
 the step's checkpoint and published after commit (phase 3).
@@ -46,6 +47,7 @@ from agent_runtime.tools.hooks import Ask, Deny, HookSpec, ToolHookInput, redact
 from agent_runtime.tools.policy import Allow, RequireApproval, ToolPolicy
 from agent_runtime.tools.policy import Deny as PolicyDeny
 from agent_runtime.tools.spec import ToolContext, ToolRegistry, ToolSpec
+from agent_runtime.untrusted import as_data
 
 Emit = Callable[[EventType, dict[str, Any]], None]
 Interrupt = Callable[[Any], Any]  # langgraph.types.interrupt, injectable for tests
@@ -91,7 +93,7 @@ class ToolRunContext:
 
 @dataclass(frozen=True)
 class ToolResult:
-    content: str  # what the model sees (truncated, JSON)
+    content: str  # what the model sees (truncated JSON; a tool's output marked as data)
     status: Literal["success", "error"]
     cached: bool = False
     stage: str = "execute"  # where the call ended (tests and audits)
@@ -204,9 +206,13 @@ class ToolPipeline:
                     "reason": reason,
                 }
             )
-            edited = (
-                (resume or {}).get("edits", {}).get("args") if isinstance(resume, dict) else None
-            )
+            # Fail closed: only an explicit approval runs the tool. (A rejection normally
+            # cancels the run before any resume; this doesn't rely on that.)
+            if not (isinstance(resume, dict) and resume.get("decision") == "approve"):
+                return self._deny(
+                    call, ctx, "not_approved", "a person didn't approve this call", "policy"
+                )
+            edited = (resume.get("edits") or {}).get("args")
             if edited is not None:
                 args, error = self._validate(spec, edited)
                 if error is not None:
@@ -306,6 +312,9 @@ class ToolPipeline:
         # 11 truncate
         self._at("truncate")
         content = _truncate(json.dumps(post.input.result, default=str), self._max_result)
+        # 12 mark: whatever the tool returned is data, never instructions
+        self._at("mark")
+        content = as_data(spec.name, content)
         return ToolResult(content, "success" if status == "done" else "error", cached=cached)
 
     # ------------------------------------------------------------------ helpers

@@ -28,6 +28,7 @@ from agent_runtime.subagents.tools import MAIN_TOOLS, SUB_TOOLS
 from agent_runtime.tools.builtin import default_tools
 from agent_runtime.tools.middleware import RunContext, RuntimeMiddleware
 from agent_runtime.tools.spec import ToolRegistry, ToolSpec
+from agent_runtime.untrusted import RULE
 
 
 class AgentInput(BaseModel):
@@ -53,7 +54,7 @@ def render_prompt(agent: AgentDefinition | SubAgentDefinition) -> str:
         prompt = prompt.replace("{{" + name + "}}", value).replace("{{ " + name + " }}", value)
     if isinstance(agent, AgentDefinition) and agent.subagents:
         prompt += helpers_section(agent)
-    return prompt
+    return prompt + "\n\n## Data\n" + RULE
 
 
 def helpers_section(agent: AgentDefinition) -> str:

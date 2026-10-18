@@ -40,6 +40,7 @@ from agent_runtime.sessions.store import message_id as make_id
 from agent_runtime.sessions.turns import REPAIR_PREFIX, baseline
 from agent_runtime.streaming.bus import EventBus, StreamEvent, session_channel
 from agent_runtime.tools.hooks import redact
+from agent_runtime.untrusted import unwrap
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ def _text(content: Any) -> str:
 
 def _result(message: ToolMessage) -> dict[str, Any]:
     artifact = message.artifact if isinstance(message.artifact, dict) else {}
-    text = _text(message.content)
+    text = unwrap(_text(message.content))  # people see the tool's output, not the marking
     body: dict[str, Any]
     if message.status == "error":
         body = {"error": text}

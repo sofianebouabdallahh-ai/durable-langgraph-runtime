@@ -102,3 +102,13 @@ def test_an_agent_with_helpers_is_told_their_ids_and_purpose() -> None:
     assert "## Your helpers" in prompt
     assert "- `researcher`: Finds and cites facts" in prompt
     assert "## Your helpers" not in render_prompt(GRAPHS.get("assistant").agent)  # type: ignore[arg-type]
+
+
+def test_every_agent_and_helper_is_told_that_data_is_not_instructions() -> None:
+    """R14.15: the rule closes every system prompt, main agents' and helpers'."""
+    from agent_runtime.graphs.assistant import render_prompt
+    from agent_runtime.untrusted import RULE
+
+    assert CHAT is not None
+    assert render_prompt(CHAT).endswith(RULE)
+    assert all(render_prompt(helper).endswith(RULE) for helper in CHAT.subagents)
