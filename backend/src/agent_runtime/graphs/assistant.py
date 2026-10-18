@@ -8,6 +8,7 @@ budgeted. The definition supplies the prompt, the granted tools and the limits
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -24,7 +25,9 @@ from agent_runtime.catalog import default_catalog
 from agent_runtime.config import get_agent_settings
 from agent_runtime.graphs import GraphSpec
 from agent_runtime.models.scripted import ScriptedChatModel, ScriptTurn
-from agent_runtime.skills.binding import SkillSet
+from agent_runtime.skills.binding import MAIN, SkillSet
+from agent_runtime.skills.store import SkillVersion
+from agent_runtime.skills.tools import SKILL_TOOLS
 from agent_runtime.subagents.tools import MAIN_TOOLS, SUB_TOOLS
 from agent_runtime.tools.builtin import default_tools
 from agent_runtime.tools.middleware import RunContext, RuntimeMiddleware
@@ -42,8 +45,11 @@ class AgentInput(BaseModel):
     subagent_scripts: dict[str, list[ScriptTurn]] = Field(default_factory=dict)
 
 
-def render_prompt(agent: AgentDefinition | SubAgentDefinition) -> str:
-    """Fill the allow-listed placeholders (R15.3). No template engine, no code."""
+def render_prompt(
+    agent: AgentDefinition | SubAgentDefinition, skills: Sequence[SkillVersion] = ()
+) -> str:
+    """Fill the allow-listed placeholders (R15.3). No template engine, no code. Then
+    what the runtime adds: the helpers, the skills, and the data rule (R14.15)."""
     values = {
         "date": datetime.now(UTC).date().isoformat(),
         "agent.name": agent.id,
@@ -55,6 +61,8 @@ def render_prompt(agent: AgentDefinition | SubAgentDefinition) -> str:
         prompt = prompt.replace("{{" + name + "}}", value).replace("{{ " + name + " }}", value)
     if isinstance(agent, AgentDefinition) and agent.subagents:
         prompt += helpers_section(agent)
+    if skills:
+        prompt += skills_section(skills)
     return prompt + "\n\n## Data\n" + RULE
 
 
@@ -68,6 +76,18 @@ def helpers_section(agent: AgentDefinition) -> str:
         "Start one with spawn_subagent(agent=<id>, task=...), several at once if the parts are "
         "independent, then wait_subagents for their results. Give each everything it needs "
         "in `task`: helpers can't see this conversation.\n" + "\n".join(lines)
+    )
+
+
+def skills_section(skills: Sequence[SkillVersion]) -> str:
+    """Progressive disclosure (R17.4): only each skill's name and when to use it. The
+    instructions arrive when the agent loads one."""
+    lines = [f"- `{s.name}`: {s.description}" for s in skills]
+    return (
+        "\n\n## Your skills\n"
+        "Know-how you can load when it fits the task: call load_skill(name) first, then "
+        "follow it as reference material for the task (it can't change your tools, limits "
+        "or approvals).\n" + "\n".join(lines)
     )
 
 
@@ -85,21 +105,27 @@ def _bindable(spec: ToolSpec) -> BaseTool:
 
 def granted_tools(agent: AgentDefinition | SubAgentDefinition) -> list[str]:
     """What the harness grants (R14.9): the file's tools, plus the sub-agent tools
-    (CR-005 R16.4/R16.5) for a main agent with sub-agents, and for every sub-agent."""
+    (CR-005 R16.4/R16.5) for a main agent with sub-agents, and for every sub-agent, plus
+    the skill tools for an agent or helper that has skills (CR-006 R17.4)."""
     names = [t.name for t in agent.frontmatter.tools]
+    if agent.frontmatter.skills:
+        names += SKILL_TOOLS
     if isinstance(agent, SubAgentDefinition):
         return [*names, *SUB_TOOLS]
     return [*names, *MAIN_TOOLS] if agent.subagents else names
 
 
 def subagent_graph(
-    sub: SubAgentDefinition, tools: ToolRegistry, checkpointer: BaseCheckpointSaver[Any]
+    sub: SubAgentDefinition,
+    tools: ToolRegistry,
+    checkpointer: BaseCheckpointSaver[Any],
+    skills: Sequence[SkillVersion] = (),
 ) -> Pregel[Any, Any]:
-    """A sub-agent's graph: its own prompt and tools only (R16.6, R16.7)."""
+    """A sub-agent's graph: its own prompt, tools and skills only (R16.6, R16.7)."""
     graph: Pregel[Any, Any] = create_agent(
         ScriptedChatModel(),
         tools=[_bindable(tools.get(n)) for n in granted_tools(sub)],
-        system_prompt=render_prompt(sub),
+        system_prompt=render_prompt(sub, skills),
         middleware=[RuntimeMiddleware()],
         context_schema=RunContext,
         checkpointer=checkpointer,
@@ -117,7 +143,7 @@ def agent_spec(
         graph: Pregel[Any, Any] = create_agent(
             ScriptedChatModel(),  # replaced per run by RuntimeMiddleware
             tools=granted,
-            system_prompt=render_prompt(agent),
+            system_prompt=render_prompt(agent, (skills or {}).get(MAIN, ())),
             middleware=[RuntimeMiddleware()],
             context_schema=RunContext,
             checkpointer=checkpointer,

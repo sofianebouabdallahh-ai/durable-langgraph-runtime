@@ -34,7 +34,7 @@ import contextvars
 import logging
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -51,7 +51,7 @@ from agent_runtime.models.scripted import ScriptTurn
 from agent_runtime.runs.outbox import Outbox
 from agent_runtime.streaming.bus import EventBus, StreamEvent, publish_events, session_channel
 from agent_runtime.subagents.store import Invocation, SpawnRefused, Status, SubagentRepository
-from agent_runtime.subagents.tools import SUB_TOOLS, SubagentToolError
+from agent_runtime.subagents.tools import SubagentToolError
 from agent_runtime.tools.hooks import HookRegistry
 from agent_runtime.tools.invocations import BudgetExceeded, charge_model_call
 from agent_runtime.tools.pipeline import Grant, ToolPipeline, ToolRunContext
@@ -178,6 +178,7 @@ class SubagentOrchestrator:
         model_caller: Callable[[], Any] | None = None,  # retries + breaker (R14.7)
         usage_recorder: Callable[[Outbox], Callable[[str, int, int], None]] | None = None,
         chat_model: Callable[[str, float, list[ScriptTurn]], Callable[[int], Any]] | None = None,
+        skills: Mapping[str, tuple[Any, ...]] | None = None,  # by helper name (R17.4)
     ) -> None:
         self.pool = pool
         self.fence = fence
@@ -185,6 +186,7 @@ class SubagentOrchestrator:
         self.run_limits = run_limits
         self.limits = limits or SubagentLimits()
         self._defs = {s.frontmatter.name: s for s in main.subagents}
+        self._skills = skills or {}
         self._build = build
         self._tools = tools
         self._hooks = hooks
@@ -401,6 +403,7 @@ class SubagentOrchestrator:
         await self._finish(inv.handle, status, result, outbox)
 
     def _context(self, inv: Invocation, runtime: SubagentRuntime, outbox: Outbox) -> Any:
+        from agent_runtime.graphs.assistant import granted_tools  # imports this module
         from agent_runtime.tools.middleware import RunContext  # imports this module
 
         fm = runtime.defn.frontmatter
@@ -408,8 +411,9 @@ class SubagentOrchestrator:
         tools = ToolRunContext(
             fence=self.fence,
             pool=self.pool,
-            # Its own tools only (R16.7); per-tool caps are charged per sub-agent.
-            grants={t.name: Grant() for t in fm.tools} | {n: Grant() for n in SUB_TOOLS},
+            # Its own tools and skills only (R16.7); per-tool caps are charged per sub-agent.
+            grants={n: Grant() for n in granted_tools(runtime.defn)},
+            skills={s.name: s for s in self._skills.get(fm.name, ())},
             emit=lambda type, payload: outbox.stage(type, {**payload, "subagent": handle}),
             pre_hooks=[self._hooks.get(h) for h in fm.hooks.pre_tool],
             post_hooks=[self._hooks.get(h) for h in fm.hooks.post_tool],

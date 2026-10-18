@@ -27,6 +27,9 @@ def test_default_registry_declares_risk_and_side_effects() -> None:
         "cancel_subagent": "write_internal",
         "report_progress": "write_internal",
         "return_result": "write_internal",
+        # skill tools (CR-006 R17.4), granted by the harness to agents with skills
+        "load_skill": "read",
+        "read_skill_file": "read",
     }
     assert reg.get("wait_subagents").timeout_s == 125  # blocks up to 120 s
     assert reg.get("save_note").side_effect and not reg.get("calculator").side_effect

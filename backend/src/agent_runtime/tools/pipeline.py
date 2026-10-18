@@ -83,6 +83,7 @@ class ToolRunContext:
     approvals: bool = True
     orchestrator: Any = None  # given to sub-agent tools (ToolContext)
     subagent: Any = None
+    skills: Any = None  # the caller's own skills, given to the skill tools (ToolContext)
     # Charged in the ledger's transaction when a call is first recorded (a
     # sub-agent's own budget, on top of the run's).
     extra_charge: Callable[[Conn, str], Awaitable[None]] | None = None
@@ -276,6 +277,7 @@ class ToolPipeline:
                         pool=ctx.pool,
                         orchestrator=ctx.orchestrator,
                         subagent=ctx.subagent,
+                        skills=ctx.skills,
                     ),
                 )
             async with ctx.pool.connection() as conn:

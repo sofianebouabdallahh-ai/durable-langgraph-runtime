@@ -9,9 +9,10 @@ work with no real model and no key:
   a tool; `fake-slow` never answers in time; a conversation whose user wrote
   `[slow]` gets each answer after 2 s (time to kill a worker mid-turn);
 - **behaviour:** a `ping` tool → it calls ping(42) (the capability test); an agent
-  with helpers → it delegates to the first helper listed in its prompt, waits for
-  it, then answers; a helper → it returns a result; otherwise a short answer. Every
-  answer names the model, so a test can see who answered what;
+  with skills → it first loads the first skill listed in its prompt; an agent with
+  helpers → it delegates to the first helper listed in its prompt, waits for it,
+  then answers; a helper → it returns a result; otherwise a short answer. Every
+  answer names the model (and the skill it loaded), so a test can see who did what;
 - **a log:** GET /calls lists what it served (model, which key, tools), so a test
   proves that two helpers used two connections (AC44). DELETE /calls clears it.
 """
@@ -29,6 +30,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 HELPER = re.compile(r"^- `([a-z0-9-]+)`:", re.MULTILINE)
+SECTION = re.compile(r"^## (Your helpers|Your skills)\n(.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
 SLOW_MARK, SLOW_S = "[slow]", 2.0
 
 
@@ -91,6 +93,12 @@ def _decide(model: str, messages: list[dict[str, Any]], tools: list[str], n: int
     can = model != "fake-notools"
     if can and "ping" in tools:
         return {"tool": "ping", "args": {"value": 42}, "id": f"call_{n}"}
+    system = next((m.get("content") or "" for m in messages if m.get("role") == "system"), "")
+    listed = _listed(system if isinstance(system, str) else "")
+    loaded = _loaded_skill(messages)
+    if can and "load_skill" in tools and listed["Your skills"] and loaded is None:
+        return {"tool": "load_skill", "args": {"name": listed["Your skills"][0]}, "id": f"call_{n}"}
+    used = f" Used skill {loaded}." if loaded else ""
     if last.get("role") == "tool":
         answered = _tool_name(messages, last.get("tool_call_id"))
         if can and answered == "spawn_subagent" and "wait_subagents" in tools:
@@ -100,16 +108,16 @@ def _decide(model: str, messages: list[dict[str, Any]], tools: list[str], n: int
                 "args": {"handles": [handle], "timeout_s": 60},
                 "id": f"call_{n}",
             }
-        return {"text": f"Done. Answered by {model}."}
+        if not (can and answered == "load_skill"):
+            return {"text": f"Done. Answered by {model}.{used}"}
     if can and "return_result" in tools:  # a helper: hand the result back
         return {
             "tool": "return_result",
-            "args": {"summary": f"Helper work by {model}."},
+            "args": {"summary": f"Helper work by {model}.{used}"},
             "id": f"call_{n}",
         }
-    if can and "spawn_subagent" in tools:
-        system = next((m.get("content") or "" for m in messages if m.get("role") == "system"), "")
-        helpers = HELPER.findall(system if isinstance(system, str) else "")
+    if can and "spawn_subagent" in tools and not _spawned(messages):
+        helpers = listed["Your helpers"]
         if helpers:
             task = str(last.get("content") or "")[:200] or "help"
             return {
@@ -117,7 +125,31 @@ def _decide(model: str, messages: list[dict[str, Any]], tools: list[str], n: int
                 "args": {"agent": helpers[0], "task": task},
                 "id": f"call_{n}",
             }
-    return {"text": f"Hello from {model}."}
+    return {"text": f"Hello from {model}.{used}"}
+
+
+def _listed(system: str) -> dict[str, list[str]]:
+    """The ids listed under the prompt's "## Your helpers" and "## Your skills"."""
+    out: dict[str, list[str]] = {"Your helpers": [], "Your skills": []}
+    for m in SECTION.finditer(system):
+        out[m.group(1)] = HELPER.findall(m.group(2))
+    return out
+
+
+def _loaded_skill(messages: list[dict[str, Any]]) -> str | None:
+    for m in messages:
+        for call in m.get("tool_calls") or []:
+            if call["function"]["name"] == "load_skill":
+                return str(json.loads(call["function"]["arguments"]).get("name"))
+    return None
+
+
+def _spawned(messages: list[dict[str, Any]]) -> bool:
+    return any(
+        c["function"]["name"] == "spawn_subagent"
+        for m in messages
+        for c in m.get("tool_calls") or []
+    )
 
 
 def _asked_slowly(messages: list[dict[str, Any]]) -> bool:
