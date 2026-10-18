@@ -10,8 +10,10 @@ export function useAbout() {
 
 export function ModelStatus() {
   const about = useAbout();
+  const chosen = useQuery({ queryKey: ["models", "default"], queryFn: () => unwrap(api.GET("/models/default")) });
   if (!about.data) return null;
-  const demo = about.data.demo_model;
+  const custom = chosen.data?.connection ? `${chosen.data.connection.display_name} · ${chosen.data.model ?? ""}` : null;
+  const demo = about.data.demo_model && !custom;
   return (
     <div className="border-t border-stone-200 p-3 dark:border-stone-800">
       <div
@@ -24,9 +26,11 @@ export function ModelStatus() {
         </span>
         <span className="min-w-0 leading-tight">
           <span className="block truncate text-[13px] font-medium text-stone-800 dark:text-stone-200">
-            {demo ? "Demo model" : (about.data.chat_model ?? about.data.model_provider)}
+            {custom ?? (demo ? "Demo model" : (about.data.chat_model ?? about.data.model_provider))}
           </span>
-          <span className="block truncate text-xs text-stone-600">{demo ? "Offline · follows simple rules" : `via ${about.data.model_provider}`}</span>
+          <span className="block truncate text-xs text-stone-600">
+            {custom ? "Default model" : demo ? "Offline · follows simple rules" : `via ${about.data.model_provider}`}
+          </span>
         </span>
       </div>
     </div>

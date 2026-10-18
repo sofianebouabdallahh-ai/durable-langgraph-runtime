@@ -2,6 +2,8 @@
 import { Bot, ChevronDown, Cpu, Gauge, Plus, ShieldCheck, Sparkles, Trash2, Users, Wrench } from "lucide-react";
 import { type Dispatch, useState } from "react";
 
+import { href } from "../app/route";
+import { modelChoices, useConnections, useDefaultModel } from "../settings/api";
 import { ToolIcon } from "../ui/icons";
 import { Avatar, Button, Pill } from "../ui/primitives";
 import { Issues, Section, Segmented, Switch, TextArea, TextField } from "../ui/form";
@@ -373,6 +375,15 @@ function HelperCard({
             />
             <Issues issues={issuesFor(issues, `helpers.${helper.name}`, ["tools", "max_turns", "limits", "hooks"])} />
           </div>
+          <ModelPicker
+            label="Its model"
+            value={helper.model}
+            readOnly={readOnly}
+            issues={issuesFor(issues, `helpers.${helper.name}`, ["model"])}
+            onChange={(model) => {
+              onChange({ ...helper, model });
+            }}
+          />
           {!readOnly && (
             <Button variant="danger" size="sm" onClick={onRemove}>
               <Trash2 aria-hidden className="size-4" /> Remove this helper
@@ -466,12 +477,81 @@ export function ProtectionsSection({ doc, dispatch, catalog, readOnly, issues }:
   );
 }
 
-export function ModelSection() {
+/** A role ("chat", …) means "the default model"; `<connection>:<model>` picks one. */
+export function ModelPicker({
+  value,
+  onChange,
+  readOnly,
+  issues,
+  label,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  readOnly: boolean;
+  issues: readonly Issue[];
+  label: string;
+}) {
+  const connections = useConnections();
+  const fallback = useDefaultModel();
+  const choices = modelChoices(connections.data ?? []);
+  const isRole = !value.includes(":");
+  const known = isRole || choices.some((c) => c.value === value);
+  const current = fallback.data?.connection ? `${fallback.data.connection.display_name} · ${fallback.data.model ?? ""}` : "the model chosen in setup";
+  const chosen = choices.find((c) => c.value === value);
   return (
-    <Section title="Model" description="Which AI model answers." icon={<Cpu aria-hidden className="size-4" />} testId="section-model">
-      <p className="text-sm text-stone-600 dark:text-stone-400">
-        Uses Nuria's model (the one chosen in setup). Choosing a model for each agent and helper comes next.
-      </p>
+    <div>
+      <label className="block text-sm">
+        <span className="mb-1.5 block font-medium text-stone-800 dark:text-stone-200">{label}</span>
+        <select
+          value={isRole ? "__default__" : value}
+          disabled={readOnly}
+          onChange={(e) => {
+            onChange(e.target.value === "__default__" ? "chat" : e.target.value);
+          }}
+          className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 dark:border-stone-700 dark:bg-stone-950"
+        >
+          <option value="__default__">Default ({current})</option>
+          {choices.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+              {c.ready ? "" : " (not tested)"}
+            </option>
+          ))}
+          {!known && <option value={value}>{value} (missing)</option>}
+        </select>
+      </label>
+      {chosen && !chosen.ready && (
+        <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+          Not tested yet: <a className="underline" href={href({ page: "models" })}>test it in Settings → Models</a> before publishing.
+        </p>
+      )}
+      <Issues issues={issues} />
+    </div>
+  );
+}
+
+export function ModelSection({ doc, issues, dispatch, readOnly }: Props) {
+  return (
+    <Section
+      title="Model"
+      description={
+        <>
+          Which AI model answers. Add models in <a className="underline" href={href({ page: "models" })}>Settings → Models</a>; each helper can use a
+          different one.
+        </>
+      }
+      icon={<Cpu aria-hidden className="size-4" />}
+      testId="section-model"
+    >
+      <ModelPicker
+        label="Its model"
+        value={doc.model}
+        readOnly={readOnly}
+        issues={issuesFor(issues, "agent", ["model"])}
+        onChange={(value) => {
+          dispatch({ kind: "set", field: "model", value });
+        }}
+      />
     </Section>
   );
 }

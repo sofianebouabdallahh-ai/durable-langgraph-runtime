@@ -26,6 +26,8 @@ TABLES = {
     "outbox_notifications",
     "agents",
     "agent_versions",
+    "model_connections",
+    "workspace_settings",
 }
 
 

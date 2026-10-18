@@ -177,6 +177,111 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/models/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Your models */
+        get: operations["list_connections_models_connections_get"];
+        put?: never;
+        /** Add a model connection */
+        post: operations["add_models_connections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/models/connections/{connection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove (agents using it need another model) */
+        delete: operations["remove_models_connections__connection_id__delete"];
+        options?: never;
+        head?: never;
+        /** Edit (a new key replaces the old one) */
+        patch: operations["edit_models_connections__connection_id__patch"];
+        trace?: never;
+    };
+    "/models/connections/{connection_id}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The models the service says it has */
+        get: operations["remote_models_models_connections__connection_id__models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/models/connections/{connection_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check it answers and uses tools */
+        post: operations["test_models_connections__connection_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/models/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The default model */
+        get: operations["get_default_models_default_get"];
+        /** Set the default model */
+        put: operations["set_default_models_default_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/models/ollama": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Find Ollama */
+        get: operations["ollama_models_ollama_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/readyz": {
         parameters: {
             query?: never;
@@ -666,6 +771,25 @@ export interface components {
             /** Version */
             version: string | null;
         };
+        /** AddConnection */
+        AddConnection: {
+            /** Api Key */
+            api_key?: string | null;
+            /** Base Url */
+            base_url: string;
+            /** Display Name */
+            display_name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "ollama" | "openai" | "azure_foundry" | "compatible";
+            /**
+             * Models
+             * @default []
+             */
+            models: string[];
+        };
         /** AdminState */
         AdminState: {
             /** Paused */
@@ -821,6 +945,51 @@ export interface components {
             /** Reason */
             reason?: string | null;
         };
+        /** ConnectionView */
+        ConnectionView: {
+            /** Base Url */
+            base_url: string;
+            /** Display Name */
+            display_name: string;
+            /**
+             * Has Key
+             * @description A key is saved. The key itself is never returned
+             */
+            has_key: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Key Fingerprint
+             * @description Tells keys apart without revealing them
+             */
+            key_fingerprint: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "ollama" | "openai" | "azure_foundry" | "compatible";
+            /** Models */
+            models: string[];
+            /**
+             * Name
+             * @description What agents say: `<name>:<model>`
+             */
+            name: string;
+            /** Test Detail */
+            test_detail: string | null;
+            /**
+             * Test Status
+             * @enum {string}
+             */
+            test_status: "untested" | "ready" | "failed";
+            /** Tested At */
+            tested_at: string | null;
+            /** Tested Model */
+            tested_model: string | null;
+        };
         /** CreateAgentRequest */
         CreateAgentRequest: {
             /**
@@ -880,6 +1049,27 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /** DefaultModel */
+        DefaultModel: {
+            /**
+             * Connection Id
+             * @description None: back to the setup's model
+             */
+            connection_id: string | null;
+            /** Model */
+            model?: string | null;
+        };
+        /** DefaultView */
+        DefaultView: {
+            connection: components["schemas"]["ConnectionView"] | null;
+            /** Model */
+            model: string | null;
+            /**
+             * Setup Provider
+             * @description What roles use when no default is set
+             */
+            setup_provider: string;
+        };
         /** DraftView */
         DraftView: {
             /**
@@ -897,6 +1087,20 @@ export interface components {
              * @description A test-chat reply completed on exactly this draft
              */
             tested: boolean;
+        };
+        /** EditConnection */
+        EditConnection: {
+            /**
+             * Api Key
+             * @description A new key replaces the saved one; omit to keep it
+             */
+            api_key?: string | null;
+            /** Base Url */
+            base_url?: string | null;
+            /** Display Name */
+            display_name?: string | null;
+            /** Models */
+            models?: string[] | null;
         };
         /** EventView */
         EventView: {
@@ -1069,6 +1273,13 @@ export interface components {
             messages: components["schemas"]["MessageView"][];
             /** Next After Seq */
             next_after_seq: number | null;
+        };
+        /** OllamaView */
+        OllamaView: {
+            /** Base Url */
+            base_url: string;
+            /** Models */
+            models: string[];
         };
         /** PauseRequest */
         PauseRequest: {
@@ -1350,6 +1561,23 @@ export interface components {
             usage: {
                 [key: string]: unknown;
             };
+        };
+        /** TestRequest */
+        TestRequest: {
+            /** Model */
+            model: string;
+        };
+        /** TestView */
+        TestView: {
+            connection: components["schemas"]["ConnectionView"];
+            /** Detail */
+            detail: string;
+            /** Model */
+            model: string;
+            /** Ok */
+            ok: boolean;
+            /** Seconds */
+            seconds: number;
         };
         /** ToolChoice */
         ToolChoice: {
@@ -1675,6 +1903,262 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
+                };
+            };
+        };
+    };
+    list_connections_models_connections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionView"][];
+                };
+            };
+        };
+    };
+    add_models_connections_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddConnection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_models_connections__connection_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_models_connections__connection_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditConnection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remote_models_models_connections__connection_id__models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_models_connections__connection_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_default_models_default_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DefaultView"];
+                };
+            };
+        };
+    };
+    set_default_models_default_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DefaultModel"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DefaultView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ollama_models_ollama_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OllamaView"][];
                 };
             };
         };

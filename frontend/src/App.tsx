@@ -10,6 +10,7 @@ import { Spinner } from "./ui/primitives";
 // The Agents pages and the Studio load when first opened: most visits are chats.
 const AgentsPage = lazy(() => import("./agents/AgentsPage").then((m) => ({ default: m.AgentsPage })));
 const AgentDetail = lazy(() => import("./agents/AgentsPage").then((m) => ({ default: m.AgentDetail })));
+const ModelsPage = lazy(() => import("./settings/ModelsPage").then((m) => ({ default: m.ModelsPage })));
 const StudioEditor = lazy(() => import("./studio/StudioEditor").then((m) => ({ default: m.StudioEditor })));
 import { Logo } from "./ui/Logo";
 
@@ -61,6 +62,7 @@ export function App() {
             {route.page === "agents" && <AgentsPage go={go} />}
             {route.page === "studio" && <StudioEditor key={route.agentId} agentId={route.agentId} go={go} />}
             {route.page === "agent" && <AgentDetail key={route.name} name={route.name} go={go} />}
+            {route.page === "models" && <ModelsPage />}
           </Suspense>
         </div>
       </main>

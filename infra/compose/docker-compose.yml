@@ -6,6 +6,7 @@
 #                         (the one entry point: http://localhost:3000, /api → API),
 #                         2 API replicas, 2 workers. What `./setup.sh` starts for testers.
 #   profile `llm`:        Ollama in Docker (CPU-only on macOS: prefer the native app).
+#   profile `test`:       a fake OpenAI-compatible model (browser tests, CI).
 #
 # Run it through the root Makefile or setup.sh, which pass the root .env:
 #   docker compose --file infra/compose/docker-compose.yml --env-file .env ...
@@ -87,6 +88,14 @@ services:
         condition: service_healthy
     # SIGTERM → finish the current step, release the run to another worker (R10.7).
     stop_grace_period: 40s
+
+  # A fake OpenAI-compatible model: tests and CI only (profile `test`, never started
+  # by setup). Connections to http://fake-model:9999/v1 answer deterministically.
+  fake-model:
+    <<: *runtime
+    profiles: ["test"]
+    command: ["fake-model", "--host", "0.0.0.0", "--port", "9999"]
+    restart: "no"
 
   ui:
     image: ${UI_IMAGE:-ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/ui:latest}

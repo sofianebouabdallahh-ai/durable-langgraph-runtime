@@ -46,6 +46,62 @@
         "title": "AboutView",
         "type": "object"
       },
+      "AddConnection": {
+        "additionalProperties": false,
+        "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "base_url": {
+            "maxLength": 500,
+            "minLength": 8,
+            "title": "Base Url",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "ollama",
+              "openai",
+              "azure_foundry",
+              "compatible"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "models": {
+            "default": [],
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "display_name",
+          "kind",
+          "base_url"
+        ],
+        "title": "AddConnection",
+        "type": "object"
+      },
       "AdminState": {
         "properties": {
           "paused": {
@@ -380,6 +436,121 @@
         "title": "ApprovalRequest",
         "type": "object"
       },
+      "ConnectionView": {
+        "properties": {
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "has_key": {
+            "description": "A key is saved. The key itself is never returned",
+            "title": "Has Key",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tells keys apart without revealing them",
+            "title": "Key Fingerprint"
+          },
+          "kind": {
+            "enum": [
+              "ollama",
+              "openai",
+              "azure_foundry",
+              "compatible"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "name": {
+            "description": "What agents say: `<name>:<model>`",
+            "title": "Name",
+            "type": "string"
+          },
+          "test_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Detail"
+          },
+          "test_status": {
+            "enum": [
+              "untested",
+              "ready",
+              "failed"
+            ],
+            "title": "Test Status",
+            "type": "string"
+          },
+          "tested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tested At"
+          },
+          "tested_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tested Model"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "display_name",
+          "kind",
+          "base_url",
+          "has_key",
+          "key_fingerprint",
+          "models",
+          "test_status",
+          "test_detail",
+          "tested_model",
+          "tested_at"
+        ],
+        "title": "ConnectionView",
+        "type": "object"
+      },
       "CreateAgentRequest": {
         "additionalProperties": false,
         "properties": {
@@ -501,6 +672,77 @@
         "title": "CreateSessionRequest",
         "type": "object"
       },
+      "DefaultModel": {
+        "additionalProperties": false,
+        "properties": {
+          "connection_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None: back to the setup's model",
+            "title": "Connection Id"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "required": [
+          "connection_id"
+        ],
+        "title": "DefaultModel",
+        "type": "object"
+      },
+      "DefaultView": {
+        "properties": {
+          "connection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "setup_provider": {
+            "description": "What roles use when no default is set",
+            "title": "Setup Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "model",
+          "setup_provider"
+        ],
+        "title": "DefaultView",
+        "type": "object"
+      },
       "DraftView": {
         "properties": {
           "blockers": {
@@ -539,6 +781,68 @@
           "blockers"
         ],
         "title": "DraftView",
+        "type": "object"
+      },
+      "EditConnection": {
+        "additionalProperties": false,
+        "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A new key replaces the saved one; omit to keep it",
+            "title": "Api Key"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "models": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Models"
+          }
+        },
+        "title": "EditConnection",
         "type": "object"
       },
       "EventView": {
@@ -926,6 +1230,27 @@
           "next_after_seq"
         ],
         "title": "MessagesPage",
+        "type": "object"
+      },
+      "OllamaView": {
+        "properties": {
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "base_url",
+          "models"
+        ],
+        "title": "OllamaView",
         "type": "object"
       },
       "PauseRequest": {
@@ -1665,6 +1990,54 @@
         "title": "SubagentView",
         "type": "object"
       },
+      "TestRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "TestRequest",
+        "type": "object"
+      },
+      "TestView": {
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/ConnectionView"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "seconds": {
+            "title": "Seconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "ok",
+          "detail",
+          "model",
+          "seconds",
+          "connection"
+        ],
+        "title": "TestView",
+        "type": "object"
+      },
       "ToolChoice": {
         "additionalProperties": false,
         "properties": {
@@ -2173,6 +2546,342 @@
         "summary": "Liveness: the process is up",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/models/connections": {
+      "get": {
+        "operationId": "list_connections_models_connections_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectionView"
+                  },
+                  "title": "Response List Connections Models Connections Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Your models",
+        "tags": [
+          "models"
+        ]
+      },
+      "post": {
+        "operationId": "add_models_connections_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddConnection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add a model connection",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/models/connections/{connection_id}": {
+      "delete": {
+        "operationId": "remove_models_connections__connection_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove (agents using it need another model)",
+        "tags": [
+          "models"
+        ]
+      },
+      "patch": {
+        "operationId": "edit_models_connections__connection_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditConnection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Edit (a new key replaces the old one)",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/models/connections/{connection_id}/models": {
+      "get": {
+        "operationId": "remote_models_models_connections__connection_id__models_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Remote Models Models Connections  Connection Id  Models Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "The models the service says it has",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/models/connections/{connection_id}/test": {
+      "post": {
+        "operationId": "test_models_connections__connection_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check it answers and uses tools",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/models/default": {
+      "get": {
+        "operationId": "get_default_models_default_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "The default model",
+        "tags": [
+          "models"
+        ]
+      },
+      "put": {
+        "operationId": "set_default_models_default_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DefaultModel"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set the default model",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/models/ollama": {
+      "get": {
+        "operationId": "ollama_models_ollama_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OllamaView"
+                  },
+                  "title": "Response Ollama Models Ollama Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Find Ollama",
+        "tags": [
+          "models"
         ]
       }
     },

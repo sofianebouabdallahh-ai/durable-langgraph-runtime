@@ -5,6 +5,7 @@
  *   #/            home (start a chat)       #/s/<id>        a chat
  *   #/agents      the agents                #/agents/<name> one agent
  *   #/studio/<id> edit one of your agents (the Agent Studio)
+ *   #/settings/models  your models and keys
  */
 import { useCallback, useSyncExternalStore } from "react";
 
@@ -13,13 +14,15 @@ export type Route =
   | { page: "chat"; sessionId: string }
   | { page: "agents" }
   | { page: "agent"; name: string }
-  | { page: "studio"; agentId: string };
+  | { page: "studio"; agentId: string }
+  | { page: "models" };
 
 export function parse(hash: string): Route {
   const [, kind, id] = hash.replace(/^#/, "").split("/");
   if (kind === "s" && id) return { page: "chat", sessionId: decodeURIComponent(id) };
   if (kind === "agents") return id ? { page: "agent", name: decodeURIComponent(id) } : { page: "agents" };
   if (kind === "studio" && id) return { page: "studio", agentId: decodeURIComponent(id) };
+  if (kind === "settings" && id === "models") return { page: "models" };
   return { page: "home" };
 }
 
@@ -35,6 +38,8 @@ export function href(route: Route): string {
       return `#/agents/${encodeURIComponent(route.name)}`;
     case "studio":
       return `#/studio/${encodeURIComponent(route.agentId)}`;
+    case "models":
+      return "#/settings/models";
   }
 }
 
