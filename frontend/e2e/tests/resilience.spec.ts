@@ -6,7 +6,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { containers, docker, expectScreenMatchesTranscript, getJson, openEmptyChat, restoreStack, send, servingReplica, waitTurnOver, startChat } from "./support";
+import { containers, docker, expectScreenMatchesTranscript, getJson, openEmptyChat, publishedAgent, restoreStack, send, servingReplica, waitTurnOver, startChat } from "./support";
 
 const API_REPLICAS = Number(process.env.API_REPLICAS ?? 2);
 const WORKERS = Number(process.env.WORKERS ?? 2);
@@ -67,4 +67,35 @@ test("the worker running the turn is killed in the middle of a tool call", async
   expect(events.events.filter((e) => e.type === "run.reclaimed")).toHaveLength(1);
   await page.getByRole("button", { name: "What happened?" }).click();
   await expect(page.getByTestId("what-happened")).toContainText("another one took over");
+});
+
+test("a chat with your own agent survives a worker crash, on the same version", async ({ page, request }) => {
+  const agent = await publishedAgent(request);
+  const created = await request.post("/api/sessions", { data: { agent: agent.name, title: "e2e" } });
+  const sid = ((await created.json()) as { id: string }).id;
+  await page.goto(`/#/s/${sid}`);
+  const sent = await request.post(`/api/sessions/${sid}/messages`, {
+    data: { content: "keep this", script: [
+      { tool_calls: [{ name: "save_note", args: { text: "kept once", linger_s: 6 } }] },
+      { content: "Kept it." },
+    ] },
+  });
+  const runId = ((await sent.json()) as { run_id: string }).run_id;
+  let owner = "";
+  await expect.poll(async () => {
+    const run = await getJson<{ status: string; owner: string | null }>(request, `/api/runs/${runId}`);
+    owner = run.status === "running" && run.owner ? run.owner : "";
+    return owner;
+  }).not.toBe("");
+  const victim = containers("worker").find((id) => id.startsWith(owner.split(":")[0] ?? ""));
+  expect(victim).toBeTruthy();
+  // Someone starts editing the agent meanwhile: the running turn keeps its version.
+  const editDraft = await request.post(`/api/studio/agents/${agent.id}/edit`);
+  expect(editDraft.status()).toBe(200);
+  docker("kill", victim!);
+  await expect(page.getByTestId("assistant-message")).toContainText("Kept it.", { timeout: 90_000 });
+  await waitTurnOver(request, sid);
+  await expectScreenMatchesTranscript(page, request, sid);
+  const events = await getJson<{ events: { type: string }[] }>(request, `/api/runs/${runId}/events?limit=500`);
+  expect(events.events.filter((e) => e.type === "run.reclaimed")).toHaveLength(1);
 });

@@ -12,7 +12,8 @@ test("agents and their helpers, then a chat with one", async ({ page }) => {
   const cards = page.getByTestId("agent-card");
   await expect(cards.filter({ hasText: "Nuria" })).toHaveCount(1);
   await expect(cards.filter({ hasText: "Delegator" })).toHaveCount(0); // test fixtures stay hidden
-  await expect(page.getByText("Building your own agents is coming next")).toBeVisible();
+  await expect(page.getByRole("button", { name: "New agent" })).toBeVisible(); // the Studio's way in
+  await expect(page.getByText("Your agents")).toBeVisible();
   expect(await serious(page)).toEqual([]);
 
   await cards.filter({ hasText: "Nuria" }).click();

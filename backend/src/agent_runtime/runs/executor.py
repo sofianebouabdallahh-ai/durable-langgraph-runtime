@@ -47,6 +47,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphRecursionError
 from langgraph.types import Command, interrupt
 
+from agent_runtime.agents.resolver import AgentResolver
 from agent_runtime.checkpointing import FencedCheckpointer
 from agent_runtime.config import Settings
 from agent_runtime.db import Conn, Pool
@@ -240,6 +241,7 @@ class RunExecutor:
         policy: ToolPolicy | None = None,
         enqueue: Callable[[uuid.UUID], Awaitable[object]] | None = None,
         local_fanout: bool = False,
+        agents: AgentResolver | None = None,
     ) -> None:
         self._pool = pool
         self._settings = settings
@@ -249,12 +251,15 @@ class RunExecutor:
         self._release_requested = release_requested or asyncio.Event()
         self._bus = bus  # events are published after each commit (R1.5)
         self._tools = tools or default_tools()
+        # Agents are built from the snapshot each run pinned (R15.4), not looked up by name.
+        self._agents = agents or AgentResolver(pool, graphs, self._tools)
         self._hooks = hooks or default_hooks()
         self._policy = policy or RiskClassPolicy()
         self._enqueue = enqueue  # send a run that became queued (children, fanned-in parent)
         self._orchestrator: SubagentOrchestrator | None = None  # set for agents with sub-agents
         self._transcript: TranscriptWriter | None = None  # set for chat turns
         self._tokens: TokenRelay | None = None  # set for agent graphs
+        self._test_chat = False  # a Studio test chat: side effects are simulated
         # A release the worker must NOT re-send at once (an open circuit breaker): the
         # outbox relay re-sends it once its message is stale, which is the backoff.
         self.deferred = False
@@ -324,11 +329,16 @@ class RunExecutor:
                 if run.limits
                 else resolve_limits(self._settings, RunOptions())
             )
-            spec = self._graphs.get(run.graph_name)
+            spec = await self._spec_of(run)
             spec.input_model.model_validate(run.input)
         except Exception as exc:
             return await self._fail(fence, FailureReason.ERROR, None, detail=repr(exc))
         outbox = Outbox(run.id, fence, committed_steps=run.steps, bus=self._bus)
+        self._test_chat = False
+        if run.session_id is not None:
+            async with self._pool.connection() as conn:
+                session = await SessionRepository(conn).get(run.session_id)
+            self._test_chat = session.playground_of is not None
         if run.session_id is not None:
             # A chat turn: its transcript is written in each checkpoint's transaction.
             self._transcript = outbox.transcript = TranscriptWriter(
@@ -549,6 +559,7 @@ class RunExecutor:
             post_hooks=[self._hooks.get(h) for h in fm.hooks.post_tool],
             max_tool_calls=limits.max_tool_calls,
             orchestrator=self._orchestrator,
+            simulate_side_effects=self._test_chat,
         )
         pipeline = ToolPipeline(self._tools, self._policy, interrupt=interrupt)
         turn = TurnInfo(
@@ -596,12 +607,18 @@ class RunExecutor:
 
     # ------------------------------------------------------- sessions (R15.6)
 
+    async def _spec_of(self, run: Run) -> GraphSpec:
+        """What this run executes: its pinned agent bundle, or a plain graph by name."""
+        if run.agent_hash is not None:
+            return await self._agents.spec(run.agent_hash)
+        return self._graphs.get(run.graph_name)
+
     async def _turn_end(self, run: Run, ended: Run) -> None:
         """turn_end hooks: observe-only, after the turn's outcome is committed."""
         if not ended.status.is_terminal or run.kind == "session_end":
             return
         try:
-            spec = self._graphs.get(run.graph_name)
+            spec = await self._spec_of(run)
         except Exception:
             return
         if spec.agent is None or not spec.agent.frontmatter.hooks.turn_end:
@@ -618,7 +635,7 @@ class RunExecutor:
         session_id = uuid.UUID(str(run.input["session_id"]))
         summary: str | None = None
         try:
-            spec = self._graphs.get(run.graph_name)
+            spec = await self._spec_of(run)
             async with self._pool.connection() as conn:
                 session = await SessionRepository(conn).get(session_id)
                 stats, last = await _transcript_stats(conn, session_id)

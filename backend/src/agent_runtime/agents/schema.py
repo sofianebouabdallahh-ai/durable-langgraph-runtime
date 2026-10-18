@@ -38,13 +38,16 @@ class ToolGrant(_Strict):
 
 
 def _normalise_tools(value: Any) -> Any:
-    """Accept `[search, {run_python: {max_calls: 10}}]` and return ToolGrant dicts."""
+    """Accept `[search, {run_python: {max_calls: 10}}, {name: calculator}]` and return
+    ToolGrant dicts."""
     if not isinstance(value, list):
         return value
     out: list[Any] = []
     for item in value:
         if isinstance(item, str):
             out.append({"name": item})
+        elif isinstance(item, dict) and "name" in item:
+            out.append(item)  # already a grant: {name: search, max_calls: 3}
         elif isinstance(item, dict) and len(item) == 1:
             ((name, opts),) = item.items()
             out.append({"name": name, **(opts or {})})
@@ -70,6 +73,8 @@ class MainAgentHooks(SubAgentHooks):
 
 class _AgentFields(_Strict):
     name: Annotated[str, Field(pattern=NAME_PATTERN)]
+    # How people see it ("Nuria", "Trip planner"); the name is the fixed id.
+    display_name: Annotated[str, Field(min_length=1, max_length=60)] | None = None
     description: Annotated[str, Field(min_length=1, max_length=500)]
     version: Annotated[int, Field(gt=0)]
     model: Annotated[str, Field(min_length=1)]

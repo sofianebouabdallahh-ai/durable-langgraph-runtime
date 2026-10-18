@@ -12,6 +12,8 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Header, Query, Request, status
 from fastapi.responses import StreamingResponse
 
+from agent_runtime.agents.schema import AgentDefinition
+from agent_runtime.agents.studio import StudioService
 from agent_runtime.api.schemas import (
     AgentView,
     ApprovalRequest,
@@ -25,7 +27,7 @@ from agent_runtime.api.schemas import (
     TurnAccepted,
     UpdateSessionRequest,
 )
-from agent_runtime.graphs import GraphRegistry, UnknownGraph
+from agent_runtime.graphs import UnknownGraph
 from agent_runtime.sessions.service import SessionService
 from agent_runtime.streaming.session import SessionStream
 
@@ -87,10 +89,21 @@ async def list_messages(
 @sessions.post("/{session_id}/messages", status_code=status.HTTP_202_ACCEPTED,
                response_model=TurnAccepted, summary="Send a message: starts a turn")  # fmt: skip
 async def send_message(
-    session_id: uuid.UUID, body: SendMessageRequest, service: SessionsDep
+    session_id: uuid.UUID,
+    body: SendMessageRequest,
+    service: SessionsDep,
+    idempotency_key: Annotated[
+        str | None,
+        Header(
+            min_length=1,
+            max_length=100,
+            description="Retry-safe sends: the same key returns the same turn",
+        ),
+    ] = None,
 ) -> TurnAccepted:
     turn = await service.send(session_id, body.content, body.options, script=body.script,
-                              subagent_scripts=body.subagent_scripts)  # fmt: skip
+                              subagent_scripts=body.subagent_scripts,
+                              idempotency_key=idempotency_key)  # fmt: skip
     return TurnAccepted(message_id=turn.message.message_id, seq=turn.message.seq,
                         run_id=turn.run.id)  # fmt: skip
 
@@ -153,14 +166,18 @@ async def stream_session(
 agents = APIRouter(prefix="/agents", tags=["agents"])
 
 
-def _agent_view(graphs: GraphRegistry, name: str, *, prompt: bool) -> AgentView:
-    spec = graphs.get(name)
-    if spec.agent is None:
-        raise UnknownGraph(f"unknown agent {name!r}")
-    a = spec.agent
+def agent_view(
+    a: AgentDefinition,
+    *,
+    prompt: bool,
+    source: Literal["builtin", "user"] = "builtin",
+    version: int | None = None,
+    agent_id: uuid.UUID | None = None,
+) -> AgentView:
     fm = a.frontmatter
     return AgentView(
-        name=a.id, description=fm.description, version=fm.version, model=fm.model,
+        name=a.id, display_name=fm.display_name or a.id, source=source, agent_id=agent_id,
+        description=fm.description, version=version or fm.version, model=fm.model,
         max_turns=fm.max_turns, tools=[t.model_dump(exclude_none=True) for t in fm.tools],
         limits=fm.limits.model_dump(exclude_none=True),
         hooks={k: v for k, v in fm.hooks.model_dump().items() if v},
@@ -180,16 +197,28 @@ def _agent_view(graphs: GraphRegistry, name: str, *, prompt: bool) -> AgentView:
     )  # fmt: skip
 
 
-def _graphs(request: Request) -> GraphRegistry:
-    graphs: GraphRegistry = request.app.state.graphs
-    return graphs
+def _studio(request: Request) -> StudioService:
+    studio: StudioService = request.app.state.studio
+    return studio
 
 
-@agents.get("", response_model=list[AgentView], summary="Agent definitions")
-async def list_agents(graphs: Annotated[GraphRegistry, Depends(_graphs)]) -> list[AgentView]:
-    return [_agent_view(graphs, s.name, prompt=False) for s in graphs if s.agent is not None]
+StudioDep = Annotated[StudioService, Depends(_studio)]
+
+
+@agents.get("", response_model=list[AgentView], summary="The agents you can chat with")
+async def list_agents(studio: StudioDep) -> list[AgentView]:
+    """Built-in agents (files) and published Studio agents."""
+    out = [agent_view(d, prompt=False) for d in studio.builtins()]
+    out += [agent_view(d, prompt=False, source="user", version=v, agent_id=i)
+            for d, v, i in await studio.published_definitions()]  # fmt: skip
+    return out
 
 
 @agents.get("/{name}", response_model=AgentView, summary="One agent, with its prompt")
-async def get_agent(name: str, graphs: Annotated[GraphRegistry, Depends(_graphs)]) -> AgentView:
-    return _agent_view(graphs, name, prompt=True)
+async def get_agent(name: str, studio: StudioDep) -> AgentView:
+    if (builtin := studio.builtin(name)) is not None:
+        return agent_view(builtin, prompt=True)
+    for d, v, i in await studio.published_definitions():
+        if d.id == name:
+            return agent_view(d, prompt=True, source="user", version=v, agent_id=i)
+    raise UnknownGraph(f"unknown agent {name!r}")

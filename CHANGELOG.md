@@ -18,6 +18,27 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - CR-004 + ADR-0003 (accepted): agents defined as `backend/agents/*.agent.md` (name, max turns, prompt, tools, limits, hooks); hooks for session start/end, turn start/end and pre/post tool, built on LangChain middleware plus harness-owned session hooks.
 - CR-003 (accepted): harness guardrails. Run budgets with a soft→hard wrap-up, loop detection, ceilings that callers can only tighten, deny-by-default tool grants, least-privilege DB roles, untrusted-content handling, audit trail, kill switch.
 
+### L3a — Agent Studio: agents & helpers
+#### Added
+- **The Agent Studio** (Agents → New agent / Copy / Import):
+  - a form for an agent and its helpers (sub-agents): name, purpose, instructions with insertable placeholders, tools as plain-language cards ("Asks you first"), helpers, effort presets, protections;
+  - autosave, with issues next to each field in plain words;
+  - a **test chat** beside the form (small budget; approval-gated tools simulated, nothing sent);
+  - **publish** (needs a test on the exact draft) → immutable versions, history, restore, export / import (`.agent.md` or a zipped folder).
+- **Every turn pins its agent by hash** (R15.4, now wired): a content-addressed bundle (agent + helpers); workers build from the snapshot. Publishing never changes a running or queued turn (AC47); neither does a deploy.
+- **One validator for files and the Studio** (`validate_definition`); `display_name` in definitions (`chat` is "Nuria").
+- **Database:**
+  - `agents`, `agent_versions` (a trigger freezes published versions);
+  - bundle snapshots;
+  - `sessions.playground_of`;
+  - `runs.idempotency_key`.
+- **Retry-safe sends** (`Idempotency-Key`); the demo model hands tasks to any agent's helpers; `GET /agents` includes published Studio agents.
+- Browser tests for the Studio; a user agent survives a worker crash on its version.
+
+#### Fixed
+- A tool grant written as `{name: calculator}` crashed the definition parser.
+- Migration 0010's downgrade detaches runs from bundle snapshots before deleting them.
+
 ### L2 — Chat UI
 #### Added
 - **The web UI** (`frontend/`): React 19 + TypeScript strict + Vite + Tailwind + TanStack Query; the API client generated from the OpenAPI spec (CI fails on drift).

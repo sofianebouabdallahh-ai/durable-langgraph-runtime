@@ -87,6 +87,7 @@ class Session:
     ended_at: datetime | None
     active_run_id: uuid.UUID | None = None
     active_run_status: str | None = None
+    playground_of: uuid.UUID | None = None  # a test chat for this agent's draft (L3a)
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> Session:
@@ -97,6 +98,7 @@ class Session:
             created_at=row["created_at"], last_activity_at=row["last_activity_at"],
             ended_at=row["ended_at"], active_run_id=row.get("active_run_id"),
             active_run_status=row.get("active_run_status"),
+            playground_of=row.get("playground_of"),
         )  # fmt: skip
 
 
@@ -137,7 +139,7 @@ class NewMessage:
 
 _SESSION = """
     s.id, s.graph_name, s.agent_name, s.title, s.status, s.last_seq, s.tokens, s.cost,
-    s.summary, s.created_at, s.last_activity_at, s.ended_at,
+    s.summary, s.created_at, s.last_activity_at, s.ended_at, s.playground_of,
     r.id AS active_run_id, r.status AS active_run_status
 """
 _FROM = """
@@ -153,12 +155,17 @@ class SessionRepository:
         self.created: list[Message] = []  # publish after COMMIT
 
     async def create(
-        self, *, graph_name: str, agent_name: str | None, title: str | None
+        self,
+        *,
+        graph_name: str,
+        agent_name: str | None,
+        title: str | None,
+        playground_of: uuid.UUID | None = None,
     ) -> Session:
         cur = await self._conn.execute(
-            "INSERT INTO sessions (id, graph_name, agent_name, title) VALUES (%s, %s, %s, %s) "
-            "RETURNING id",
-            (new_id(), graph_name, agent_name, title),
+            "INSERT INTO sessions (id, graph_name, agent_name, title, playground_of) "
+            "VALUES (%s, %s, %s, %s, %s) RETURNING id",
+            (new_id(), graph_name, agent_name, title, playground_of),
         )
         row = await cur.fetchone()
         assert row is not None
@@ -180,6 +187,7 @@ class SessionRepository:
             SELECT {_SESSION} {_FROM}
             WHERE (%(status)s::text IS NULL OR s.status = %(status)s)
               AND (%(before)s::timestamptz IS NULL OR s.last_activity_at < %(before)s)
+              AND s.playground_of IS NULL  -- test chats live in the Studio, not the list
             ORDER BY s.last_activity_at DESC, s.id DESC LIMIT %(limit)s
             """,
             {"status": status, "before": before, "limit": limit},
@@ -273,6 +281,14 @@ class SessionRepository:
             written.append(Message.from_row(row))
         self.created.extend(written)
         return written
+
+    async def message(self, session_id: uuid.UUID, message_id: str) -> Message | None:
+        cur = await self._conn.execute(
+            "SELECT * FROM session_messages WHERE session_id = %s AND message_id = %s",
+            (session_id, message_id),
+        )
+        row = await cur.fetchone()
+        return Message.from_row(row) if row else None
 
     async def messages(
         self, session_id: uuid.UUID, *, after_seq: int = 0, limit: int = 100

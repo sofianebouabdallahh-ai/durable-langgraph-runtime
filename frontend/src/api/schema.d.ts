@@ -96,7 +96,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Agent definitions */
+        /**
+         * The agents you can chat with
+         * @description Built-in agents (files) and published Studio agents.
+         */
         get: operations["list_agents_agents_get"];
         put?: never;
         post?: never;
@@ -450,6 +453,195 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/studio/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Your agents */
+        get: operations["list_agents_studio_agents_get"];
+        put?: never;
+        /** A new agent (blank, or a copy) with a draft */
+        post: operations["create_agent_studio_agents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/agents/{agent_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One agent */
+        get: operations["get_agent_studio_agents__agent_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/agents/{agent_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive: no new chats; old ones stay readable */
+        post: operations["archive_studio_agents__agent_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/agents/{agent_id}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save the draft (autosave); returns its issues */
+        put: operations["save_draft_studio_agents__agent_id__draft_put"];
+        post?: never;
+        /** Throw away the draft (back to the published version) */
+        delete: operations["discard_studio_agents__agent_id__draft_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/agents/{agent_id}/edit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start editing: a draft from the published version */
+        post: operations["edit_studio_agents__agent_id__edit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/agents/{agent_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download as agent.md (or a zipped folder) */
+        get: operations["export_studio_agents__agent_id__export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/agents/{agent_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish the draft as an immutable version (needs a test) */
+        post: operations["publish_studio_agents__agent_id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/agents/{agent_id}/test-chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** A test chat with the draft */
+        post: operations["test_chat_studio_agents__agent_id__test_chat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/agents/{agent_id}/versions/{number}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Make an earlier version the draft */
+        post: operations["restore_studio_agents__agent_id__versions__number__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What the form offers */
+        get: operations["catalog_studio_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import an agent.md or a zipped folder (the file is the body) */
+        post: operations["import_agent_studio_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -503,10 +695,64 @@ export interface components {
              */
             updated_at: string;
         };
+        /** AgentDocument */
+        AgentDocument: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Display Name */
+            display_name?: string | null;
+            /** Helpers */
+            helpers?: components["schemas"]["HelperDocument"][];
+            /** Hooks */
+            hooks?: {
+                [key: string]: string[];
+            };
+            /**
+             * Instructions
+             * @default
+             */
+            instructions: string;
+            /** Limits */
+            limits?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Max Turns
+             * @default 20
+             */
+            max_turns: number;
+            /**
+             * Model
+             * @default chat
+             */
+            model: string;
+            /** Name */
+            name: string;
+            /**
+             * Temperature
+             * @default 0.2
+             */
+            temperature: number;
+            /** Tools */
+            tools?: components["schemas"]["ToolChoice"][];
+        };
         /** AgentView */
         AgentView: {
+            /**
+             * Agent Id
+             * @description A Studio agent's id (for editing)
+             */
+            agent_id: string | null;
             /** Description */
             description: string;
+            /**
+             * Display Name
+             * @description How people see it (falls back to the name)
+             */
+            display_name: string;
             /**
              * Helpers
              * @description The sub-agents in detail
@@ -536,6 +782,12 @@ export interface components {
              * @description GET /agents/{name} only
              */
             prompt?: string | null;
+            /**
+             * Source
+             * @description Files in git, or built in the Studio
+             * @enum {string}
+             */
+            source: "builtin" | "user";
             /** Subagents */
             subagents: string[];
             /** Tools */
@@ -568,6 +820,21 @@ export interface components {
             edits?: components["schemas"]["ApprovalEdits"] | null;
             /** Reason */
             reason?: string | null;
+        };
+        /** CreateAgentRequest */
+        CreateAgentRequest: {
+            /**
+             * Copy Of
+             * @description An agent to start from (its name)
+             */
+            copy_of?: string | null;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Display Name */
+            display_name: string;
         };
         /** CreateRunRequest */
         CreateRunRequest: {
@@ -612,6 +879,24 @@ export interface components {
             agent: string;
             /** Title */
             title?: string | null;
+        };
+        /** DraftView */
+        DraftView: {
+            /**
+             * Blockers
+             * @description What stands between this draft and publishing
+             */
+            blockers: string[];
+            document: components["schemas"]["AgentDocument"];
+            /** Issues */
+            issues: components["schemas"]["IssueView"][];
+            /** Number */
+            number: number;
+            /**
+             * Tested
+             * @description A test-chat reply completed on exactly this draft
+             */
+            tested: boolean;
         };
         /** EventView */
         EventView: {
@@ -675,6 +960,48 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** HelperDocument */
+        HelperDocument: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Display Name */
+            display_name?: string | null;
+            /** Hooks */
+            hooks?: {
+                [key: string]: string[];
+            };
+            /**
+             * Instructions
+             * @default
+             */
+            instructions: string;
+            /** Limits */
+            limits?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Max Turns
+             * @default 6
+             */
+            max_turns: number;
+            /**
+             * Model
+             * @default chat
+             */
+            model: string;
+            /** Name */
+            name: string;
+            /**
+             * Temperature
+             * @default 0.2
+             */
+            temperature: number;
+            /** Tools */
+            tools?: components["schemas"]["ToolChoice"][];
+        };
         /**
          * HelperView
          * @description A sub-agent (CR-005), as the UI shows it under its main agent.
@@ -701,6 +1028,18 @@ export interface components {
             tools: {
                 [key: string]: unknown;
             }[];
+        };
+        /** IssueView */
+        IssueView: {
+            /** Field */
+            field: string | null;
+            /** Message */
+            message: string;
+            /**
+             * Where
+             * @description 'agent' or 'helpers.<name>'
+             */
+            where: string;
         };
         /** MessageView */
         MessageView: {
@@ -735,6 +1074,38 @@ export interface components {
         PauseRequest: {
             /** Reason */
             reason?: string | null;
+        };
+        /** Preset */
+        Preset: {
+            /** Limits */
+            limits: {
+                [key: string]: unknown;
+            };
+            /** Max Turns */
+            max_turns: number;
+        };
+        /** ProtectionOption */
+        ProtectionOption: {
+            /** Default */
+            default: boolean;
+            /** Description */
+            description: string;
+            /**
+             * Helpers
+             * @description Also applies to helpers (tool protections)
+             */
+            helpers: boolean;
+            /** Hook */
+            hook: string;
+            /** Label */
+            label: string;
+            /** Point */
+            point: string;
+        };
+        /** PublishRequest */
+        PublishRequest: {
+            /** Changelog */
+            changelog?: string | null;
         };
         /** ResultView */
         ResultView: {
@@ -905,6 +1276,52 @@ export interface components {
             /** Tokens */
             tokens: number;
         };
+        /** StudioAgentView */
+        StudioAgentView: {
+            /** Archived */
+            archived: boolean;
+            /** Description */
+            description: string;
+            /** Display Name */
+            display_name: string;
+            draft: components["schemas"]["DraftView"] | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            published: components["schemas"]["VersionView"] | null;
+            published_document: components["schemas"]["AgentDocument"] | null;
+            /**
+             * Status
+             * @description Never published / published, nothing pending / published, with a draft
+             * @enum {string}
+             */
+            status: "draft" | "published" | "changes";
+            /** Versions */
+            versions: components["schemas"]["VersionView"][];
+        };
+        /** StudioCatalog */
+        StudioCatalog: {
+            /** Ceilings */
+            ceilings: {
+                [key: string]: number;
+            };
+            /** Placeholders */
+            placeholders: {
+                [key: string]: string[];
+            };
+            /** Presets */
+            presets: {
+                [key: string]: components["schemas"]["Preset"];
+            };
+            /** Protections */
+            protections: components["schemas"]["ProtectionOption"][];
+            /** Tools */
+            tools: components["schemas"]["ToolOption"][];
+        };
         /** SubagentView */
         SubagentView: {
             /** Agent */
@@ -933,6 +1350,34 @@ export interface components {
             usage: {
                 [key: string]: unknown;
             };
+        };
+        /** ToolChoice */
+        ToolChoice: {
+            /** Max Calls */
+            max_calls?: number | null;
+            /** Name */
+            name: string;
+        };
+        /** ToolOption */
+        ToolOption: {
+            /**
+             * Asks First
+             * @description Needs a person's approval before it runs
+             */
+            asks_first: boolean;
+            /** Description */
+            description: string;
+            /**
+             * Helpers Allowed
+             * @description Helpers may use it (not approval-gated tools)
+             */
+            helpers_allowed: boolean;
+            /** Label */
+            label: string;
+            /** Name */
+            name: string;
+            /** Risk */
+            risk: string;
         };
         /** TurnAccepted */
         TurnAccepted: {
@@ -968,6 +1413,25 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** VersionView */
+        VersionView: {
+            /** Changelog */
+            changelog: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Number */
+            number: number;
+            /** Published At */
+            published_at: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "draft" | "published" | "archived";
         };
     };
     responses: never;
@@ -1746,7 +2210,10 @@ export interface operations {
     send_message_sessions__session_id__messages_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Retry-safe sends: the same key returns the same turn */
+                "idempotency-key"?: string | null;
+            };
             path: {
                 session_id: string;
             };
@@ -1817,6 +2284,403 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list_agents_studio_agents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioAgentView"][];
+                };
+            };
+        };
+    };
+    create_agent_studio_agents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAgentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioAgentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_agent_studio_agents__agent_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioAgentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_studio_agents__agent_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioAgentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_draft_studio_agents__agent_id__draft_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentDocument"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioAgentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_studio_agents__agent_id__draft_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioAgentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_studio_agents__agent_id__edit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioAgentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_studio_agents__agent_id__export_get: {
+        parameters: {
+            query?: {
+                /** @description Default: the draft, else current */
+                version?: number | null;
+            };
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "application/zip": unknown;
+                    "text/markdown": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_studio_agents__agent_id__publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublishRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioAgentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_chat_studio_agents__agent_id__test_chat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_studio_agents__agent_id__versions__number__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioAgentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    catalog_studio_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioCatalog"];
+                };
+            };
+        };
+    };
+    import_agent_studio_import_post: {
+        parameters: {
+            query: {
+                filename: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioAgentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

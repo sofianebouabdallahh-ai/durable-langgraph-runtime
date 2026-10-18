@@ -6,7 +6,7 @@
 
 Under the hood, a runtime that runs LangGraph agents across a pool of workers and makes them survive what distributed systems throw at them: crashed workers, paused "zombie" workers, restarts, human approvals that take hours, node drains and rolling upgrades. It survives all of these without losing or duplicating work.
 
-> **Status: the local release is under way: one-command setup (L1) and the chat UI (L2) are done.** Clone, run `./setup.sh`, and chat in your browser; kill a worker or an API replica mid-reply and watch nothing get lost. The runtime core (phases 0–6) is complete. Every message is in a durable transcript written with each checkpoint, tokens stream live from any API replica, and a crash mid-turn duplicates nothing. The agent calls tools through one guarded pipeline (budgets with a wrap-up turn, loop detection, retries and a circuit breaker, approvals), delegates to sub-agents that resume after a crash, and fans out child runs across workers. See the [roadmap](docs/roadmap.md) and [phase summaries](docs/progress/).
+> **Status: the local release is under way: one-command setup (L1), the chat UI (L2) and the Agent Studio (L3a) are done.** Clone, run `./setup.sh`, and chat in your browser; kill a worker or an API replica mid-reply and watch nothing get lost. The runtime core (phases 0–6) is complete. Every message is in a durable transcript written with each checkpoint, tokens stream live from any API replica, and a crash mid-turn duplicates nothing. The agent calls tools through one guarded pipeline (budgets with a wrap-up turn, loop detection, retries and a circuit breaker, approvals), delegates to sub-agents that resume after a crash, and fans out child runs across workers. See the [roadmap](docs/roadmap.md) and [phase summaries](docs/progress/).
 
 ## Try it (only Docker needed)
 
@@ -22,7 +22,7 @@ Then open **http://localhost:3000** (setup opens it for you). Setup checks your 
 |---|---|---|
 | ![Home](docs/images/home.png) | ![A chat waiting for approval](docs/images/chat-ui.png) | ![The Nuria agent](docs/images/agent.png) |
 
-**In Nuria:** replies stream in; tool calls show as cards; helpers (sub-agents) show their progress live; anything that reaches the outside world waits for your **Approve**; **Stop** keeps what was written so far; **What happened?** tells each reply's story, including a worker that crashed and the one that took over. **Agents** shows each agent's instructions, tools, limits and helpers (sub-agents); building your own comes next, with the Agent Studio. On the offline demo model, pick a suggestion or say *hello*.
+**In Nuria:** replies stream in; tool calls show as cards; helpers (sub-agents) show their progress live; anything that reaches the outside world waits for your **Approve**; **Stop** keeps what was written so far; **What happened?** tells each reply's story, including a worker that crashed and the one that took over. **Agents** is the **Agent Studio**: build your own agents and their helpers (sub-agents) with a form, try them in a test chat, publish versions, import and export them. No code, no Markdown ([guide](docs/setup/agents.md)). On the offline demo model, pick a suggestion or say *hello*.
 
 ## How it works (target design)
 

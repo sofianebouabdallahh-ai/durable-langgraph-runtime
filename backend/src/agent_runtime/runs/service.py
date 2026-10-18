@@ -16,14 +16,16 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from agent_runtime.admin import AdminRepository
+from agent_runtime.agents.resolver import AgentResolver, Resolved
 from agent_runtime.config import AgentSettings, Settings
 from agent_runtime.db import Pool
-from agent_runtime.graphs import GraphRegistry
+from agent_runtime.graphs import GraphRegistry, GraphSpec
 from agent_runtime.runs.limits import RunOptions, profile_of, resolve_limits
 from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.state import RunStatus
 from agent_runtime.runs.store import Run, RunRepository, RunTerminal
 from agent_runtime.streaming.bus import EventBus, publish_events
+from agent_runtime.tools.builtin import default_tools
 
 log = logging.getLogger(__name__)
 
@@ -75,7 +77,17 @@ def prepare(
     """Validate a new run: the graph exists, the input is valid for it, the options
     are within the ceilings. Raises UnknownGraph, pydantic.ValidationError or
     LimitAboveCeiling."""
-    spec = graphs.get(graph)
+    return prepare_spec(graphs.get(graph), settings, input, options)
+
+
+def prepare_spec(
+    spec: GraphSpec,
+    settings: AgentSettings,
+    input: dict[str, Any],
+    options: dict[str, Any] | None,
+) -> Prepared:
+    """`prepare` for a spec already resolved (an agent pinned by hash)."""
+    graph = spec.name
     validated_input = spec.input_model.model_validate(input)
     run_options = RunOptions.model_validate(options or {})
     limits = resolve_limits(settings, run_options, profile_of(spec))
@@ -95,12 +107,14 @@ class RunService:
         graphs: GraphRegistry,
         relay: OutboxRelay | None = None,
         bus: EventBus | None = None,
+        agents: AgentResolver | None = None,
     ) -> None:
         self._pool = pool
         self._settings = settings
         self._graphs = graphs
         self._relay = relay
         self._bus = bus
+        self.agents = agents or AgentResolver(pool, graphs, default_tools())
         self._depth: tuple[float, int] | None = None  # (read at, value): cached per replica
 
     async def create_run(
@@ -121,7 +135,15 @@ class RunService:
         effort: if Redis is unavailable, the outbox relay sends it later.
         """
         await self._check_paused()
-        prepared = prepare(self._graphs, self._settings, graph, input, options)
+        pinned: Resolved | None = None
+        agent: tuple[str, str, int] | None = None
+        if self.agents.builtin(graph) is not None:  # an agent: pin its definition (R15.4)
+            async with self._pool.connection() as conn:
+                pinned = await self.agents.resolve(conn, graph)
+            prepared = prepare_spec(self.agents.spec_of(pinned), self._settings, input, options)
+            agent = (pinned.bundle_hash, pinned.definition.id, pinned.version)
+        else:
+            prepared = prepare(self._graphs, self._settings, graph, input, options)
         await self.admit()
         async with self._pool.connection() as conn:
             repo = RunRepository(conn)
@@ -130,6 +152,7 @@ class RunService:
                 input=prepared.input,
                 options=prepared.options,
                 limits=prepared.limits,
+                agent=agent,
             )
         await publish_events(self._bus, repo.emitted)  # after commit (R1.5)
         if enqueue and self._relay is not None:

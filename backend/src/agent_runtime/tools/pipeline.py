@@ -84,6 +84,9 @@ class ToolRunContext:
     # Charged in the ledger's transaction when a call is first recorded (a
     # sub-agent's own budget, on top of the run's).
     extra_charge: Callable[[Conn, str], Awaitable[None]] | None = None
+    # A Studio test chat (CR-006 R17.3): after approval, an external side effect is
+    # recorded but not performed. Nothing leaves a test chat.
+    simulate_side_effects: bool = False
 
 
 @dataclass(frozen=True)
@@ -247,18 +250,28 @@ class ToolPipeline:
                     "taken_over": begun.taken_over,  # re-executing a dead owner's call
                 },
             )
-            status, result = await self._execute(
-                spec,
-                args,
-                ToolContext(
-                    run_id=ctx.fence.run_id,
-                    epoch=ctx.fence.epoch,
-                    key=key,
-                    pool=ctx.pool,
-                    orchestrator=ctx.orchestrator,
-                    subagent=ctx.subagent,
-                ),
-            )
+            if ctx.simulate_side_effects and spec.risk_class == "external_side_effect":
+                status, result = (
+                    "done",
+                    {
+                        "simulated": True,
+                        "note": "Test chat: nothing was sent. Published, this would really happen.",
+                        "would_have": redact(args),
+                    },
+                )
+            else:
+                status, result = await self._execute(
+                    spec,
+                    args,
+                    ToolContext(
+                        run_id=ctx.fence.run_id,
+                        epoch=ctx.fence.epoch,
+                        key=key,
+                        pool=ctx.pool,
+                        orchestrator=ctx.orchestrator,
+                        subagent=ctx.subagent,
+                    ),
+                )
             async with ctx.pool.connection() as conn:
                 await invocations.finish(
                     conn,

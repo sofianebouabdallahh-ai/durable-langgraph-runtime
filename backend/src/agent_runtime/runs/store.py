@@ -138,6 +138,8 @@ class Run:
     child_key: str | None = None
     child_total: int = 0
     child_done: int = 0
+    # The agent bundle this run executes (R15.4): the snapshot it was created with.
+    agent_hash: str | None = None
 
     @property
     def root_id(self) -> uuid.UUID:
@@ -173,6 +175,7 @@ class Run:
             root_run_id=row["root_run_id"],
             depth=row["depth"],
             child_key=row["child_key"],
+            agent_hash=row.get("agent_hash"),
             child_total=row["child_total"],
             child_done=row["child_done"],
         )
@@ -224,7 +227,8 @@ _RUN_COLUMNS = """
     id, graph_name, kind, thread_id, status, reason, epoch, owner, lease_expires_at,
     input, options, limits, steps, parent_run_id, session_id,
     created_at, started_at, finished_at, cancel_requested, reclaims, releases, message_id,
-    interrupt_payload, resume_value, root_run_id, depth, child_key, child_total, child_done
+    interrupt_payload, resume_value, root_run_id, depth, child_key, child_total, child_done,
+    agent_hash
 """
 
 
@@ -260,6 +264,8 @@ class RunRepository:
         parent: Run | None = None,
         child_key: str | None = None,
         traceparent: str | None = None,
+        agent: tuple[str, str, int] | None = None,
+        idempotency_key: str | None = None,
     ) -> Run:
         """Insert a `queued` run and its `run.created` event, atomically.
 
@@ -273,8 +279,9 @@ class RunRepository:
                 f"""
                 INSERT INTO runs (id, graph_name, kind, thread_id, input, options, limits,
                                   session_id, parent_run_id, root_run_id, depth, child_key,
-                                  traceparent)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                  traceparent, agent_hash, agent_name, agent_version,
+                                  idempotency_key)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING {_RUN_COLUMNS}
                 """,
                 (
@@ -291,6 +298,10 @@ class RunRepository:
                     parent.depth + 1 if parent else 0,
                     child_key,
                     traceparent,
+                    agent[0] if agent else None,  # (bundle hash, name, version)
+                    agent[1] if agent else None,
+                    agent[2] if agent else None,
+                    idempotency_key,
                 ),
             )
             row = _required(await cur.fetchone(), "INSERT INTO runs … RETURNING")

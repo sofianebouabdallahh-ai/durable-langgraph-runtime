@@ -114,10 +114,109 @@
         "title": "AdminStatus",
         "type": "object"
       },
-      "AgentView": {
+      "AgentDocument": {
+        "additionalProperties": false,
         "properties": {
           "description": {
+            "default": "",
             "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "helpers": {
+            "items": {
+              "$ref": "#/components/schemas/HelperDocument"
+            },
+            "maxItems": 10,
+            "title": "Helpers",
+            "type": "array"
+          },
+          "hooks": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Hooks",
+            "type": "object"
+          },
+          "instructions": {
+            "default": "",
+            "maxLength": 20000,
+            "title": "Instructions",
+            "type": "string"
+          },
+          "limits": {
+            "additionalProperties": true,
+            "title": "Limits",
+            "type": "object"
+          },
+          "max_turns": {
+            "default": 20,
+            "title": "Max Turns",
+            "type": "integer"
+          },
+          "model": {
+            "default": "chat",
+            "title": "Model",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "temperature": {
+            "default": 0.2,
+            "title": "Temperature",
+            "type": "number"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/ToolChoice"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "AgentDocument",
+        "type": "object"
+      },
+      "AgentView": {
+        "properties": {
+          "agent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A Studio agent's id (for editing)",
+            "title": "Agent Id"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "description": "How people see it (falls back to the name)",
+            "title": "Display Name",
             "type": "string"
           },
           "helpers": {
@@ -172,6 +271,15 @@
             "description": "GET /agents/{name} only",
             "title": "Prompt"
           },
+          "source": {
+            "description": "Files in git, or built in the Studio",
+            "enum": [
+              "builtin",
+              "user"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
           "subagents": {
             "items": {
               "type": "string"
@@ -194,6 +302,9 @@
         },
         "required": [
           "name",
+          "display_name",
+          "source",
+          "agent_id",
           "description",
           "version",
           "model",
@@ -267,6 +378,40 @@
           "decision"
         ],
         "title": "ApprovalRequest",
+        "type": "object"
+      },
+      "CreateAgentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "copy_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An agent to start from (its name)",
+            "title": "Copy Of"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name"
+        ],
+        "title": "CreateAgentRequest",
         "type": "object"
       },
       "CreateRunRequest": {
@@ -354,6 +499,46 @@
           "agent"
         ],
         "title": "CreateSessionRequest",
+        "type": "object"
+      },
+      "DraftView": {
+        "properties": {
+          "blockers": {
+            "description": "What stands between this draft and publishing",
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "document": {
+            "$ref": "#/components/schemas/AgentDocument"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/IssueView"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "tested": {
+            "description": "A test-chat reply completed on exactly this draft",
+            "title": "Tested",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "number",
+          "document",
+          "issues",
+          "tested",
+          "blockers"
+        ],
+        "title": "DraftView",
         "type": "object"
       },
       "EventView": {
@@ -502,6 +687,79 @@
         "title": "Health",
         "type": "object"
       },
+      "HelperDocument": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "hooks": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Hooks",
+            "type": "object"
+          },
+          "instructions": {
+            "default": "",
+            "maxLength": 20000,
+            "title": "Instructions",
+            "type": "string"
+          },
+          "limits": {
+            "additionalProperties": true,
+            "title": "Limits",
+            "type": "object"
+          },
+          "max_turns": {
+            "default": 6,
+            "title": "Max Turns",
+            "type": "integer"
+          },
+          "model": {
+            "default": "chat",
+            "title": "Model",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "temperature": {
+            "default": 0.2,
+            "title": "Temperature",
+            "type": "number"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/ToolChoice"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "HelperDocument",
+        "type": "object"
+      },
       "HelperView": {
         "description": "A sub-agent (CR-005), as the UI shows it under its main agent.",
         "properties": {
@@ -556,6 +814,37 @@
           "limits"
         ],
         "title": "HelperView",
+        "type": "object"
+      },
+      "IssueView": {
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "where": {
+            "description": "'agent' or 'helpers.<name>'",
+            "title": "Where",
+            "type": "string"
+          }
+        },
+        "required": [
+          "where",
+          "field",
+          "message"
+        ],
+        "title": "IssueView",
         "type": "object"
       },
       "MessageView": {
@@ -656,6 +945,83 @@
           }
         },
         "title": "PauseRequest",
+        "type": "object"
+      },
+      "Preset": {
+        "properties": {
+          "limits": {
+            "additionalProperties": true,
+            "title": "Limits",
+            "type": "object"
+          },
+          "max_turns": {
+            "title": "Max Turns",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_turns",
+          "limits"
+        ],
+        "title": "Preset",
+        "type": "object"
+      },
+      "ProtectionOption": {
+        "properties": {
+          "default": {
+            "title": "Default",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "helpers": {
+            "description": "Also applies to helpers (tool protections)",
+            "title": "Helpers",
+            "type": "boolean"
+          },
+          "hook": {
+            "title": "Hook",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "point": {
+            "title": "Point",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hook",
+          "point",
+          "label",
+          "description",
+          "default",
+          "helpers"
+        ],
+        "title": "ProtectionOption",
+        "type": "object"
+      },
+      "PublishRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "changelog": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changelog"
+          }
+        },
+        "title": "PublishRequest",
         "type": "object"
       },
       "ResultView": {
@@ -1089,6 +1455,143 @@
         "title": "SessionView",
         "type": "object"
       },
+      "StudioAgentView": {
+        "properties": {
+          "archived": {
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DraftView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "published": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "published_document": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentDocument"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "description": "Never published / published, nothing pending / published, with a draft",
+            "enum": [
+              "draft",
+              "published",
+              "changes"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/VersionView"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "display_name",
+          "description",
+          "status",
+          "archived",
+          "published",
+          "published_document",
+          "draft",
+          "versions"
+        ],
+        "title": "StudioAgentView",
+        "type": "object"
+      },
+      "StudioCatalog": {
+        "properties": {
+          "ceilings": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Ceilings",
+            "type": "object"
+          },
+          "placeholders": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Placeholders",
+            "type": "object"
+          },
+          "presets": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Preset"
+            },
+            "title": "Presets",
+            "type": "object"
+          },
+          "protections": {
+            "items": {
+              "$ref": "#/components/schemas/ProtectionOption"
+            },
+            "title": "Protections",
+            "type": "array"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/ToolOption"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tools",
+          "protections",
+          "presets",
+          "placeholders",
+          "ceilings"
+        ],
+        "title": "StudioCatalog",
+        "type": "object"
+      },
       "SubagentView": {
         "properties": {
           "agent": {
@@ -1160,6 +1663,72 @@
           "result"
         ],
         "title": "SubagentView",
+        "type": "object"
+      },
+      "ToolChoice": {
+        "additionalProperties": false,
+        "properties": {
+          "max_calls": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Calls"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ToolChoice",
+        "type": "object"
+      },
+      "ToolOption": {
+        "properties": {
+          "asks_first": {
+            "description": "Needs a person's approval before it runs",
+            "title": "Asks First",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "helpers_allowed": {
+            "description": "Helpers may use it (not approval-gated tools)",
+            "title": "Helpers Allowed",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "risk": {
+            "title": "Risk",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "description",
+          "risk",
+          "asks_first",
+          "helpers_allowed"
+        ],
+        "title": "ToolOption",
         "type": "object"
       },
       "TurnAccepted": {
@@ -1257,6 +1826,60 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VersionView": {
+        "properties": {
+          "changelog": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changelog"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "state": {
+            "enum": [
+              "draft",
+              "published",
+              "archived"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "number",
+          "state",
+          "changelog",
+          "created_at",
+          "published_at"
+        ],
+        "title": "VersionView",
         "type": "object"
       }
     }
@@ -1399,6 +2022,7 @@
     },
     "/agents": {
       "get": {
+        "description": "Built-in agents (files) and published Studio agents.",
         "operationId": "list_agents_agents_get",
         "responses": {
           "200": {
@@ -1416,7 +2040,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Agent definitions",
+        "summary": "The agents you can chat with",
         "tags": [
           "agents"
         ]
@@ -2382,6 +3006,26 @@
               "title": "Session Id",
               "type": "string"
             }
+          },
+          {
+            "description": "Retry-safe sends: the same key returns the same turn",
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe sends: the same key returns the same turn",
+              "title": "Idempotency-Key"
+            }
           }
         ],
         "requestBody": {
@@ -2495,6 +3139,568 @@
         "summary": "The session's live stream (SSE, R12.5)",
         "tags": [
           "sessions"
+        ]
+      }
+    },
+    "/studio/agents": {
+      "get": {
+        "operationId": "list_agents_studio_agents_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StudioAgentView"
+                  },
+                  "title": "Response List Agents Studio Agents Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Your agents",
+        "tags": [
+          "studio"
+        ]
+      },
+      "post": {
+        "operationId": "create_agent_studio_agents_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioAgentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "A new agent (blank, or a copy) with a draft",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/studio/agents/{agent_id}": {
+      "get": {
+        "operationId": "get_agent_studio_agents__agent_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioAgentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One agent",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/studio/agents/{agent_id}/archive": {
+      "post": {
+        "operationId": "archive_studio_agents__agent_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioAgentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archive: no new chats; old ones stay readable",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/studio/agents/{agent_id}/draft": {
+      "delete": {
+        "operationId": "discard_studio_agents__agent_id__draft_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioAgentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Throw away the draft (back to the published version)",
+        "tags": [
+          "studio"
+        ]
+      },
+      "put": {
+        "operationId": "save_draft_studio_agents__agent_id__draft_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentDocument"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioAgentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save the draft (autosave); returns its issues",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/studio/agents/{agent_id}/edit": {
+      "post": {
+        "operationId": "edit_studio_agents__agent_id__edit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioAgentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start editing: a draft from the published version",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/studio/agents/{agent_id}/export": {
+      "get": {
+        "operationId": "export_studio_agents__agent_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Default: the draft, else current",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Default: the draft, else current",
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "application/zip": {},
+              "text/markdown": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download as agent.md (or a zipped folder)",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/studio/agents/{agent_id}/publish": {
+      "post": {
+        "operationId": "publish_studio_agents__agent_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioAgentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish the draft as an immutable version (needs a test)",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/studio/agents/{agent_id}/test-chat": {
+      "post": {
+        "operationId": "test_chat_studio_agents__agent_id__test_chat_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "A test chat with the draft",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/studio/agents/{agent_id}/versions/{number}/restore": {
+      "post": {
+        "operationId": "restore_studio_agents__agent_id__versions__number__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioAgentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Make an earlier version the draft",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/studio/catalog": {
+      "get": {
+        "operationId": "catalog_studio_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "What the form offers",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/studio/import": {
+      "post": {
+        "operationId": "import_agent_studio_import_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Filename",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioAgentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import an agent.md or a zipped folder (the file is the body)",
+        "tags": [
+          "studio"
         ]
       }
     }
