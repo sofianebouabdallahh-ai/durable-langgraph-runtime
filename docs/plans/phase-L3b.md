@@ -1,5 +1,7 @@
 # Phase L3b plan — Agent Studio: your own model
 
+> **Status: delivered.** Results: [progress/phase-L3b.md](../progress/phase-L3b.md). (The plan's `dek_ciphertext` / `dek_nonce` columns are named `wrapped_key` / `wrapped_nonce` in the code.)
+
 **Goal:** in Nuria, a person adds the models they want:
 - a local **Ollama** (found automatically);
 - an **OpenAI** key;
