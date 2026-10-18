@@ -52,7 +52,7 @@ test("AC43: describe it, give it a skill and a helper, test, publish, chat: no M
   await page.getByRole("button", { name: "New agent" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Describe the assistant you want").fill(
-    `Plan family trips ${tag}: search for places, keep to a budget, and a helper that finds kid-friendly restaurants.`,
+    "Plan family trips: search for places, keep to a budget, and a helper that finds kid-friendly restaurants.",
   );
   await dialog.getByRole("button", { name: "Draft it" }).click();
   const draft = page.getByTestId("draft-preview");
@@ -66,8 +66,10 @@ test("AC43: describe it, give it a skill and a helper, test, publish, chat: no M
   const skills = page.getByTestId("section-skills");
   await skills.getByRole("button", { name: "Remove trip-planning" }).click();
   await skills.getByLabel("Add a skill to its skills").selectOption(skill);
+  await saved(page);
   const helper = page.getByTestId("helper-editor");
-  await helper.getByRole("button", { expanded: false }).first().click();
+  await helper.getByRole("button", { name: /Kid-Friendly Restaurants/ }).click();
+  await expect(helper.getByTestId("skill-picker")).toBeVisible();
   await helper.getByLabel("Add a skill to its skills").selectOption("plain-writing");
   await saved(page);
   await expect(page.getByTestId("field-issues")).toHaveCount(0);
