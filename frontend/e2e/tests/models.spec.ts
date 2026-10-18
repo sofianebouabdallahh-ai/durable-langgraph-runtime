@@ -8,7 +8,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { type APIRequestContext, expect, type Page, test } from "@playwright/test";
 
-import { containers, docker, expectScreenMatchesTranscript, getJson, openEmptyChat, restoreStack, startChat, transcript, waitTurnOver } from "./support";
+import { containers, docker, expectScreenMatchesTranscript, getJson, openEmptyChat, newBlankAgent, restoreStack, startChat, transcript, waitTurnOver } from "./support";
 
 const FAKE = "http://fake-model:9999";
 const API_REPLICAS = Number(process.env.API_REPLICAS ?? 2);
@@ -82,11 +82,7 @@ test("AC44: an agent and its helper answer through two different connections", a
   const helper = connections.find((c) => c.display_name === `Helper ${stamp}`)!.name;
 
   // An agent built in the Studio: its own model, and a helper on another.
-  await page.goto("/#/agents");
-  await page.getByRole("button", { name: "New agent" }).click();
-  await page.getByRole("dialog").getByLabel("Name").fill(`Split ${stamp}`);
-  await page.getByRole("button", { name: "Create" }).click();
-  await expect(page).toHaveURL(/#\/studio\//);
+  await newBlankAgent(page, `Split ${stamp}`);
   await page.getByLabel("What is it for?").fill("Splits work between two models.");
   await page.getByPlaceholder(/New helper's name/).fill("Scout");
   await page.getByRole("button", { name: "Add helper" }).click();
