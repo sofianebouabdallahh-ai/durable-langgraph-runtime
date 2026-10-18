@@ -17,7 +17,7 @@ spec:
     metadata:
       labels:
         {{- include "nuria.selector" $sel | nindent 8 }}
-        {{- include "nuria.labels" . | nindent 8 }}
+        {{- include "nuria.podLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "nuria.fullname" . }}
       automountServiceAccountToken: false

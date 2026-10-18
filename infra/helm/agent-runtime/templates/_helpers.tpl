@@ -8,6 +8,12 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
 {{- end }}
 
+{{/* For pod templates, next to the selector labels (which carry the instance). */}}
+{{- define "nuria.podLabels" -}}
+app.kubernetes.io/part-of: nuria
+app.kubernetes.io/version: {{ .Values.image.runtime.tag | quote }}
+{{- end }}
+
 {{- define "nuria.selector" -}}
 app.kubernetes.io/instance: {{ .root.Release.Name }}
 app.kubernetes.io/name: {{ .name }}
