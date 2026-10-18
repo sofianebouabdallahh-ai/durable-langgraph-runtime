@@ -6,7 +6,8 @@ work with no real model and no key:
 
 - **auth:** with `--key`, any other bearer token gets a 401 (like a wrong key);
 - **models:** `fake-<anything>` exists; others get a 404; `fake-notools` never calls
-  a tool; `fake-slow` never answers in time;
+  a tool; `fake-slow` never answers in time; a conversation whose user wrote
+  `[slow]` gets each answer after 2 s (time to kill a worker mid-turn);
 - **behaviour:** a `ping` tool → it calls ping(42) (the capability test); an agent
   with helpers → it delegates to the first helper listed in its prompt, waits for
   it, then answers; a helper → it returns a result; otherwise a short answer. Every
@@ -28,6 +29,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 HELPER = re.compile(r"^- `([a-z0-9-]+)`:", re.MULTILINE)
+SLOW_MARK, SLOW_S = "[slow]", 2.0
 
 
 def create_app(key: str | None = None) -> FastAPI:
@@ -73,6 +75,8 @@ def create_app(key: str | None = None) -> FastAPI:
         )
         if model == "fake-slow":
             await asyncio.sleep(300)
+        elif _asked_slowly(body["messages"]):
+            await asyncio.sleep(SLOW_S)
         reply = _decide(model, body["messages"], tools, len(calls))
         if body.get("stream"):
             return StreamingResponse(_stream(model, reply), media_type="text/event-stream")
@@ -114,6 +118,12 @@ def _decide(model: str, messages: list[dict[str, Any]], tools: list[str], n: int
                 "id": f"call_{n}",
             }
     return {"text": f"Hello from {model}."}
+
+
+def _asked_slowly(messages: list[dict[str, Any]]) -> bool:
+    return any(
+        m.get("role") == "user" and SLOW_MARK in str(m.get("content") or "") for m in messages
+    )
 
 
 def _tool_name(messages: list[dict[str, Any]], call_id: Any) -> str | None:

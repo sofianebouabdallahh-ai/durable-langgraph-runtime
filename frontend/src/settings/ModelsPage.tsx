@@ -134,7 +134,9 @@ function ConnectionCard({ connection: c }: { connection: Connection }) {
             <StatusPill c={c} />
             <span className="text-xs text-stone-500">{KINDS[c.kind].label}</span>
           </div>
-          <div className="mt-0.5 truncate font-mono text-xs text-stone-500">{c.base_url}</div>
+          <div className="mt-0.5 truncate font-mono text-xs text-stone-500" title="In agent files: model: <id>:<model>">
+            {c.name} · {c.base_url}
+          </div>
           <div className="mt-1 flex items-center gap-1.5 text-xs text-stone-500">
             {c.has_key ? (
               <>

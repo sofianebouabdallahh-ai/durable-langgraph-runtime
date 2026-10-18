@@ -86,7 +86,7 @@ export async function send(page: Page, text: string): Promise<void> {
   await expect(box).toHaveValue("");
 }
 
-interface Msg { seq: number; message_id: string; type: string; content: Record<string, unknown> }
+interface Msg { seq: number; message_id: string; run_id: string | null; type: string; content: Record<string, unknown> }
 
 /** GET JSON from the API, riding out a moment of 502/503/504 (a replica restarting). */
 export async function getJson<T>(request: APIRequestContext, path: string): Promise<T> {

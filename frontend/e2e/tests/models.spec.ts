@@ -2,14 +2,17 @@
  * Your own models in the browser (phase L3b), against the fake OpenAI-compatible
  * server (Compose profile `test`, http://fake-model:9999). SC1 add and test a model
  * without a terminal; SC2 / AC44 an agent and its helper on two connections in one
- * conversation; SC3 / AC45 the key appears nowhere: page, API, containers' logs.
+ * conversation; SC3 / AC45 the key appears nowhere: page, API, containers' logs;
+ * SC9 a worker killed mid-turn: the turn finishes on the same connection.
  */
 import AxeBuilder from "@axe-core/playwright";
 import { type APIRequestContext, expect, type Page, test } from "@playwright/test";
 
-import { containers, docker, getJson, startChat, waitTurnOver } from "./support";
+import { containers, docker, expectScreenMatchesTranscript, getJson, openEmptyChat, restoreStack, startChat, transcript, waitTurnOver } from "./support";
 
 const FAKE = "http://fake-model:9999";
+const API_REPLICAS = Number(process.env.API_REPLICAS ?? 2);
+const WORKERS = Number(process.env.WORKERS ?? 2);
 
 async function addModel(page: Page, name: string, key: string, model: string) {
   await page.goto("/#/settings/models");
@@ -33,6 +36,7 @@ async function resetDefault(request: APIRequestContext) {
 
 test.afterEach(async ({ request }) => {
   await resetDefault(request); // the other suites use the demo model
+  restoreStack(API_REPLICAS, WORKERS);
 });
 
 test("add a model, make it the default, chat with it; the key appears nowhere", async ({ page, request }) => {
@@ -58,7 +62,10 @@ test("add a model, make it the default, chat with it; the key appears nowhere", 
     await page.waitForLoadState("networkidle");
     expect(await page.content()).not.toContain(key);
   }
-  for (const api of ["/api/models/connections", "/api/models/default", `/api/sessions/${sid}/messages`, "/api/studio/agents", "/api/agents"]) {
+  const ids = new Set((await transcript(request, sid)).flatMap((m) => (m.run_id ? [m.run_id] : [])));
+  expect(ids.size).toBeGreaterThan(0);
+  const runs = [...ids].flatMap((run) => [`/api/runs/${run}`, `/api/runs/${run}/events?limit=500`]);
+  for (const api of ["/api/models/connections", "/api/models/default", `/api/sessions/${sid}/messages`, "/api/studio/agents", "/api/agents", ...runs]) {
     expect(await (await request.get(api)).text()).not.toContain(key);
   }
   for (const service of ["api", "worker", "ui"]) {
@@ -102,6 +109,40 @@ test("AC44: an agent and its helper answer through two different connections", a
   expect([...keys.keys()].sort()).toEqual(["fake-a", "fake-b"]);
   expect(keys.get("fake-a")).not.toBe(keys.get("fake-b")); // two connections, two keys
   await expect(chat.getByText("Tested", { exact: true })).toBeVisible({ timeout: 15_000 });
+});
+
+test("SC9: the worker is killed mid-turn; the turn finishes on the same connection", async ({ page, request }) => {
+  const stamp = Date.now().toString(36);
+  await addModel(page, `Durable ${stamp}`, `durable-${stamp}-key`, "fake-a");
+  const connections = await getJson<{ id: string; display_name: string }[]>(request, "/api/models/connections");
+  const id = connections.find((c) => c.display_name === `Durable ${stamp}`)!.id;
+  await request.put("/api/models/default", { data: { connection_id: id, model: "fake-a" } });
+
+  const sid = await openEmptyChat(page, request);
+  await request.delete(`${FAKE}/calls`);
+  // "[slow]": the fake answers each call after 2 s, so the turn is still running when its worker dies.
+  const sent = await request.post(`/api/sessions/${sid}/messages`, { data: { content: "[slow] plan a day in Porto" } });
+  expect(sent.status()).toBe(202);
+  const runId = ((await sent.json()) as { run_id: string }).run_id;
+  let owner = "";
+  await expect.poll(async () => {
+    const run = await getJson<{ status: string; owner: string | null }>(request, `/api/runs/${runId}`);
+    owner = run.status === "running" && run.owner ? run.owner : "";
+    return owner;
+  }).not.toBe("");
+  const victim = containers("worker").find((id) => id.startsWith(owner.split(":")[0] ?? ""));
+  expect(victim).toBeTruthy();
+  // Someone changes the default meanwhile: the turn keeps the model it was bound to.
+  await request.put("/api/models/default", { data: { connection_id: null } });
+  docker("kill", victim!);
+
+  await expect(page.getByTestId("assistant-message").last()).toContainText("Answered by fake-a", { timeout: 90_000 });
+  await waitTurnOver(request, sid);
+  await expectScreenMatchesTranscript(page, request, sid);
+  const events = await getJson<{ events: { type: string }[] }>(request, `/api/runs/${runId}/events?limit=500`);
+  expect(events.events.filter((e) => e.type === "run.reclaimed")).toHaveLength(1);
+  const calls = (await (await request.get(`${FAKE}/calls`)).json()) as { model: string; key: string }[];
+  expect(new Set(calls.map((c) => `${c.model}/${c.key}`)).size).toBe(1); // before and after the crash: one connection
 });
 
 test("a model that can't use tools is caught by the test", async ({ page }) => {
