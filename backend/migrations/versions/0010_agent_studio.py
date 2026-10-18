@@ -117,6 +117,11 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS ux_runs_idempotency")
     op.execute("ALTER TABLE runs DROP COLUMN IF EXISTS idempotency_key")
     op.execute("ALTER TABLE sessions DROP COLUMN IF EXISTS playground_of")
+    # The Studio's tables first: their versions reference bundle snapshots.
+    op.execute("DROP TRIGGER IF EXISTS agent_versions_immutable ON agent_versions")
+    op.execute("DROP FUNCTION IF EXISTS agent_version_immutable()")
+    op.execute("DROP TABLE IF EXISTS agent_versions")
+    op.execute("DROP TABLE IF EXISTS agents")
     # Back to the old schema, runs lose their bundle pin (it can't be expressed there).
     op.execute(
         "UPDATE runs SET agent_hash = NULL "
@@ -128,7 +133,3 @@ def downgrade() -> None:
         "ALTER TABLE agent_definitions ADD CONSTRAINT agent_definitions_kind_check "
         "CHECK (kind IN ('main', 'sub'))"
     )
-    op.execute("DROP TRIGGER IF EXISTS agent_versions_immutable ON agent_versions")
-    op.execute("DROP FUNCTION IF EXISTS agent_version_immutable()")
-    op.execute("DROP TABLE IF EXISTS agent_versions")
-    op.execute("DROP TABLE IF EXISTS agents")

@@ -7,6 +7,9 @@ PUT  /studio/agents/{id}/draft            autosave + validate
 POST …/edit · …/publish · …/archive · …/versions/{n}/restore · DELETE …/draft
 POST …/test-chat                          a test chat with the draft
 GET  …/export · POST /studio/import       agent.md, or a zipped folder
+POST /studio/describe · …/{id}/improve    the builder agents: a proposal, nothing saved
+GET  /studio/assist/{run_id}               the proposal, once ready
+POST /studio/agents/from-proposal          a new agent whose draft is a proposal
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from agent_runtime.agents.builder import DraftProposal
 from agent_runtime.agents.document import MAX_UPLOAD_BYTES, AgentDocument, ImportRejected
 from agent_runtime.agents.schema import MAIN_PLACEHOLDERS, SUB_PLACEHOLDERS
 from agent_runtime.agents.studio import (
@@ -29,6 +33,7 @@ from agent_runtime.agents.studio import (
 )
 from agent_runtime.agents.studio_store import AgentNotFound, Version
 from agent_runtime.api.schemas import SessionView
+from agent_runtime.runs.store import RunNotFound
 
 studio = APIRouter(prefix="/studio", tags=["studio"])
 
@@ -149,6 +154,26 @@ class CreateAgentRequest(BaseModel):
     copy_of: str | None = Field(default=None, description="An agent to start from (its name)")
 
 
+class DescribeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    description: Annotated[str, Field(min_length=10, max_length=4000,
+                                      description="The assistant the person wants")]  # fmt: skip
+
+
+class AssistStarted(BaseModel):
+    run_id: uuid.UUID
+
+
+class AssistView(BaseModel):
+    status: Literal["working", "done", "failed"]
+    kind: Literal["draft", "instructions"]
+    proposal: dict[str, Any] | None = Field(
+        description="A DraftProposal or an InstructionsProposal, when done"
+    )
+    problem: str | None = Field(description="Why there's no proposal, in plain words")
+
+
 class PublishRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -196,6 +221,41 @@ async def create_agent(body: CreateAgentRequest, service: StudioDep) -> StudioAg
         )
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+
+
+@studio.post("/describe", status_code=status.HTTP_202_ACCEPTED, response_model=AssistStarted,
+             summary="Draft an agent from a description (the builder agent)")  # fmt: skip
+async def describe(body: DescribeRequest, service: StudioDep) -> AssistStarted:
+    return AssistStarted(run_id=(await service.describe(body.description)).id)
+
+
+@studio.post("/agents/{agent_id}/improve", status_code=status.HTTP_202_ACCEPTED,
+             response_model=AssistStarted, summary="Suggest clearer instructions")  # fmt: skip
+async def improve(agent_id: uuid.UUID, service: StudioDep) -> AssistStarted:
+    try:
+        return AssistStarted(run_id=(await service.improve(agent_id)).id)
+    except LookupError as exc:
+        if isinstance(exc, AgentNotFound):
+            raise
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+
+
+@studio.get("/assist/{run_id}", response_model=AssistView, summary="A builder's proposal")
+async def assist(run_id: uuid.UUID, service: StudioDep) -> AssistView:
+    try:
+        found = await service.assist(run_id)
+    except LookupError as exc:
+        if isinstance(exc, RunNotFound):
+            raise
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    return AssistView(status=found.status, kind=found.kind, proposal=found.proposal,
+                      problem=found.problem)  # fmt: skip
+
+
+@studio.post("/agents/from-proposal", status_code=status.HTTP_201_CREATED,
+             response_model=StudioAgentView, summary="A new agent from a proposal")  # fmt: skip
+async def from_proposal(body: DraftProposal, service: StudioDep) -> StudioAgentView:
+    return StudioAgentView.of(await service.create_from_proposal(body))
 
 
 @studio.get("/agents/{agent_id}", response_model=StudioAgentView, summary="One agent")

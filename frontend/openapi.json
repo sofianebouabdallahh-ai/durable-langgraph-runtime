@@ -444,6 +444,74 @@
         "title": "ApprovalRequest",
         "type": "object"
       },
+      "AssistStarted": {
+        "properties": {
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "title": "AssistStarted",
+        "type": "object"
+      },
+      "AssistView": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "draft",
+              "instructions"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why there's no proposal, in plain words",
+            "title": "Problem"
+          },
+          "proposal": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A DraftProposal or an InstructionsProposal, when done",
+            "title": "Proposal"
+          },
+          "status": {
+            "enum": [
+              "working",
+              "done",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "kind",
+          "proposal",
+          "problem"
+        ],
+        "title": "AssistView",
+        "type": "object"
+      },
       "ConnectionView": {
         "properties": {
           "base_url": {
@@ -749,6 +817,88 @@
           "setup_provider"
         ],
         "title": "DefaultView",
+        "type": "object"
+      },
+      "DescribeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "description": "The assistant the person wants",
+            "maxLength": 4000,
+            "minLength": 10,
+            "title": "Description",
+            "type": "string"
+          }
+        },
+        "required": [
+          "description"
+        ],
+        "title": "DescribeRequest",
+        "type": "object"
+      },
+      "DraftProposal": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "description": "What it's for, in one sentence",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "description": "The assistant's name, e.g. 'Trip planner'",
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "effort": {
+            "default": "standard",
+            "description": "quick, standard or thorough",
+            "pattern": "^(quick|standard|thorough)$",
+            "title": "Effort",
+            "type": "string"
+          },
+          "helpers": {
+            "description": "Only if the job has clearly separate parts",
+            "items": {
+              "$ref": "#/components/schemas/HelperProposal"
+            },
+            "maxItems": 3,
+            "title": "Helpers",
+            "type": "array"
+          },
+          "instructions": {
+            "description": "Its instructions, written to it ('You are\u2026'): what it does, how it answers, what it never does. Placeholders allowed: {{date}}",
+            "maxLength": 6000,
+            "minLength": 1,
+            "title": "Instructions",
+            "type": "string"
+          },
+          "skills": {
+            "description": "Names of skills from the library that fit",
+            "items": {
+              "type": "string"
+            },
+            "title": "Skills",
+            "type": "array"
+          },
+          "tools": {
+            "description": "From the tools offered",
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "display_name",
+          "description",
+          "instructions"
+        ],
+        "title": "DraftProposal",
         "type": "object"
       },
       "DraftView": {
@@ -1194,6 +1344,47 @@
           "name"
         ],
         "title": "HelperDocument",
+        "type": "object"
+      },
+      "HelperProposal": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "description": "What it does, in one sentence",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "description": "Its name, e.g. 'Flight finder'",
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "instructions": {
+            "description": "How it should do its job",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Instructions",
+            "type": "string"
+          },
+          "tools": {
+            "description": "From the tools offered",
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "display_name",
+          "description",
+          "instructions"
+        ],
+        "title": "HelperProposal",
         "type": "object"
       },
       "HelperView": {
@@ -4735,6 +4926,47 @@
         ]
       }
     },
+    "/studio/agents/from-proposal": {
+      "post": {
+        "operationId": "from_proposal_studio_agents_from_proposal_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftProposal"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioAgentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "A new agent from a proposal",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
     "/studio/agents/{agent_id}": {
       "get": {
         "operationId": "get_agent_studio_agents__agent_id__get",
@@ -5020,6 +5252,49 @@
         ]
       }
     },
+    "/studio/agents/{agent_id}/improve": {
+      "post": {
+        "operationId": "improve_studio_agents__agent_id__improve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistStarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Suggest clearer instructions",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
     "/studio/agents/{agent_id}/publish": {
       "post": {
         "operationId": "publish_studio_agents__agent_id__publish_post",
@@ -5168,6 +5443,49 @@
         ]
       }
     },
+    "/studio/assist/{run_id}": {
+      "get": {
+        "operationId": "assist_studio_assist__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "A builder's proposal",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
     "/studio/catalog": {
       "get": {
         "operationId": "catalog_studio_catalog_get",
@@ -5184,6 +5502,47 @@
           }
         },
         "summary": "What the form offers",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/studio/describe": {
+      "post": {
+        "operationId": "describe_studio_describe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DescribeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistStarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Draft an agent from a description (the builder agent)",
         "tags": [
           "studio"
         ]

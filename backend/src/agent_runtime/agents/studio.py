@@ -18,10 +18,11 @@ import contextlib
 import re
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ValidationError
 
+from agent_runtime.agents import builder
 from agent_runtime.agents.document import (
     AgentDocument,
     ImportRejected,
@@ -38,6 +39,8 @@ from agent_runtime.agents.store import bundle_digest, snapshot_bundle
 from agent_runtime.agents.studio_store import AgentStore, NameTaken, StoredAgent, Version
 from agent_runtime.config import AgentSettings
 from agent_runtime.db import Conn, Pool
+from agent_runtime.runs.service import RunService
+from agent_runtime.runs.store import Run, RunRepository
 from agent_runtime.sessions.service import SessionService
 from agent_runtime.sessions.store import Session
 from agent_runtime.skills.binding import MissingSkills, bind, lock_of
@@ -137,6 +140,16 @@ class BuiltinName(ValueError):
     pass
 
 
+@dataclass(frozen=True)
+class Assist:
+    """Where a "Describe it" or "Improve my instructions" request is."""
+
+    status: Literal["working", "done", "failed"]
+    kind: Literal["draft", "instructions"]
+    proposal: dict[str, Any] | None = None
+    problem: str | None = None
+
+
 # ------------------------------------------------------------------- the service
 
 
@@ -147,11 +160,13 @@ class StudioService:
         resolver: AgentResolver,
         sessions: SessionService,
         settings: AgentSettings,
+        runs: RunService | None = None,
     ) -> None:
         self._pool = pool
         self._agents = resolver
         self._sessions = sessions
         self._settings = settings
+        self._runs = runs
 
     # -------------------------------------------------------------- creating
 
@@ -207,6 +222,87 @@ class StudioService:
             if self._agents.builtin(name) is None and await store.by_name(name) is None:
                 return name
         raise NameTaken(base)
+
+    # ---------------------------------------------- describe it, improve it
+
+    async def describe(self, description: str) -> Run:
+        """Start the builder agent on a description (R17.3). Nothing is saved: the
+        result is a proposal (`assist`), which `create_from_proposal` turns into a draft."""
+        skills = await self._library()
+        message = builder.describe_message(description, skills)
+        script = builder.demo_script(builder.demo_draft(description, skills))
+        return await self._assist_run(builder.BUILDER, message, script)
+
+    async def improve(self, agent_id: uuid.UUID) -> Run:
+        """Start the instructions coach on this agent's draft (or published) instructions."""
+        async with self._pool.connection() as conn:
+            store = AgentStore(conn)
+            version = await store.draft(agent_id) or await store.published(agent_id)
+        if version is None:
+            raise LookupError("nothing to improve")
+        doc = AgentDocument.model_validate(version.document)
+        message = builder.improve_message(
+            doc.display_name or doc.name, doc.description, doc.instructions,
+            [t.name for t in doc.tools],
+        )  # fmt: skip
+        script = builder.demo_script(
+            builder.demo_improve(doc.instructions, doc.display_name or doc.name)
+        )
+        return await self._assist_run(builder.COACH, message, script)
+
+    async def assist(self, run_id: uuid.UUID) -> Assist:
+        """The builder's answer, once there is one."""
+        async with self._pool.connection() as conn:
+            repo = RunRepository(conn)
+            run = await repo.get(run_id)
+            if run.graph_name not in (builder.BUILDER, builder.COACH):
+                raise LookupError(f"run {run_id} isn't a Studio assist")
+            result = await repo.get_result(run_id) if run.status.is_terminal else None
+        kind: Literal["draft", "instructions"] = (
+            "draft" if run.graph_name == builder.BUILDER else "instructions"
+        )
+        if not run.status.is_terminal:
+            return Assist("working", kind)
+        proposal = (result or {}).get("output", {}).get("proposal") if result else None
+        if run.status.value == "completed" and proposal:
+            return Assist("done", kind, proposal)
+        problem = (
+            "The model didn't come up with a proposal. Try again, or describe it a little "
+            "differently (a model that passed its test in Settings → Models works best)."
+            if run.status.value == "completed"
+            else f"It didn't finish ({plain(run.reason or run.status.value)}). Try again."
+        )
+        return Assist("failed", kind, None, problem)
+
+    async def create_from_proposal(self, proposal: builder.DraftProposal) -> AgentState:
+        """A new agent whose draft is the builder's proposal (skills it named that aren't
+        in the library are left out)."""
+        library = {n for n, _ in await self._library()}
+        proposal = proposal.model_copy(update={
+            "skills": [s for s in proposal.skills if s in library]})  # fmt: skip
+        async with self._pool.connection() as conn, conn.transaction():
+            store = AgentStore(conn)
+            name = await self._free_name(store, proposal.display_name)
+            document = AgentDocument.model_validate(
+                builder.to_document(proposal, name, self._settings)
+            )
+            agent, _ = await store.create(name, document.model_dump(mode="json"))
+        return await self.save_draft(agent.id, document)
+
+    async def _library(self) -> list[tuple[str, str]]:
+        async with self._pool.connection() as conn:
+            store = SkillStore(conn)
+            skills = await store.all()
+            versions = await store.versions(s.current_hash for s in skills)
+        return [(s.name, versions[s.current_hash].description) for s in skills]
+
+    async def _assist_run(self, graph: str, message: str, script: list[dict[str, Any]]) -> Run:
+        if self._runs is None:
+            raise RuntimeError("the Studio needs the run service to start a builder")
+        inp: dict[str, Any] = {"message": message}
+        if getattr(self._settings, "model_provider", "scripted") == "scripted":
+            inp["script"] = script  # the offline demo: a deterministic proposal
+        return await self._runs.create_run(graph, inp)
 
     # --------------------------------------------------------------- drafts
 

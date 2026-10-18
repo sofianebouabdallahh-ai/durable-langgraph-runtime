@@ -13,6 +13,8 @@ work with no real model and no key:
   helpers → it delegates to the first helper listed in its prompt, waits for it,
   then answers; a helper → it returns a result; otherwise a short answer. Every
   answer names the model (and the skill it loaded), so a test can see who did what;
+- **the Studio's builders:** `propose_draft` / `propose_instructions` → a fixed
+  proposal (`fake-sloppy` first proposes an unknown tool, then repairs it);
 - **a log:** GET /calls lists what it served (model, which key, tools), so a test
   proves that two helpers used two connections (AC44). DELETE /calls clears it.
 """
@@ -93,6 +95,9 @@ def _decide(model: str, messages: list[dict[str, Any]], tools: list[str], n: int
     can = model != "fake-notools"
     if can and "ping" in tools:
         return {"tool": "ping", "args": {"value": 42}, "id": f"call_{n}"}
+    for tool in ("propose_draft", "propose_instructions"):
+        if can and tool in tools:
+            return _propose(tool, model, messages, n)
     system = next((m.get("content") or "" for m in messages if m.get("role") == "system"), "")
     listed = _listed(system if isinstance(system, str) else "")
     loaded = _loaded_skill(messages)
@@ -126,6 +131,36 @@ def _decide(model: str, messages: list[dict[str, Any]], tools: list[str], n: int
                 "id": f"call_{n}",
             }
     return {"text": f"Hello from {model}.{used}"}
+
+
+def _propose(tool: str, model: str, messages: list[dict[str, Any]], n: int) -> dict[str, Any]:
+    """A builder's turn: propose, read the answer, repair once if needed, then say so."""
+    last = messages[-1]
+    if last.get("role") == "tool" and "Not valid yet" not in str(last.get("content")):
+        return {"text": f"Proposed by {model}."}
+    sloppy = model == "fake-sloppy" and last.get("role") != "tool"
+    if tool == "propose_instructions":
+        args: dict[str, Any] = {
+            "instructions": f"You are clear and brief. Today is {{{{date}}}}. (by {model})",
+            "what_changed": "Made it shorter and clearer.",
+        }
+    else:
+        args = {
+            "display_name": "Fake drafted assistant",
+            "description": f"Drafted by {model}.",
+            "instructions": "You are a drafted assistant. Today is {{date}}. Be brief.",
+            "tools": ["teleport"] if sloppy else ["search"],
+            "effort": "quick",
+            "helpers": [
+                {
+                    "display_name": "Fake scout",
+                    "description": "Scouts.",
+                    "instructions": "Scout and report back.",
+                    "tools": [],
+                }
+            ],
+        }
+    return {"tool": tool, "args": args, "id": f"call_{n}"}
 
 
 def _listed(system: str) -> dict[str, list[str]]:

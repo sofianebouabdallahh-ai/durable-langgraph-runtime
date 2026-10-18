@@ -681,6 +681,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/studio/agents/from-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** A new agent from a proposal */
+        post: operations["from_proposal_studio_agents_from_proposal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/studio/agents/{agent_id}": {
         parameters: {
             query?: never;
@@ -767,6 +784,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/studio/agents/{agent_id}/improve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Suggest clearer instructions */
+        post: operations["improve_studio_agents__agent_id__improve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/studio/agents/{agent_id}/publish": {
         parameters: {
             query?: never;
@@ -818,6 +852,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/studio/assist/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A builder's proposal */
+        get: operations["assist_studio_assist__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/studio/catalog": {
         parameters: {
             query?: never;
@@ -829,6 +880,23 @@ export interface paths {
         get: operations["catalog_studio_catalog_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/describe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Draft an agent from a description (the builder agent) */
+        post: operations["describe_studio_describe_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1052,6 +1120,39 @@ export interface components {
             /** Reason */
             reason?: string | null;
         };
+        /** AssistStarted */
+        AssistStarted: {
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+        };
+        /** AssistView */
+        AssistView: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "draft" | "instructions";
+            /**
+             * Problem
+             * @description Why there's no proposal, in plain words
+             */
+            problem: string | null;
+            /**
+             * Proposal
+             * @description A DraftProposal or an InstructionsProposal, when done
+             */
+            proposal: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "working" | "done" | "failed";
+        };
         /** ConnectionView */
         ConnectionView: {
             /** Base Url */
@@ -1176,6 +1277,53 @@ export interface components {
              * @description What roles use when no default is set
              */
             setup_provider: string;
+        };
+        /** DescribeRequest */
+        DescribeRequest: {
+            /**
+             * Description
+             * @description The assistant the person wants
+             */
+            description: string;
+        };
+        /** DraftProposal */
+        DraftProposal: {
+            /**
+             * Description
+             * @description What it's for, in one sentence
+             */
+            description: string;
+            /**
+             * Display Name
+             * @description The assistant's name, e.g. 'Trip planner'
+             */
+            display_name: string;
+            /**
+             * Effort
+             * @description quick, standard or thorough
+             * @default standard
+             */
+            effort: string;
+            /**
+             * Helpers
+             * @description Only if the job has clearly separate parts
+             */
+            helpers?: components["schemas"]["HelperProposal"][];
+            /**
+             * Instructions
+             * @description Its instructions, written to it ('You are…'): what it does, how it answers, what it never does. Placeholders allowed: {{date}}
+             */
+            instructions: string;
+            /**
+             * Skills
+             * @description Names of skills from the library that fit
+             */
+            skills?: string[];
+            /**
+             * Tools
+             * @description From the tools offered
+             */
+            tools?: string[];
         };
         /** DraftView */
         DraftView: {
@@ -1354,6 +1502,29 @@ export interface components {
             temperature: number;
             /** Tools */
             tools?: components["schemas"]["ToolChoice"][];
+        };
+        /** HelperProposal */
+        HelperProposal: {
+            /**
+             * Description
+             * @description What it does, in one sentence
+             */
+            description: string;
+            /**
+             * Display Name
+             * @description Its name, e.g. 'Flight finder'
+             */
+            display_name: string;
+            /**
+             * Instructions
+             * @description How it should do its job
+             */
+            instructions: string;
+            /**
+             * Tools
+             * @description From the tools offered
+             */
+            tools?: string[];
         };
         /**
          * HelperView
@@ -3405,6 +3576,39 @@ export interface operations {
             };
         };
     };
+    from_proposal_studio_agents_from_proposal_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftProposal"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioAgentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_agent_studio_agents__agent_id__get: {
         parameters: {
             query?: never;
@@ -3600,6 +3804,37 @@ export interface operations {
             };
         };
     };
+    improve_studio_agents__agent_id__improve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistStarted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     publish_studio_agents__agent_id__publish_post: {
         parameters: {
             query?: never;
@@ -3698,6 +3933,37 @@ export interface operations {
             };
         };
     };
+    assist_studio_assist__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     catalog_studio_catalog_get: {
         parameters: {
             query?: never;
@@ -3714,6 +3980,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StudioCatalog"];
+                };
+            };
+        };
+    };
+    describe_studio_describe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DescribeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistStarted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

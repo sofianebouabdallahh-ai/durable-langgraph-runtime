@@ -19,6 +19,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.pregel import Pregel
 from pydantic import BaseModel, ConfigDict, Field
 
+from agent_runtime.agents.builder import proposal_of
 from agent_runtime.agents.loader import Ceilings, load_agents
 from agent_runtime.agents.schema import AgentDefinition, SubAgentDefinition
 from agent_runtime.catalog import default_catalog
@@ -158,7 +159,10 @@ def agent_spec(
     def to_output(state: dict[str, Any]) -> dict[str, Any]:
         messages = state.get("messages", [])
         answer = next((m.content for m in reversed(messages) if isinstance(m, AIMessage)), "")
-        return {"answer": answer, "messages": len(messages)}
+        out: dict[str, Any] = {"answer": answer, "messages": len(messages)}
+        if (proposal := proposal_of(messages)) is not None:  # the Studio's builder agents
+            out["proposal"] = proposal
+        return out
 
     return GraphSpec(
         name=agent.id,
