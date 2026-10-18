@@ -28,6 +28,7 @@ from agent_runtime.agents.document import (
     ImportRejected,
     from_definition,
     from_files,
+    read_skill_folders,
     read_upload,
     to_files,
     to_zip,
@@ -39,11 +40,15 @@ from agent_runtime.agents.store import bundle_digest, snapshot_bundle
 from agent_runtime.agents.studio_store import AgentStore, NameTaken, StoredAgent, Version
 from agent_runtime.config import AgentSettings
 from agent_runtime.db import Conn, Pool
+from agent_runtime.ids import new_id
 from agent_runtime.runs.service import RunService
 from agent_runtime.runs.store import Run, RunRepository
 from agent_runtime.sessions.service import SessionService
 from agent_runtime.sessions.store import Session
+from agent_runtime.skills import spec as skill_spec
 from agent_runtime.skills.binding import MissingSkills, bind, lock_of
+from agent_runtime.skills.scan import ScanReport, scan
+from agent_runtime.skills.spec import SkillContent
 from agent_runtime.skills.store import SkillStore
 
 # ------------------------------------------------------------------ the catalog
@@ -454,8 +459,9 @@ class StudioService:
         definition, issues = self._check(version.document, version.number)
         if definition is None:
             raise PublishBlocked([f"{i.where}: {i.message}" for i in issues])
-        if definition.subagents:
-            return f"{agent.name}.zip", to_zip(definition), "application/zip"
+        skills = await self._skill_contents(definition, version)
+        if definition.subagents or skills:
+            return f"{agent.name}.zip", to_zip(definition, skills), "application/zip"
         (text,) = to_files(definition).values()
         return f"{agent.name}.agent.md", text.encode(), "text/markdown; charset=utf-8"
 
@@ -470,12 +476,60 @@ class StudioService:
         )
         if definition is None:
             raise ImportRejected("; ".join(str(i) for i in issues))
+        carried = self._carried_skills(filename, data)
         async with self._pool.connection() as conn, conn.transaction():
+            await self._import_skills(SkillStore(conn), carried)
             store = AgentStore(conn)
             name = await self._free_name(store, definition.id)  # never replaces an agent
             document = from_definition(definition, name=name)
             agent, _ = await store.create(name, document.model_dump(mode="json"))
         return await self.save_draft(agent.id, document)
+
+    # --------------------------------------------------------------- skills in files
+
+    async def _skill_contents(self, definition: Any, version: Version) -> list[SkillContent]:
+        """The skills an exported version uses: its locked versions once published,
+        the library's current ones for a draft."""
+        lock = version.skill_lock if version.state != "draft" else None
+        async with self._pool.connection() as conn:
+            skills = await bind(conn, definition, lock)
+            store = SkillStore(conn)
+            hashes = list(dict.fromkeys(v.hash for vs in skills.values() for v in vs))
+            return [await store.content(h) for h in hashes]
+
+    @staticmethod
+    def _carried_skills(filename: str, data: bytes) -> list[tuple[SkillContent, ScanReport]]:
+        """The skills in an uploaded agent zip, checked and scanned like any upload."""
+        out: list[tuple[SkillContent, ScanReport]] = []
+        for folder, files in read_skill_folders(filename, data).items():
+            content, issues = skill_spec.parse(files, folder)
+            if content is None:
+                problems = "; ".join(i.message for i in issues if i.blocking)
+                raise ImportRejected(f"the skill “{folder}” can't be read: {problems}")
+            report = scan(content)
+            if report.status == "blocked":
+                raise ImportRejected(f"the skill “{folder}” contains what looks like a secret: "
+                                     "remove it and export again")  # fmt: skip
+            out.append((content, report))
+        return out
+
+    @staticmethod
+    async def _import_skills(
+        store: SkillStore, carried: list[tuple[SkillContent, ScanReport]]
+    ) -> None:
+        """Into the library: new ones are added; the same content is reused; a different
+        skill with the same name refuses the import (an agent must not silently get
+        someone else's know-how)."""
+        for content, report in carried:
+            existing = await store.by_name(content.name, archived=True)
+            if existing is None:
+                digest = await store.put_version(content, report)
+                await store.insert(new_id(), content.name, "private", "imported", digest)
+            elif existing.current_hash != content.content_hash():
+                raise ImportRejected(
+                    f"your library already has a different skill called “{content.name}”: "
+                    "rename one of them, then import again"
+                )
 
     # --------------------------------------------------------------- checks
 

@@ -148,3 +148,47 @@ async def test_a_missing_skill_is_an_issue_and_blocks_publishing(api: Server) ->
     chat = (await c.post(f"/studio/agents/{aid}/test-chat")).json()
     sent = await c.post(f"/sessions/{chat['id']}/messages", json={"content": "hi"})
     assert sent.status_code == 409 and "Skills page" in sent.json()["detail"]
+
+
+async def test_export_and_import_carry_the_skills(api: Server) -> None:
+    """SC9: an agent's zip carries its skills in the standard format; importing it reuses
+    identical skills, adds new ones (scanned), and refuses a clash."""
+    import io
+    import zipfile
+
+    c, tag = api.client, uuid.uuid4().hex[:6]
+    tips = await skill(c, f"tips-{tag}", "Tip one.")
+    aid = (await c.post("/studio/agents", json={"display_name": f"Carry {tag}"})).json()["id"]
+    name = (await c.get(f"/studio/agents/{aid}")).json()["name"]
+    await c.put(f"/studio/agents/{aid}/draft", json=document(name, [tips["name"]], []))
+    exported = await c.get(f"/studio/agents/{aid}/export")
+    assert exported.headers["content-type"] == "application/zip"
+    names = zipfile.ZipFile(io.BytesIO(exported.content)).namelist()
+    assert f"{name}/skills/{tips['name']}/SKILL.md" in names
+
+    again = await c.post(f"/studio/import?filename={name}.zip", content=exported.content)
+    assert again.status_code == 201, again.text
+    copy = again.json()
+    assert copy["draft"]["issues"] == [] and copy["draft"]["document"]["skills"] == [tips["name"]]
+    library = [s for s in (await c.get("/skills")).json() if s["name"] == tips["name"]]
+    assert [s["version"] for s in library] == [tips["version"]]  # reused, not duplicated
+
+    # The same zip with the skill renamed: a new skill in the library, marked imported.
+    fresh = f"fresh-{tag}"
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(exported.content)) as src, zipfile.ZipFile(buffer, "w") as out:
+        for item in src.infolist():
+            data = src.read(item)
+            path = item.filename.replace(tips["name"], fresh)
+            out.writestr(path, data.replace(tips["name"].encode(), fresh.encode()))
+    added = await c.post(f"/studio/import?filename={name}.zip", content=buffer.getvalue())
+    assert added.status_code == 201, added.text
+    imported = {s["name"]: s for s in (await c.get("/skills")).json()}[fresh]
+    assert imported["origin"] == "imported" and imported["scan"]["status"] == "clean"
+
+    # Edit the library's skill: the original zip now clashes, and nothing is created.
+    await c.patch(f"/skills/{tips['id']}", json={"instructions": "Tip two."})
+    before = len((await c.get("/studio/agents")).json())
+    clash = await c.post(f"/studio/import?filename={name}.zip", content=exported.content)
+    assert clash.status_code == 422 and "already has a different skill" in clash.text
+    assert len((await c.get("/studio/agents")).json()) == before

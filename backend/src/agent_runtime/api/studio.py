@@ -340,5 +340,5 @@ async def import_agent(
     async for chunk in request.stream():  # bounded: never buffer more than the limit
         data += chunk
         if len(data) > MAX_UPLOAD_BYTES:
-            raise ImportRejected(f"the file is larger than {MAX_UPLOAD_BYTES // 1000} KB")
+            raise ImportRejected(f"the file is larger than {MAX_UPLOAD_BYTES // 1_000_000} MB")
     return StudioAgentView.of(await service.import_(filename, bytes(data)))

@@ -7,6 +7,8 @@ import zipfile
 import pytest
 
 from agent_runtime.agents.document import (
+    MAX_UPLOAD_BYTES,
+    MAX_ZIP_FILES,
     AgentDocument,
     ImportRejected,
     from_definition,
@@ -146,9 +148,9 @@ def test_issues_point_at_the_form_section_and_field(
     assert any(p == where and f == field and says in m for p, f, m in found), found
 
 
-def zipped(entries: dict[str, bytes]) -> bytes:
+def zipped(entries: dict[str, bytes], compression: int = zipfile.ZIP_STORED) -> bytes:
     buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as zf:
+    with zipfile.ZipFile(buffer, "w", compression) as zf:
         for name, data in entries.items():
             zf.writestr(name, data)
     return buffer.getvalue()
@@ -159,8 +161,20 @@ def zipped(entries: dict[str, bytes]) -> bytes:
     [
         ("evil.zip", zipped({"../etc/agent.md": b"x"}), "unsafe path"),
         ("evil.zip", zipped({"/abs/agent.md": b"x"}), "unsafe path"),
-        ("many.zip", zipped({f"a/{i}/agent.md": b"x" for i in range(60)}), "more than"),
-        ("big.md", b"x" * 1_000_001, "larger than"),
+        (
+            "many.zip",
+            zipped({f"a/{i}/agent.md": b"x" for i in range(MAX_ZIP_FILES + 1)}),
+            "more than",
+        ),
+        ("big.md", b"x" * (MAX_UPLOAD_BYTES + 1), "larger than"),
+        (
+            "bomb.zip",
+            zipped(  # small on the wire, 31 MB once unzipped
+                {"a/agent.md": b"x", **{f"a/skills/s/{i}": b"0" * 1_000_000 for i in range(31)}},
+                zipfile.ZIP_DEFLATED,
+            ),
+            "once unzipped",
+        ),
         ("none.zip", zipped({"a/readme.txt": b"hello"}), "no agent.md"),
         ("bad.zip", b"not a zip", "not a valid zip"),
         ("bin.md", b"\xff\xfe\x00", "UTF-8"),
