@@ -2,7 +2,7 @@
 
 The delivery plan for **Durable, Distributed Runtime for LangGraph Agents**: what we build, in what order, and how we know each part is done.
 
-**Where we are (2026-10-17):** the runtime core is done (phases 0–6). In the local release, L1 (one-command setup) and **L2 (the chat UI, now called _Nuria_)** are merged: milestone **M1** is reached. L3a (the Agent Studio: build agents and helpers) and **L3b (your own model) are merged. Next: L3c, skills & "describe your agent"**, which reaches M2.
+**Where we are (2026-10-17):** the runtime core is done (phases 0–6). In the local release, L1 (one-command setup) and **L2 (the chat UI, now called _Nuria_)** are merged: milestone **M1** is reached. L3a (the Agent Studio: build agents and helpers) and **L3b (your own model) are merged. Next: L3c, skills & "describe your agent"** ([plan](plans/phase-L3c.md)), which reaches M2.
 
 **Sources of truth for scope**
 - Base spec: [`Project_4_Detailed_Requirements_K8s.pdf`](requirements/Project_4_Detailed_Requirements_K8s.pdf). Requirements are `R<section>.<n>`; acceptance criteria are `AC<n>`.
