@@ -172,7 +172,9 @@ jobs:
       - name: Container e2e (kill / stop a worker mid-turn, least privilege)
         working-directory: backend
         run: uv run --locked python -m tests.e2e.compose_e2e all
-      - name: Browser e2e (Playwright in a container, against the stack)
+      - name: Turn on the observability profile (L4a; the steps above ran with it off)
+        run: ./setup.sh --non-interactive --observability
+      - name: Browser e2e (Playwright in a container, against the stack, with tracing on)
         working-directory: .
         run: |
           # the fake model the connection tests use (profile `test`, never in setup)

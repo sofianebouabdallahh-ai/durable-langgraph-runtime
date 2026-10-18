@@ -2,6 +2,8 @@
 
 import json
 
+import httpx
+import pytest
 from pydantic import SecretStr
 
 from agent_runtime.config import Settings
@@ -47,3 +49,26 @@ async def test_the_ui_check_wants_the_page_and_its_csp() -> None:
         await check_ui("http://ui", serve("<html>nginx default</html>", "default-src 'self'"))
     with pytest.raises(SmokeFailed, match="HTTP 502"):
         await check_ui("http://ui", serve("bad gateway", None, 502))
+
+
+async def test_smoke_waits_out_a_moment_of_502_then_succeeds() -> None:
+    from agent_runtime.ops import wait_ready
+
+    answers = iter([502, 503, 200])
+    transport = httpx.MockTransport(lambda _: httpx.Response(next(answers)))
+    async with httpx.AsyncClient(transport=transport, base_url="http://api") as client:
+        await wait_ready(client, within_s=5, interval_s=0)
+
+
+async def test_smoke_gives_up_on_a_real_failure_or_after_the_deadline() -> None:
+    from agent_runtime.ops import SmokeFailed, wait_ready
+
+    def answer(code: int) -> httpx.MockTransport:
+        return httpx.MockTransport(lambda _: httpx.Response(code, text="nope"))
+
+    async with httpx.AsyncClient(transport=answer(500), base_url="http://api") as client:
+        with pytest.raises(SmokeFailed, match="500"):  # not transient: at once
+            await wait_ready(client, within_s=60, interval_s=0)
+    async with httpx.AsyncClient(transport=answer(502), base_url="http://api") as client:
+        with pytest.raises(SmokeFailed, match="502"):
+            await wait_ready(client, within_s=0, interval_s=0)

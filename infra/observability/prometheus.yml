@@ -1,0 +1,26 @@
+# Prometheus (phase L4a, R7.2). Every API replica and every worker is a target:
+# Docker's DNS returns one address per replica of a service, so scaling the stack
+# (API_REPLICAS, WORKERS) needs no change here, and `count(up{job="api"})` is the
+# number of replicas (R7.2: replica counts).
+global:
+  scrape_interval: 5s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: api
+    dns_sd_configs:
+      - names: [api]
+        type: A
+        port: 8000
+        refresh_interval: 5s
+
+  - job_name: worker
+    dns_sd_configs:
+      - names: [worker]
+        type: A
+        port: 8081 # the worker's health server: /healthz /readyz /metrics
+        refresh_interval: 5s
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

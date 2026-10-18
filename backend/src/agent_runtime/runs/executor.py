@@ -47,6 +47,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphRecursionError
 from langgraph.types import Command, interrupt
 
+from agent_runtime import metrics, telemetry
 from agent_runtime.agents.resolver import AgentResolver
 from agent_runtime.checkpointing import FencedCheckpointer
 from agent_runtime.config import Settings
@@ -138,8 +139,10 @@ class _NodeRecorder(AsyncCallbackHandler):
         outbox: Outbox,
         max_steps: int,
         check_interrupts: Callable[[], Awaitable[None]],
+        trace: telemetry.RunTrace | None = None,
     ) -> None:
         self._outbox = outbox
+        self._trace = trace  # node spans (R7.1)
         self._max_steps = max_steps
         self._check_interrupts = check_interrupts
         self._started: dict[uuid.UUID, tuple[str, float]] = {}
@@ -164,11 +167,15 @@ class _NodeRecorder(AsyncCallbackHandler):
         # Between nodes is the safe point: the previous step is checkpointed (R1.6, R10.7).
         await self._check_interrupts()
         self._started[run_id] = (node, time.monotonic())
+        if self._trace is not None:
+            self._trace.start_node(run_id, str(node))
         self._outbox.stage(EventType.NODE_STARTED, {"node": node})
 
     async def on_chain_end(self, outputs: Any, *, run_id: uuid.UUID, **kwargs: Any) -> None:
         if started := self._started.pop(run_id, None):
             node, t0 = started
+            if self._trace is not None:
+                self._trace.end_node(run_id)
             self._outbox.stage(EventType.NODE_COMPLETED, {"node": node, "duration_ms": _ms(t0)})
 
     async def on_chain_error(
@@ -176,6 +183,8 @@ class _NodeRecorder(AsyncCallbackHandler):
     ) -> None:
         if started := self._started.pop(run_id, None):
             node, t0 = started
+            if self._trace is not None:
+                self._trace.end_node(run_id, error)
             self._outbox.stage(
                 EventType.NODE_FAILED,
                 {"node": node, "duration_ms": _ms(t0), "error": type(error).__name__},
@@ -267,6 +276,7 @@ class RunExecutor:
         self._transcript: TranscriptWriter | None = None  # set for chat turns
         self._tokens: TokenRelay | None = None  # set for agent graphs
         self._test_chat = False  # a Studio test chat: side effects are simulated
+        self._trace: telemetry.RunTrace | None = None  # this execution's spans
         # A release the worker must NOT re-send at once (an open circuit breaker): the
         # outbox relay re-sends it once its message is stale, which is the backoff.
         self.deferred = False
@@ -312,7 +322,30 @@ class RunExecutor:
                 return await repo.get(run_id)
             await publish_events(self._bus, repo.emitted)  # committed above
             run = await repo.get(run_id)
-        return await self._drive(run, fence)
+        # One `run` span per execution, continuing the trace stored on the run (R2.7):
+        # a reclaim or a resume after an approval is a second `run` span in the same trace.
+        attributes = {
+            "run.id": str(run.id), "run.graph": run.graph_name, "run.kind": run.kind,
+            "run.epoch": fence.epoch, "run.reclaimed": lease.reclaimed,
+            "run.depth": run.depth, "worker": self.owner,
+        }  # fmt: skip
+        if run.session_id is not None:
+            attributes["session.id"] = str(run.session_id)
+        with telemetry.run_span(run.traceparent, attributes) as span:
+            self._trace = span
+            with telemetry.bind_run(run.id, fence.epoch, telemetry.run_trace_id()):
+                log.info("run %s: executing %s (%s)", run.id, run.graph_name,
+                         "reclaimed" if lease.reclaimed else "started")  # fmt: skip
+                ended = await self._drive(run, fence)
+                log.info("run %s: %s%s", run.id, ended.status,
+                         f" ({ended.reason})" if ended.reason else "")  # fmt: skip
+            span.span.set_attribute("run.status", str(ended.status))
+            if ended.reason:
+                span.span.set_attribute("run.reason", ended.reason)
+        if ended.status.is_terminal and ended.finished_at is not None:
+            metrics.run_ended(run.kind, str(ended.status),
+                              (ended.finished_at - ended.created_at).total_seconds())  # fmt: skip
+        return ended
 
     async def _drive(self, run: Run, fence: Fence) -> Run:
         try:
@@ -363,7 +396,9 @@ class RunExecutor:
         config: RunnableConfig = {
             "configurable": {"thread_id": run.thread_id},
             "callbacks": [
-                _NodeRecorder(outbox, limits.max_steps, lambda: self._check_interrupts(run.id)),
+                _NodeRecorder(
+                    outbox, limits.max_steps, lambda: self._check_interrupts(run.id), self._trace
+                ),
                 *self._token_relay(spec, run),
             ],
             # Our step budget governs; LangGraph's recursion limit is only a backstop.
@@ -612,13 +647,17 @@ class RunExecutor:
                                 window_s=s.breaker_window_s, open_s=s.breaker_open_s),
         )  # fmt: skip
 
-    def _usage_recorder(self, outbox: Outbox) -> Callable[[str, int, int], None]:
+    def _usage_recorder(self, outbox: Outbox) -> Callable[[str, int, int], float]:
         prices = self._settings.model_prices
 
-        def record(model: str, tokens_in: int, tokens_out: int) -> None:
+        def record(model: str, tokens_in: int, tokens_out: int) -> float:
             price = prices.get(model)
             cost = price.cost(tokens_in, tokens_out) if price else 0.0
             outbox.add_usage(tokens_in + tokens_out, cost)
+            # Counted when the response arrives: a step lost to a crash and re-run is
+            # counted twice here, as it was paid for twice (the budget counts it once).
+            metrics.llm_usage(model, tokens_in, tokens_out, cost)
+            return cost
 
         return record
 

@@ -39,6 +39,7 @@ from typing import Any, Literal
 
 from pydantic import ValidationError
 
+from agent_runtime import telemetry
 from agent_runtime.db import Conn, Pool
 from agent_runtime.fencing import Fence
 from agent_runtime.runs.events import EventType
@@ -138,6 +139,16 @@ class ToolPipeline:
             self._stages.append(stage)
 
     async def run(self, call: ToolCall, ctx: ToolRunContext) -> ToolResult:
+        """Run `call` through every stage, in a `tool:{name}` span (R7.1)."""
+        with telemetry.child_span(f"tool:{call.name}", {"tool.call_id": call.id}) as span:
+            result = await self._run(call, ctx)
+            span.set_attributes({
+                "tool.status": result.status, "tool.cached": result.cached,
+                "tool.stage": result.stage,
+            })  # fmt: skip
+        return result
+
+    async def _run(self, call: ToolCall, ctx: ToolRunContext) -> ToolResult:
         # 1 resolve
         self._at("resolve")
         if call.name not in self._registry:

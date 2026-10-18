@@ -2,7 +2,7 @@
 
 The delivery plan for **Durable, Distributed Runtime for LangGraph Agents**: what we build, in what order, and how we know each part is done.
 
-**Where we are (2026-10-17):** the runtime core is done (phases 0–6). In the local release, L1 (one-command setup) and **L2 (the chat UI, now called _Nuria_)** are merged: milestone **M1** is reached. L3a (agents and helpers), L3b (your own model) and **L3c (skills and "describe your agent") are merged**. **M2** is declared once 2–3 non-technical testers pass the [tester script](setup/tester-script.md). Next: L4, dashboards and local Kubernetes.
+**Where we are (2026-10-18):** the runtime core is done (phases 0–6). In the local release, L1 (one-command setup) and **L2 (the chat UI, now called _Nuria_)** are merged: milestone **M1** is reached. L3a (agents and helpers), L3b (your own model) and **L3c (skills and "describe your agent") are merged**. **M2** is declared once 2–3 non-technical testers pass the [tester script](setup/tester-script.md). L4 is in two slices ([plan](plans/phase-L4.md)): **L4a (observability: traces, metrics, a dashboard) is done** ([summary](progress/phase-L4a.md)); next is L4b, local Kubernetes.
 
 **Sources of truth for scope**
 - Base spec: [`Project_4_Detailed_Requirements_K8s.pdf`](requirements/Project_4_Detailed_Requirements_K8s.pdf). Requirements are `R<section>.<n>`; acceptance criteria are `AC<n>`.
@@ -53,7 +53,7 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 | **L3a** | Agent Studio: agents & helpers | ✅ Done ([plan](plans/phase-L3a.md), [summary](progress/phase-L3a.md)) | ~22–28 h |
 | **L3b** | Agent Studio: your own model | ✅ Done ([plan](plans/phase-L3b.md), [summary](progress/phase-L3b.md)) | ~14–18 h |
 | **L3c** | Agent Studio: skills & "describe your agent" → M2 | ✅ Done ([plan](plans/phase-L3c.md), [summary](progress/phase-L3c.md)); M2 after the tester sessions | ~16–20 h |
-| **L4** | **Dashboards & local Kubernetes** | ⏳ Next | ~16–22 h |
+| **L4** | **Dashboards & local Kubernetes** (L4a observability, L4b local Kubernetes) | L4a ✅ ([summary](progress/phase-L4a.md)); L4b ⏳ next ([plan](plans/phase-L4.md)) | ~26–33 h |
 | L5 | Release v0.1 & feedback loop → M3 | — | ~10–14 h |
 | P7–P12 | Hosted beta → M4 | After the feedback | ~160–200 h |
 | P13–P16 | Sandboxes, research agent, evals, AKS | After the beta opens | ~65–90 h |

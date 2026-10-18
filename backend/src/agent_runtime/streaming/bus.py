@@ -28,6 +28,8 @@ from typing import Any, Protocol
 from redis.asyncio import Redis
 from redis.asyncio.client import PubSub
 
+from agent_runtime import metrics
+
 log = logging.getLogger(__name__)
 
 TERMINAL_EVENTS = frozenset({"run.completed", "run.failed", "run.cancelled"})
@@ -113,7 +115,10 @@ def to_stream_event(event: Any) -> StreamEvent:
 
 async def publish_events(bus: EventBus | None, events: list[Any]) -> None:
     """Best effort, after commit. A lost publish only costs latency: readers
-    back-fill from Postgres. It must never fail the run that produced it."""
+    back-fill from Postgres. It must never fail the run that produced it.
+
+    Also the one place every committed event passes: metrics count them here (R7.2)."""
+    metrics.observe_events(events)
     if bus is None:
         return
     for event in events:

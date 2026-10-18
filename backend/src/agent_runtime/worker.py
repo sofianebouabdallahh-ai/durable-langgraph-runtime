@@ -24,6 +24,10 @@ Shutdown (R10.7): the first SIGTERM/SIGINT stops reading and asks every
 in-flight run to release after its current step; another worker picks each up
 within seconds. Runs not released within `worker_grace_s` are left to the
 reaper (the SIGKILL path).
+
+Health (R10.5): `HealthServer` serves `/healthz` (the read loop ticked within
+`worker_liveness_s`: a wedged loop gets the container restarted), `/readyz` (up and
+not draining) and `/metrics` (R7.2) on `worker_health_port`.
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 
+from agent_runtime import metrics
 from agent_runtime.admin import AdminRepository
 from agent_runtime.config import Settings
 from agent_runtime.db import Pool
@@ -86,6 +91,7 @@ class Worker:
         self._paused_cache: tuple[float, bool] = (0.0, False)
         self.peak_inflight = 0
         self.handled = 0  # messages settled (for tests and metrics)
+        self.last_tick: float | None = None  # monotonic time of the read loop's last turn
 
     # ------------------------------------------------------------------ main
 
@@ -101,6 +107,7 @@ class Worker:
         backoff = READ_BACKOFF_S
         try:
             while not stop.is_set():
+                self._tick()
                 if await self._paused():
                     await _sleep_unless(stop, 1.0)
                     continue
@@ -132,6 +139,19 @@ class Worker:
                 task.cancel()
             await asyncio.gather(*background, return_exceptions=True)
             await self._drain()
+
+    def _tick(self) -> None:
+        """The loop is alive: every turn is at most `worker_block_ms` or 1 s apart."""
+        self.last_tick = time.monotonic()
+        metrics.worker_tick()
+        metrics.INFLIGHT.set(len(self._inflight))
+
+    @property
+    def draining(self) -> bool:
+        return self._draining.is_set()
+
+    def live(self, max_age_s: float) -> bool:
+        return self.last_tick is not None and time.monotonic() - self.last_tick <= max_age_s
 
     async def _drain(self) -> None:
         if self._inflight:
@@ -259,3 +279,82 @@ class Worker:
 async def _sleep_unless(stop: asyncio.Event, seconds: float) -> None:
     with contextlib.suppress(TimeoutError):
         await asyncio.wait_for(stop.wait(), timeout=seconds)
+
+
+class HealthServer:
+    """`/healthz`, `/readyz`, `/metrics` for one worker process (R10.5, R7.2).
+
+    A few lines of HTTP/1.1 on asyncio streams: the worker has no web framework,
+    and probes need nothing more. Draining is signalled the moment SIGTERM arrives
+    (`stopping`), before in-flight runs are released.
+    """
+
+    def __init__(
+        self, worker: Worker, stopping: asyncio.Event, *, liveness_s: float, port: int
+    ) -> None:
+        self._worker = worker
+        self._stopping = stopping
+        self._liveness_s = liveness_s
+        self._port = port
+        self._server: asyncio.Server | None = None
+
+    @property
+    def port(self) -> int:
+        if self._server is None or not self._server.sockets:
+            return self._port
+        return int(self._server.sockets[0].getsockname()[1])
+
+    async def start(self, host: str = "0.0.0.0") -> bool:  # probes come from outside the pod
+        """Listen; a port already taken is logged, never fatal (the worker still serves)."""
+        try:
+            self._server = await asyncio.start_server(self._serve, host, self._port)
+        except OSError as exc:
+            log.warning("health server: can't listen on %s:%d (%s)", host, self._port, exc)
+            return False
+        return True
+
+    async def stop(self) -> None:
+        if self._server is not None:
+            self._server.close()
+            await self._server.wait_closed()
+
+    def respond(self, path: str) -> tuple[int, str, bytes]:
+        """(status, content type, body) for a GET of `path`."""
+        if path == "/metrics":
+            body, content_type = metrics.render()
+            return 200, content_type, body
+        if path == "/healthz":
+            ok = self._worker.live(self._liveness_s)
+            return (200 if ok else 503), "text/plain", b"ok" if ok else b"loop stalled"
+        if path == "/readyz":
+            if self._stopping.is_set() or self._worker.draining:
+                return 503, "text/plain", b"draining"
+            ok = self._worker.live(self._liveness_s)
+            return (200 if ok else 503), "text/plain", b"ok" if ok else b"starting"
+        return 404, "text/plain", b"not found"
+
+    async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        try:
+            request = await asyncio.wait_for(reader.readline(), timeout=5)
+            while (await asyncio.wait_for(reader.readline(), timeout=5)) not in (
+                b"\r\n",
+                b"\n",
+                b"",
+            ):
+                pass  # headers: not needed
+            parts = request.decode("latin-1").split()
+            path = parts[1].split("?")[0] if len(parts) >= 2 else "/"
+            status, content_type, body = self.respond(path)
+            reason = {200: "OK", 404: "Not Found", 503: "Service Unavailable"}[status]
+            writer.write(
+                f"HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\n"
+                f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode()
+                + body
+            )
+            await writer.drain()
+        except (TimeoutError, ConnectionError):
+            pass
+        finally:
+            writer.close()
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()

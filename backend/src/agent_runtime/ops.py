@@ -44,6 +44,27 @@ class SmokeResult:
     steps: list[str] = field(default_factory=list)
 
 
+async def wait_ready(
+    client: httpx.AsyncClient, *, within_s: float = 30.0, interval_s: float = 1.0
+) -> None:
+    """`/readyz` answers 200, riding out a few seconds of 502-504 or refused
+    connections: right after API replicas are recreated (a config change), the UI's
+    proxy needs a moment to resolve their new addresses."""
+    deadline = time.monotonic() + within_s
+    while True:
+        try:
+            ready = await client.get("/readyz")
+            if ready.status_code == 200:
+                return
+            problem = f"{ready.status_code}: {ready.text[:200]}"
+            transient = ready.status_code in (502, 503, 504)
+        except httpx.TransportError as exc:
+            problem, transient = repr(exc), True
+        if not transient or time.monotonic() >= deadline:
+            raise SmokeFailed(f"the API isn't ready ({problem})")
+        await asyncio.sleep(interval_s)
+
+
 async def smoke(
     api: str, settings: Settings, *, timeout_s: float = 180.0, ui: str | None = None
 ) -> SmokeResult:
@@ -52,9 +73,7 @@ async def smoke(
     if ui is not None:
         await check_ui(ui)
     async with httpx.AsyncClient(base_url=api.rstrip("/"), timeout=30) as client:
-        ready = await client.get("/readyz")
-        if ready.status_code != 200:
-            raise SmokeFailed(f"the API isn't ready ({ready.status_code}: {ready.text[:200]})")
+        await wait_ready(client)
         created = await client.post("/sessions", json={"agent": "chat", "title": "smoke test"})
         _require(created, 201, "create a session")
         sid = created.json()["id"]

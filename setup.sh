@@ -7,6 +7,7 @@
 #   ./setup.sh --port 3100          the app on another port (default 3000, or a free one)
 #   ./setup.sh --non-interactive --model scripted     no questions (CI, scripts)
 #   ./setup.sh --chat               chat in this terminal
+#   ./setup.sh --observability      also traces (Jaeger), metrics and a Grafana dashboard
 #   ./setup.sh --stop | --update | --doctor | --reset | --help
 #
 # Safe to run again: it never overwrites a secret or a setting you didn't ask to change.
@@ -26,10 +27,10 @@ ok()   { printf '%s\n' "  ${G}✓${N} $*"; }
 warn() { printf '%s\n' "  ${Y}!${N} $*"; }
 die()  { printf '%s\n' "  ${R}✗ $1${N}" >&2; [ $# -gt 1 ] && printf '    %s\n' "${@:2}" >&2; exit 1; }
 
-usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
 # ------------------------------------------------------------------ options
-ACTION=start; MODEL=""; INTERACTIVE=1; BUILD=0
+ACTION=start; MODEL=""; INTERACTIVE=1; BUILD=0; OBSERVABILITY=""
 API_KEY="${SETUP_API_KEY:-}"; BASE_URL=""; MODEL_NAME=""; WANT_PORT=""; OPEN_BROWSER=1
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -46,6 +47,8 @@ while [ $# -gt 0 ]; do
     --doctor) ACTION=doctor ;;
     --update) ACTION=update ;;
     --chat) ACTION=chat ;;
+    --observability) OBSERVABILITY=on ;;
+    --no-observability) OBSERVABILITY=off ;;
     -h|--help) usage ;;
     *) die "unknown option: $1" "Run ./setup.sh --help" ;;
   esac
@@ -201,6 +204,28 @@ configure_model() {
   esac
 }
 
+has_profile() { case ",$(env_get COMPOSE_PROFILES)," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
+
+configure_observability() {  # --observability / --no-observability; remembered in .env
+  local profiles
+  profiles=$(env_get COMPOSE_PROFILES | tr ',' '\n' | { grep -v '^observability$' || true; } | paste -sd, -)
+  if [ "$OBSERVABILITY" = off ]; then
+    env_set COMPOSE_PROFILES "${profiles:-app}"; env_set OTEL_ENDPOINT ""
+    env_set TRACE_UI_URL ""; env_set DASHBOARD_URL ""
+    ok "observability off (traces and metrics stop being collected)"
+    return
+  fi
+  [ "$OBSERVABILITY" = on ] || has_profile observability || return 0
+  env_set COMPOSE_PROFILES "${profiles:-app},observability"
+  env_set OTEL_ENDPOINT http://otel-collector:4318
+  JAEGER_PORT=$(pick_port jaeger 16686 JAEGER_PORT 16686)
+  GRAFANA_PORT=$(pick_port grafana 3000 GRAFANA_PORT 3001)
+  PROMETHEUS_PORT=$(pick_port prometheus 9090 PROMETHEUS_PORT 9090)
+  env_set TRACE_UI_URL "http://localhost:$JAEGER_PORT"
+  env_set DASHBOARD_URL "http://localhost:$GRAFANA_PORT/d/nuria"
+  ok "observability: traces $JAEGER_PORT, dashboard $GRAFANA_PORT, metrics $PROMETHEUS_PORT"
+}
+
 start_stack() {
   if [ "$BUILD" -eq 1 ]; then
     say "Building the images (first time: a few minutes)…"; compose build
@@ -231,7 +256,7 @@ smoke() {
 case "$ACTION" in
   start)
     say "Checking this machine…"; check_docker
-    make_env; choose_ports; configure_model
+    make_env; choose_ports; configure_model; configure_observability
     start_stack; smoke
     echo
     say "${G}Nuria is ready.${N}"
@@ -240,6 +265,11 @@ case "$ACTION" in
     echo "    Chat in a terminal:  ./setup.sh --chat"
     echo "    Stop / start again:  ./setup.sh --stop  /  ./setup.sh"
     echo "    Something wrong?     ./setup.sh --doctor   (a report you can attach to an issue)"
+    if has_profile observability; then
+      echo "    Dashboard:           $(env_get DASHBOARD_URL)"
+      echo "    Traces:              $(env_get TRACE_UI_URL)   (or \"Open the trace\" under a reply's \"What happened?\")"
+      echo "    Metrics:             http://localhost:$(env_get PROMETHEUS_PORT)"
+    fi
     if [ "$INTERACTIVE" -eq 1 ] && [ "$OPEN_BROWSER" -eq 1 ]; then
       if command -v open >/dev/null 2>&1; then open "http://localhost:$UI_PORT" >/dev/null 2>&1 || true
       elif command -v xdg-open >/dev/null 2>&1; then xdg-open "http://localhost:$UI_PORT" >/dev/null 2>&1 || true
@@ -259,7 +289,7 @@ case "$ACTION" in
     ok "wrote $out.tar.gz (secrets redacted). Attach it to a GitHub issue."
     ;;
   update)
-    check_docker; make_env; choose_ports
+    check_docker; make_env; choose_ports; configure_observability
     if [ -d .git ] && git diff --quiet 2>/dev/null; then git pull --ff-only || warn "couldn't fast-forward; staying on this version"; fi
     mkdir -p backups
     backup="backups/agent_runtime-$(date +%Y%m%d-%H%M%S).sql.gz"

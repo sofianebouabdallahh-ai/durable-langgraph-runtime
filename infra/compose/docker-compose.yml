@@ -7,6 +7,9 @@
 #                         2 API replicas, 2 workers. What `./setup.sh` starts for testers.
 #   profile `llm`:        Ollama in Docker (CPU-only on macOS: prefer the native app).
 #   profile `test`:       a fake OpenAI-compatible model (browser tests, CI).
+#   profile `observability`: traces (OpenTelemetry Collector → Jaeger), metrics
+#                         (Prometheus) and a Grafana dashboard. `./setup.sh --observability`
+#                         turns it on, with OTEL_ENDPOINT so the app sends its spans (L4a).
 #
 # Run it through the root Makefile or setup.sh, which pass the root .env:
 #   docker compose --file infra/compose/docker-compose.yml --env-file .env ...
@@ -30,6 +33,12 @@ x-runtime: &runtime
     # The offline demo model streams its replies word by word, like a real one.
     SCRIPTED_STREAMING: ${SCRIPTED_STREAMING:-true}
     SCRIPTED_STREAM_DELAY_S: ${SCRIPTED_STREAM_DELAY_S:-0.03}
+    # R7.1: one JSON object per line, with run_id, epoch and trace_id during a run.
+    LOG_FORMAT: ${LOG_FORMAT:-json}
+    # Traces go to the collector only when the observability profile is on (empty: off).
+    OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_ENDPOINT:-}
+    TRACE_UI_URL: ${TRACE_UI_URL:-} # "Open the trace" and the dashboard link, in the UI
+    DASHBOARD_URL: ${DASHBOARD_URL:-}
   extra_hosts:
     - "host.docker.internal:host-gateway" # a model server on the host (Linux; macOS/Windows have it)
   read_only: true
@@ -81,11 +90,17 @@ services:
       <<: *runtime-env
       POSTGRES_USER: ${WORKER_POSTGRES_USER:?set in .env}
       POSTGRES_PASSWORD: ${WORKER_POSTGRES_PASSWORD:?set in .env}
+      WORKER_HEALTH_PORT: "8081" # /healthz /readyz /metrics (one worker process per container)
     depends_on:
       migrate:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+    healthcheck: # liveness: the read loop ticked within WORKER_LIVENESS_S (R10.5)
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8081/healthz', timeout=3).status == 200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     # SIGTERM → finish the current step, release the run to another worker (R10.7).
     stop_grace_period: 40s
 
@@ -167,7 +182,81 @@ services:
       timeout: 5s
       retries: 30
 
+  # ---------------------------------------------------- observability (L4a)
+  # Images pinned by digest, each release at least two weeks old (supply-chain cooldown).
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.161.0@sha256:fd328de2552466ad78385e1b1289c3f2402b1c45f265b252aab1955b42845ac1
+    profiles: ["observability"]
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ../observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    depends_on:
+      - jaeger
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  jaeger: # v2: OTLP built in; traces kept in memory (a restart forgets them)
+    image: jaegertracing/jaeger:2.21.0@sha256:3d0ac795ff98aa04d1be04311d2dac6c25b4bfc8322dc02e53bc5b170c5018c3
+    profiles: ["observability"]
+    ports:
+      - "127.0.0.1:${JAEGER_PORT:-16686}:16686"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+    profiles: ["observability"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  grafana: # anonymous viewers (local only: bound to 127.0.0.1); admin to edit
+    image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
+    profiles: ["observability"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-me-grafana} # setup generates one
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/nuria.json
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
+    volumes:
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
 volumes:
   postgres-data:
   redis-data:
   ollama-models:
+  prometheus-data:
+  grafana-data:

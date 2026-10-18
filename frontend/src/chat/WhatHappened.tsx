@@ -1,11 +1,15 @@
 /** "What happened?": a reply's run events as a timeline, in plain words (§4.5). */
 import { useQuery } from "@tanstack/react-query";
+import { ExternalLink } from "lucide-react";
 
 import { api, unwrap } from "../api/client";
+import { useAbout } from "../sessions/ModelStatus";
+import { traceLink } from "./trace";
 import { Spinner } from "../ui/primitives";
 import { eventLine } from "../ui/words";
 
 export function WhatHappened({ runId, active }: { runId: string; active: boolean }) {
+  const about = useAbout();
   const run = useQuery({
     queryKey: ["run", runId],
     queryFn: () => unwrap(api.GET("/runs/{run_id}", { params: { path: { run_id: runId } } })),
@@ -19,6 +23,7 @@ export function WhatHappened({ runId, active }: { runId: string; active: boolean
   if (run.isPending || events.isPending) return <Spinner label="Loading…" />;
   if (run.isError || events.isError) return <div className="text-sm text-rose-600">Couldn't load the details.</div>;
   const r = run.data;
+  const traceUrl = traceLink(about.data, r.trace_id);
   const start = events.data.events[0]?.ts;
   const lines = events.data.events
     .map((e) => ({ seq: e.seq, ts: e.ts, type: e.type, text: eventLine(e.type, e.payload) }))
@@ -43,7 +48,21 @@ export function WhatHappened({ runId, active }: { runId: string; active: boolean
         <span>Steps: {r.steps}</span>
         <span>Taken over after a crash: {r.reclaims}</span>
         <span>Handed over on shutdown: {r.releases}</span>
-        <span className="ml-auto font-mono">run {r.id.slice(0, 8)}</span>
+        {traceUrl && (
+          <a
+            href={traceUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 font-medium text-stone-700 underline-offset-2 hover:underline dark:text-stone-300"
+            data-testid="open-trace"
+          >
+            Open the trace <ExternalLink aria-hidden className="size-3" />
+          </a>
+        )}
+        <span className="ml-auto font-mono" title={r.trace_id ? `trace ${r.trace_id}` : undefined}>
+          run {r.id.slice(0, 8)}
+          {r.trace_id && <span className="ml-2">trace {r.trace_id.slice(0, 8)}</span>}
+        </span>
       </div>
     </div>
   );

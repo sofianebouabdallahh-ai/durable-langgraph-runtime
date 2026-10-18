@@ -1,6 +1,6 @@
 /** Which model answers, at the foot of the sidebar; how to change it. */
 import { useQuery } from "@tanstack/react-query";
-import { Cpu, Sparkles } from "lucide-react";
+import { Activity, Cpu, Sparkles } from "lucide-react";
 
 import { api, unwrap } from "../api/client";
 
@@ -33,6 +33,20 @@ export function ModelStatus() {
           </span>
         </span>
       </div>
+      {about.data.dashboard_url && (
+        <a
+          href={about.data.dashboard_url}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-1 flex items-center gap-2.5 rounded-xl px-2 py-1.5 text-xs text-stone-600 hover:bg-stone-100 hover:text-stone-900 dark:text-stone-400 dark:hover:bg-stone-800 dark:hover:text-stone-100"
+          data-testid="dashboard-link"
+        >
+          <span className="flex size-7 items-center justify-center">
+            <Activity aria-hidden className="size-3.5" />
+          </span>
+          Dashboard
+        </a>
+      )}
     </div>
   );
 }

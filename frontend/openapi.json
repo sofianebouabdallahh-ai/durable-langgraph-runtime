@@ -16,6 +16,18 @@
             "description": "The chat role's model, when configured",
             "title": "Chat Model"
           },
+          "dashboard_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Grafana dashboard",
+            "title": "Dashboard Url"
+          },
           "demo_model": {
             "description": "The offline demo model (MODEL_PROVIDER=scripted)",
             "title": "Demo Model",
@@ -24,6 +36,24 @@
           "model_provider": {
             "title": "Model Provider",
             "type": "string"
+          },
+          "trace_ui_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trace viewer: a run's trace is at {trace_ui_url}/trace/{trace_id}",
+            "title": "Trace Ui Url"
+          },
+          "tracing": {
+            "default": false,
+            "description": "Traces are exported (--observability)",
+            "title": "Tracing",
+            "type": "boolean"
           },
           "version": {
             "anyOf": [
@@ -1928,6 +1958,18 @@
             },
             "title": "Subagents",
             "type": "array"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The OpenTelemetry trace this run belongs to (R7.1)",
+            "title": "Trace Id"
           }
         },
         "required": [
