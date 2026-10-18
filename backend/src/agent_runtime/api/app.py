@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request, Respons
 from fastapi.responses import StreamingResponse
 
 from agent_runtime import __doc__ as package_doc
+from agent_runtime import metrics, telemetry
 from agent_runtime.admin import AdminRepository, AdminState
 from agent_runtime.agents.studio import StudioService
 from agent_runtime.api import problems
@@ -263,10 +264,20 @@ async def about(request: Request) -> AboutView:
         version: str | None = metadata.version("durable-agent-runtime")
     except metadata.PackageNotFoundError:
         version = None
+    tracing = bool(settings.otel_exporter_otlp_endpoint)
     return AboutView(
         version=version, model_provider=settings.model_provider,
         demo_model=settings.model_provider == "scripted", chat_model=settings.model_chat or None,
+        tracing=tracing, trace_ui_url=(settings.trace_ui_url or None) if tracing else None,
+        dashboard_url=settings.dashboard_url or None,
     )  # fmt: skip
+
+
+@health.get("/metrics", include_in_schema=False)
+async def prometheus_metrics() -> Response:
+    """Prometheus scrape endpoint (R7.2)."""
+    body, content_type = metrics.render()
+    return Response(body, media_type=content_type)
 
 
 @health.get(
@@ -358,6 +369,7 @@ def create_app(
         )
         await broker.start()
         app.state.broker = broker
+        metrics.SUBSCRIBERS.set_function(broker.subscribers)
         app.state.loop = asyncio.get_running_loop()  # for the signal handler (cli._api)
         try:
             if pool is not None:
@@ -368,7 +380,12 @@ def create_app(
             async with create_pool(settings) as owned:
                 _wire(app, owned, work_queue, event_bus)
                 await app.state.skills.sync_builtins(get_agent_settings().skills_dir)
-                yield
+                poller = metrics.StatePoller(owned, work_queue)  # the state gauges (R7.2)
+                poller.start()
+                try:
+                    yield
+                finally:
+                    await poller.stop()
         finally:
             await broker.stop()
             if redis is not None:
@@ -413,5 +430,17 @@ def create_app(
 
 
 def create_api_app() -> FastAPI:
-    """Server entry point (`runtime api`): connects as the API's own DB user."""
-    return create_app(get_settings().for_component("api"))
+    """Server entry point (`runtime api`): connects as the API's own DB user.
+    With an OTLP endpoint, requests are traced (FastAPI) and so are outgoing calls
+    (httpx); a run created by a request continues its trace (R2.7)."""
+    settings = get_settings().for_component("api")
+    app = create_app(settings)
+    if telemetry.configure("api", settings.otel_exporter_otlp_endpoint):
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+        from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+        FastAPIInstrumentor.instrument_app(
+            app, excluded_urls="healthz,readyz,metrics,stream", exclude_spans=["receive", "send"]
+        )
+        HTTPXClientInstrumentor().instrument()
+    return app

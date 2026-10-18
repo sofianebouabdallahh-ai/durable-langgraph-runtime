@@ -36,6 +36,7 @@ from agent_runtime.fencing import Fence, check_fence
 from agent_runtime.ids import new_id
 from agent_runtime.runs.events import EventType
 from agent_runtime.runs.state import InvalidTransition, RunStatus, sources_of
+from agent_runtime.telemetry import current_traceparent
 
 
 class RunTerminal(Exception):
@@ -142,6 +143,8 @@ class Run:
     agent_hash: str | None = None
     # What each model string resolved to when the run was created (phase L3b).
     model_bindings: dict[str, Any] | None = None
+    # W3C trace context of whoever created the run (R2.7): every execution continues it.
+    traceparent: str | None = None
 
     @property
     def root_id(self) -> uuid.UUID:
@@ -179,6 +182,7 @@ class Run:
             child_key=row["child_key"],
             agent_hash=row.get("agent_hash"),
             model_bindings=row.get("model_bindings"),
+            traceparent=row.get("traceparent"),
             child_total=row["child_total"],
             child_done=row["child_done"],
         )
@@ -231,7 +235,7 @@ _RUN_COLUMNS = """
     input, options, limits, steps, parent_run_id, session_id,
     created_at, started_at, finished_at, cancel_requested, reclaims, releases, message_id,
     interrupt_payload, resume_value, root_run_id, depth, child_key, child_total, child_done,
-    agent_hash, model_bindings
+    agent_hash, model_bindings, traceparent
 """
 
 
@@ -276,6 +280,10 @@ class RunRepository:
         A child (`parent` + `child_key`) joins its parent's tree. Use
         `spawn_children`, which also enforces the fan-out limits."""
         run_id = new_id()
+        # R2.7: the trace this run belongs to. The creator's span (an API request, or the
+        # parent's `run` span for a child); a child created outside one keeps its parent's.
+        inherited = parent.traceparent if parent else None
+        traceparent = traceparent or current_traceparent() or inherited
         # R1.2: a chat turn continues its session's thread; anything else is its own thread.
         thread_id = str(session_id) if session_id is not None else str(run_id)
         async with self._conn.transaction():

@@ -60,6 +60,10 @@ class Broker:
     def channels(self) -> int:
         return sum(1 for ls in self._listeners.values() if ls)
 
+    def subscribers(self) -> int:
+        """Open live streams on this replica (a metric, R7.2)."""
+        return sum(len(ls) for ls in self._listeners.values())
+
     async def start(self) -> None:
         if self._bus is not None:
             self._task = asyncio.create_task(self._run())

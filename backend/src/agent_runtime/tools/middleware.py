@@ -24,6 +24,7 @@ model call that sees their results.
 from __future__ import annotations
 
 import json
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -41,6 +42,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langgraph.runtime import Runtime
 from langgraph.types import Command
 
+from agent_runtime import metrics, telemetry
 from agent_runtime.models.retry import ModelCaller
 from agent_runtime.models.scripted import ScriptedChatModel, ScriptTurn
 from agent_runtime.sessions.turns import script_offset
@@ -97,7 +99,8 @@ class RunContext:
     caller: ModelCaller = field(default_factory=ModelCaller)  # retries + breaker (R14.7)
     limits: RunLimits | None = None  # the run's budgets, for the soft limit (R14.2)
     soft_limit_ratio: float = 0.8
-    record_usage: Callable[[str, int, int], None] | None = None  # (model, in, out tokens)
+    # (model, in, out tokens) → cost in USD
+    record_usage: Callable[[str, int, int], float] | None = None
     # The chat model for one call (the provider's; R3.1). Given the scripted model's
     # offset; the default is the scripted model with this run's script.
     chat_model: Callable[[int], BaseChatModel] | None = None
@@ -197,7 +200,10 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
         model = ctx.model_for(script_offset(request.state.get("messages", [])))
         wrap_up: list[str | None] = [None]
 
+        attempts = [0]
+
         async def charge() -> None:
+            attempts[0] += 1
             if sub is not None:
                 await sub.before_model()  # cancel check + its own and the run's budget
             else:
@@ -210,13 +216,14 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
 
                 req = req.override(messages=[*req.messages, HumanMessage(content=WRAP_UP_NOTE)])
             elif sub is None and (kind := await ctx.soft_limit()):
+                if wrap_up[0] is None:
+                    metrics.budget_warning(kind)
                 wrap_up[0] = kind  # R14.2: one wrap-up call, with no tools
                 req = req.override(tools=[], messages=[*req.messages, SystemMessage(
                     content=WRAP_UP_TURN.format(kind=kind.removeprefix("budget:")))])  # fmt: skip
             return await handler(req)
 
-        response = await ctx.caller.call(attempt, charge=charge)
-        self._account(ctx, response)
+        response = await self._call(ctx, attempt, charge, attempts)
         _check_progress(request.state.get("messages", []), response)
         if wrap_up[0] is not None:
             return _budget_limited(response, wrap_up[0])
@@ -232,8 +239,34 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
             async def guarded() -> ModelResponse[Any]:
                 return await handler(request.override(model=model, messages=messages))
 
-            response = await ctx.caller.call(guarded, charge=charge)
-            self._account(ctx, response)
+            response = await self._call(ctx, guarded, charge, attempts)
+        return response
+
+    async def _call(
+        self,
+        ctx: RunContext,
+        attempt: Callable[[], Awaitable[ModelResponse[Any]]],
+        charge: Callable[[], Awaitable[None]],
+        attempts: list[int],
+    ) -> ModelResponse[Any]:
+        """One model call (with its retries) in an `llm.call` span (R7.1): model,
+        tokens, cost and attempts as attributes; usage staged with the step."""
+        first = attempts[0]
+        attrs = {"subagent": ctx.subagent.defn.frontmatter.name} if ctx.subagent else {}
+        with telemetry.child_span("llm.call", attrs) as span:
+            t0 = time.monotonic()
+            response = await ctx.caller.call(attempt, charge=charge)
+            seconds = time.monotonic() - t0
+            span.set_attribute("llm.attempts", attempts[0] - first)
+            for model, tokens_in, tokens_out, cost in self._account(ctx, response):
+                metrics.llm_latency(model, seconds)
+                span.set_attributes({
+                    "llm.model": model, "llm.tokens_in": tokens_in,
+                    "llm.tokens_out": tokens_out, "llm.cost_usd": cost,
+                })  # fmt: skip
+            span.set_attribute("llm.tool_calls", sum(
+                len(m.tool_calls) for m in response.result if isinstance(m, AIMessage)
+            ))  # fmt: skip
         return response
 
     @staticmethod
@@ -247,17 +280,23 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
             )  # fmt: skip
 
     @staticmethod
-    def _account(ctx: RunContext, response: ModelResponse[Any]) -> None:
-        """Tokens and cost, staged with the step (counted when it commits, R14.1)."""
-        if ctx.record_usage is None:
-            return
+    def _account(
+        ctx: RunContext, response: ModelResponse[Any]
+    ) -> list[tuple[str, int, int, float]]:
+        """Tokens and cost, staged with the step (counted when it commits, R14.1).
+        Returns (model, tokens in, tokens out, cost) per message, for the span."""
+        usage: list[tuple[str, int, int, float]] = []
         for m in response.result:
             if isinstance(m, AIMessage) and m.usage_metadata:
                 u = m.usage_metadata
                 model = str(m.response_metadata.get("model_name", "scripted"))
-                ctx.record_usage(
-                    model, int(u.get("input_tokens", 0)), int(u.get("output_tokens", 0))
+                tokens_in, tokens_out = (
+                    int(u.get("input_tokens", 0)),
+                    int(u.get("output_tokens", 0)),
                 )
+                cost = ctx.record_usage(model, tokens_in, tokens_out) if ctx.record_usage else 0.0
+                usage.append((model, tokens_in, tokens_out, cost))
+        return usage
 
     async def awrap_tool_call(
         self,

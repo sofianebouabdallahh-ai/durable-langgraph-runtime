@@ -43,6 +43,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.pregel import Pregel
 
+from agent_runtime import telemetry
 from agent_runtime.agents.schema import AgentDefinition, SubAgentDefinition
 from agent_runtime.checkpointing import FencedCheckpointer
 from agent_runtime.db import Conn, Pool
@@ -176,7 +177,7 @@ class SubagentOrchestrator:
         worker: str | None = None,  # the main run's owner, recorded on subagent.spawned
         session_id: uuid.UUID | None = None,  # chat turns: events also go to the session
         model_caller: Callable[[], Any] | None = None,  # retries + breaker (R14.7)
-        usage_recorder: Callable[[Outbox], Callable[[str, int, int], None]] | None = None,
+        usage_recorder: Callable[[Outbox], Callable[[str, int, int], float]] | None = None,
         chat_model: Callable[[str, float, list[ScriptTurn]], Callable[[int], Any]] | None = None,
         skills: Mapping[str, tuple[Any, ...]] | None = None,  # by helper name (R17.4)
     ) -> None:
@@ -341,11 +342,22 @@ class SubagentOrchestrator:
 
     def _start(self, inv: Invocation) -> None:
         # An empty context: the task must not inherit the main graph's run (measured).
+        # Its span hangs below the node that spawned it (or the run, on recovery).
+        parent = telemetry.parent_context()
         self._tasks[inv.handle] = asyncio.create_task(
-            self._run(inv), name=f"subagent:{inv.agent}", context=contextvars.Context()
+            self._run(inv, parent), name=f"subagent:{inv.agent}", context=contextvars.Context()
         )
 
-    async def _run(self, inv: Invocation) -> None:
+    async def _run(self, inv: Invocation, parent: Any = None) -> None:
+        attrs = {"subagent.handle": str(inv.handle), "subagent.name": inv.name,
+                 "worker": self.worker or ""}  # fmt: skip
+        with (
+            telemetry.child_span(f"subagent:{inv.name}", attrs, current=True, parent=parent),
+            telemetry.bind_run(self.run_id, self.fence.epoch, telemetry.run_trace_id()),
+        ):
+            await self._run_traced(inv)
+
+    async def _run_traced(self, inv: Invocation) -> None:
         try:
             async with self._sem:
                 self.running_now += 1

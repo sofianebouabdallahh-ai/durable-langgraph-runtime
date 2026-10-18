@@ -78,6 +78,19 @@ class Settings(AgentSettings):
     model_config = _ENV_ONLY
 
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    # JSON lines carry run_id, epoch and trace_id (R7.1); text is for a terminal.
+    log_format: Literal["json", "text"] = "text"
+
+    # Observability (R7.1, R7.2). Tracing is on only when an OTLP endpoint is set:
+    # with none, OpenTelemetry stays a no-op and the stack pays nothing (L4a SC4).
+    otel_exporter_otlp_endpoint: str = ""  # e.g. http://otel-collector:4318
+    # Links the UI shows, when observability is on (browser-facing URLs, not secrets).
+    trace_ui_url: str = ""  # Jaeger: {trace_ui_url}/trace/{trace_id}
+    dashboard_url: str = ""  # Grafana
+    # The worker's /healthz /readyz /metrics. 0 = off (the default: several workers share
+    # a host in development); containers set 8081, one worker process each.
+    worker_health_port: int = Field(default=0, ge=0)
+    worker_liveness_s: float = Field(default=30.0, gt=0)  # the main loop must tick within this
 
     # Postgres: the only source of truth. Split into parts rather than one URL so
     # the password can live in a Secret and the rest in a ConfigMap (R10.4).

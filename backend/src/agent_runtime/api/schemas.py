@@ -12,6 +12,7 @@ from agent_runtime.runs.state import RunStatus
 from agent_runtime.runs.store import Event, Run
 from agent_runtime.sessions.store import Message, Session
 from agent_runtime.subagents.store import Invocation
+from agent_runtime.telemetry import trace_id_of
 
 
 class CreateRunRequest(BaseModel):
@@ -66,6 +67,9 @@ class RunView(BaseModel):
     subagents: list[SubagentView] = Field(
         default_factory=list, description="Sub-agent invocations of this run (CR-005 R16.10)"
     )
+    trace_id: str | None = Field(
+        default=None, description="The OpenTelemetry trace this run belongs to (R7.1)"
+    )
 
     @classmethod
     def of(cls, run: Run, subagents: list[Invocation] | None = None) -> RunView:
@@ -94,6 +98,7 @@ class RunView(BaseModel):
             started_at=run.started_at,
             finished_at=run.finished_at,
             subagents=[SubagentView(**i.view(), result=i.result) for i in subagents or []],
+            trace_id=trace_id_of(run.traceparent),
         )
 
 
@@ -169,6 +174,12 @@ class AboutView(BaseModel):
     model_provider: str
     demo_model: bool = Field(description="The offline demo model (MODEL_PROVIDER=scripted)")
     chat_model: str | None = Field(description="The chat role's model, when configured")
+    tracing: bool = Field(default=False, description="Traces are exported (--observability)")
+    trace_ui_url: str | None = Field(
+        default=None,
+        description="Trace viewer: a run's trace is at {trace_ui_url}/trace/{trace_id}",
+    )
+    dashboard_url: str | None = Field(default=None, description="The Grafana dashboard")
 
 
 class AdminStatus(BaseModel):

@@ -36,12 +36,11 @@ Handler = Callable[[argparse.Namespace], int]
 BACKEND_DIR = Path(os.environ.get("RUNTIME_HOME") or Path(__file__).resolve().parents[2])
 
 
-def _setup_logging(settings: Settings) -> None:
-    logging.basicConfig(
-        level=settings.log_level,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        stream=sys.stderr,
-    )
+def _setup_logging(settings: Settings, component: str | None = None) -> None:
+    """Text for a terminal; JSON lines with the run's context in containers (R7.1)."""
+    from agent_runtime.telemetry import setup_logging
+
+    setup_logging(settings.log_level, settings.log_format, component)
 
 
 # ----------------------------------------------------------------------- db
@@ -321,11 +320,18 @@ async def _serve_worker(settings: Settings, concurrency: int) -> None:
     import os
     import signal
 
+    from agent_runtime import telemetry
     from agent_runtime.db import create_pool
     from agent_runtime.graphs import default_registry
     from agent_runtime.queue import RedisWorkQueue, create_redis
+    from agent_runtime.runs.executor import default_owner
     from agent_runtime.streaming.bus import RedisEventBus
-    from agent_runtime.worker import Worker
+    from agent_runtime.worker import HealthServer, Worker
+
+    if telemetry.configure("worker", settings.otel_exporter_otlp_endpoint, default_owner()):
+        from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+        HTTPXClientInstrumentor().instrument()  # model calls (OpenAI-compatible, over httpx)
 
     stop = asyncio.Event()
 
@@ -348,14 +354,24 @@ async def _serve_worker(settings: Settings, concurrency: int) -> None:
                 pool, queue, settings, default_registry(), concurrency=concurrency,
                 bus=RedisEventBus(redis),
             )  # fmt: skip
-            await worker.run(stop)
+            health = None
+            if settings.worker_health_port:
+                health = HealthServer(worker, stop, liveness_s=settings.worker_liveness_s,
+                                      port=settings.worker_health_port)  # fmt: skip
+                await health.start()
+            try:
+                await worker.run(stop)
+            finally:
+                if health is not None:
+                    await health.stop()
     finally:
         await redis.aclose()
+        telemetry.shutdown()  # flush the last spans
 
 
 def _worker(args: argparse.Namespace) -> int:
     settings = get_settings()
-    _setup_logging(settings)
+    _setup_logging(settings, "worker")
     concurrency = args.concurrency or settings.worker_concurrency
     if args.workers == 1:
         settings = settings.for_component("worker")  # least-privilege DB user (R14.13)
@@ -400,11 +416,13 @@ def _api(args: argparse.Namespace) -> int:
     from agent_runtime.api.app import create_api_app
 
     settings = get_settings()
+    _setup_logging(settings, "api")
     app = create_api_app()
     config = uvicorn.Config(
         app,
         host=args.host,
         port=args.port,
+        log_config=None,  # uvicorn's loggers go through ours (JSON in containers, R7.1)
         log_level=settings.log_level.lower(),
         timeout_graceful_shutdown=int(settings.api_grace_s),
     )
