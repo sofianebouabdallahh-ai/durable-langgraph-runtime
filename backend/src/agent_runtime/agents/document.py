@@ -9,13 +9,17 @@ nested. It is only a *shape*. Whether it's valid is decided by the one validator
     AgentDefinition ──from_definition──► document          (copy, restore, import)
     AgentDefinition ──to_files──► {path: agent.md text}     (export)
     {path: agent.md text} ──from_files──► RawDefinitions    (import)
+    zip ──read_skill_folders──► {name: files}               (its skills, L3c)
+
+A zipped agent carries the skills it uses in the Agent Skills format, next to it:
+`<agent>/skills/<skill>/SKILL.md` (+ references/, assets/).
 """
 
 from __future__ import annotations
 
 import io
 import zipfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import PurePosixPath
 from typing import Annotated, Any
 
@@ -25,9 +29,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from agent_runtime.agents.loader import DEFINITION_FILE, Issue, RawDefinition
 from agent_runtime.agents.schema import AgentDefinition, SubAgentDefinition
+from agent_runtime.skills.spec import SkillContent
 
 MAX_INSTRUCTIONS = 20_000  # characters, per agent or helper (G3: bounded input)
 MAX_HELPERS = 10  # the orchestrator's limit on sub-agents per run (CR-005)
+MAX_SKILLS = 20  # per agent or helper: each adds a line to its prompt
 
 
 class _Doc(BaseModel):
@@ -49,6 +55,7 @@ class HelperDocument(_Doc):
     max_turns: int = 6
     limits: dict[str, Any] = Field(default_factory=dict)
     tools: list[ToolChoice] = Field(default_factory=list)
+    skills: Annotated[list[str], Field(max_length=MAX_SKILLS)] = Field(default_factory=list)
     hooks: dict[str, list[str]] = Field(default_factory=dict)
 
 
@@ -62,6 +69,7 @@ class AgentDocument(_Doc):
     max_turns: int = 20
     limits: dict[str, Any] = Field(default_factory=dict)
     tools: list[ToolChoice] = Field(default_factory=list)
+    skills: Annotated[list[str], Field(max_length=MAX_SKILLS)] = Field(default_factory=list)
     hooks: dict[str, list[str]] = Field(default_factory=dict)
     helpers: Annotated[list[HelperDocument], Field(max_length=MAX_HELPERS)] = Field(
         default_factory=list
@@ -82,6 +90,8 @@ def _metadata(doc: AgentDocument | HelperDocument, version: int) -> dict[str, An
     }
     if doc.display_name:
         out["display_name"] = doc.display_name
+    if doc.skills:
+        out["skills"] = list(doc.skills)
     return out
 
 
@@ -119,6 +129,7 @@ def _fields(defn: AgentDefinition | SubAgentDefinition) -> dict[str, Any]:
         "max_turns": fm.max_turns,
         "limits": fm.limits.model_dump(exclude_none=True),
         "tools": [t.model_dump(exclude_none=True) for t in fm.tools],
+        "skills": list(fm.skills),
         "hooks": {k: v for k, v in fm.hooks.model_dump().items() if v},
     }
 
@@ -144,6 +155,8 @@ def _agent_md(defn: AgentDefinition | SubAgentDefinition) -> str:
         fm.pop("limits", None)
     if not fm.get("tools"):
         fm.pop("tools", None)
+    if not fm.get("skills"):
+        fm.pop("skills", None)
     head = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
     return f"---\n{head}\n---\n{defn.prompt}\n"
 
@@ -156,20 +169,53 @@ def to_files(defn: AgentDefinition) -> dict[str, str]:
     return files
 
 
-def to_zip(defn: AgentDefinition) -> bytes:
+def to_zip(defn: AgentDefinition, skills: Sequence[SkillContent] = ()) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         for path, text in sorted(to_files(defn).items()):
             zf.writestr(path, text)
+        for skill in skills:
+            zf.writestr(f"{defn.id}/skills/{skill.name}/SKILL.md", skill.skill_md())
+            for f in skill.files:
+                zf.writestr(f"{defn.id}/skills/{skill.name}/{f.path}", f.data)
     return buffer.getvalue()
+
+
+def read_skill_folders(filename: str, data: bytes) -> dict[str, dict[str, bytes]]:
+    """The skills a zipped agent carries: {folder name: {path inside it: bytes}}, from
+    `<agent>/skills/<name>/`. Sizes and paths were checked by `read_upload`."""
+    if not filename.lower().endswith(".zip"):
+        return {}
+    archive = zipfile.ZipFile(io.BytesIO(data))
+    entries = [i for i in archive.infolist() if not i.is_dir()]
+    agents = sorted(
+        (
+            PurePosixPath(i.filename)
+            for i in entries
+            if PurePosixPath(i.filename).name == DEFINITION_FILE
+        ),
+        key=lambda p: len(p.parts),
+    )
+    if not agents:
+        return {}
+    base = agents[0].parent / "skills"
+    out: dict[str, dict[str, bytes]] = {}
+    for info in entries:
+        path = PurePosixPath(info.filename)
+        if path.parts[: len(base.parts)] != base.parts or len(path.parts) < len(base.parts) + 2:
+            continue
+        rel = path.relative_to(base)
+        out.setdefault(rel.parts[0], {})[str(PurePosixPath(*rel.parts[1:]))] = archive.read(info)
+    return out
 
 
 class ImportRejected(ValueError):
     """An upload that isn't a safe agent folder (or file)."""
 
 
-MAX_UPLOAD_BYTES = 1_000_000
-MAX_ZIP_FILES = 50
+MAX_UPLOAD_BYTES = 10_000_000  # an agent with its skills (a skill is ≤ 10 MB on its own)
+MAX_ZIP_FILES = 300
+MAX_UNZIPPED_BYTES = 30_000_000
 MAX_FILE_BYTES = 200_000
 
 
@@ -177,7 +223,7 @@ def read_upload(filename: str, data: bytes) -> dict[str, str]:
     """An uploaded `.agent.md` or zipped folder as {relative path: text}, safely:
     bounded sizes and counts, no absolute paths or `..`, only agent.md files kept."""
     if len(data) > MAX_UPLOAD_BYTES:
-        raise ImportRejected(f"the file is larger than {MAX_UPLOAD_BYTES // 1000} KB")
+        raise ImportRejected(f"the file is larger than {MAX_UPLOAD_BYTES // 1_000_000} MB")
     if not filename.lower().endswith(".zip"):
         return {DEFINITION_FILE: _text(data)}
     try:
@@ -187,6 +233,8 @@ def read_upload(filename: str, data: bytes) -> dict[str, str]:
     entries = [i for i in archive.infolist() if not i.is_dir()]
     if len(entries) > MAX_ZIP_FILES:
         raise ImportRejected(f"more than {MAX_ZIP_FILES} files in the zip")
+    if sum(i.file_size for i in entries) > MAX_UNZIPPED_BYTES:  # a zip bomb
+        raise ImportRejected(f"more than {MAX_UNZIPPED_BYTES // 1_000_000} MB once unzipped")
     files: dict[str, str] = {}
     for info in entries:
         path = PurePosixPath(info.filename)

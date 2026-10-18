@@ -68,7 +68,11 @@ def test_turn_status_is_only_for_a_turns_lifecycle_events() -> None:
     channel, out = turn_status(event("run.failed")) or ("", None)
     assert channel == f"session:{sid}" and out is not None
     assert (out.type, out.persisted, out.payload["status"], out.payload["reason"]) == (
-        "turn.status", False, "failed", "r")  # fmt: skip
+        "turn.status",
+        False,
+        "failed",
+        "r",
+    )
     assert turn_status(event("tool.called")) is None  # not a lifecycle event
     assert turn_status(event("run.completed", None)) is None  # not a chat turn
 
@@ -78,11 +82,21 @@ def test_any_agents_helper_gets_the_task() -> None:
     from agent_runtime.agents.loader import Ceilings, validate_definition
     from agent_runtime.catalog import default_catalog
 
-    doc = AgentDocument.model_validate({
-        "name": "trip-planner", "description": "Plans trips.", "instructions": "Plan trips.",
-        "helpers": [{"name": "place-finder", "display_name": "Place finder",
-                     "description": "Finds places.", "instructions": "Find places."}],
-    })  # fmt: skip
+    doc = AgentDocument.model_validate(
+        {
+            "name": "trip-planner",
+            "description": "Plans trips.",
+            "instructions": "Plan trips.",
+            "helpers": [
+                {
+                    "name": "place-finder",
+                    "display_name": "Place finder",
+                    "description": "Finds places.",
+                    "instructions": "Find places.",
+                }
+            ],
+        }
+    )
     main, helpers = to_raw(doc, 1)
     ceilings = Ceilings(model_calls=100, tool_calls=100, tokens=10**6, cost_usd=10, timeout_s=600)
     agent, issues = validate_definition(main, helpers, default_catalog(), ceilings)
@@ -102,3 +116,29 @@ def test_an_agent_with_helpers_is_told_their_ids_and_purpose() -> None:
     assert "## Your helpers" in prompt
     assert "- `researcher`: Finds and cites facts" in prompt
     assert "## Your helpers" not in render_prompt(GRAPHS.get("assistant").agent)  # type: ignore[arg-type]
+
+
+def test_every_agent_and_helper_is_told_that_data_is_not_instructions() -> None:
+    """R14.15: the rule closes every system prompt, main agents' and helpers'."""
+    from agent_runtime.graphs.assistant import render_prompt
+    from agent_runtime.untrusted import RULE
+
+    assert CHAT is not None
+    assert render_prompt(CHAT).endswith(RULE)
+    assert all(render_prompt(helper).endswith(RULE) for helper in CHAT.subagents)
+
+
+def test_an_agent_with_skills_loads_its_first_skill_in_the_demo() -> None:
+    assert CHAT is not None
+    skilled = CHAT.model_copy(
+        update={
+            "frontmatter": CHAT.frontmatter.model_copy(
+                update={"skills": ["trip-planning", "plain-writing"]}
+            )
+        }
+    )
+    script, _ = demo_script("What is 2 + 2?", skilled)
+    assert script[0] == {"tool_calls": [{"name": "load_skill", "args": {"name": "trip-planning"}}]}
+    assert script[1]["tool_calls"][0]["name"] == "calculator"  # then the usual rule
+    plain, _ = demo_script("What is 2 + 2?", CHAT)
+    assert plain[0]["tool_calls"][0]["name"] == "calculator"

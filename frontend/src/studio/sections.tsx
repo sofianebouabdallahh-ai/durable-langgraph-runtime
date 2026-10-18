@@ -1,10 +1,11 @@
 /** The Studio form's sections. Presentational: they render a document and dispatch edits. */
 import { Bot, ChevronDown, Cpu, Gauge, Plus, ShieldCheck, Sparkles, Trash2, Users, Wrench } from "lucide-react";
-import { type Dispatch, useState } from "react";
+import { type Dispatch, type ReactNode, useState } from "react";
 
 import { href } from "../app/route";
 import { modelChoices, useConnections, useDefaultModel } from "../settings/api";
 import { ToolIcon } from "../ui/icons";
+import { SkillPicker } from "./skills";
 import { Avatar, Button, Pill } from "../ui/primitives";
 import { Issues, Section, Segmented, Switch, TextArea, TextField } from "../ui/form";
 import {
@@ -72,7 +73,7 @@ export function BasicsSection({ doc, issues, dispatch, readOnly }: Props) {
   );
 }
 
-export function InstructionsSection({ doc, issues, dispatch, catalog, readOnly }: Props) {
+export function InstructionsSection({ doc, issues, dispatch, catalog, readOnly, aside }: Props & { aside?: ReactNode }) {
   const insert = (key: string) => {
     dispatch({ kind: "set", field: "instructions", value: `${doc.instructions}{{${key}}}` });
   };
@@ -82,6 +83,7 @@ export function InstructionsSection({ doc, issues, dispatch, catalog, readOnly }
       description="How it works, how it answers, and what it never does. Write as if briefing a new colleague."
       icon={<Sparkles aria-hidden className="size-4" />}
       testId="section-instructions"
+      aside={aside}
     >
       <TextArea
         label="Instructions"
@@ -383,6 +385,15 @@ function HelperCard({
             issues={issuesFor(issues, `helpers.${helper.name}`, ["model"])}
             onChange={(model) => {
               onChange({ ...helper, model });
+            }}
+          />
+          <SkillPicker
+            label="Its skills"
+            value={helper.skills ?? []}
+            readOnly={readOnly}
+            issues={issuesFor(issues, `helpers.${helper.name}`, ["skills"])}
+            onChange={(skills) => {
+              onChange({ ...helper, skills });
             }}
           />
           {!readOnly && (

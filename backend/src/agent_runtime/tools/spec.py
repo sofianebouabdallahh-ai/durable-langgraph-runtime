@@ -48,6 +48,8 @@ class ToolContext:
     # sub-agent when the caller is one. Typed loosely to keep tools free of imports.
     orchestrator: Any = None
     subagent: Any = None
+    # Skill tools (CR-006 R17.4) only: the calling agent's own skills, name → version.
+    skills: Any = None
 
 
 ToolFn = Callable[[Any, ToolContext], Awaitable[Any]]

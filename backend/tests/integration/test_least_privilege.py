@@ -65,6 +65,21 @@ async def test_api_cannot_read_checkpoints_or_tool_results(as_api: Pool) -> None
     )
 
 
+async def test_skill_versions_are_immutable_and_workers_only_read_skills(
+    as_api: Pool, as_worker: Pool
+) -> None:
+    """L3c: a skill version, once written, can't be changed or removed by anyone but
+    a migration; workers read what runs pinned and nothing else."""
+    assert await denied(as_api, "UPDATE skill_versions SET instructions = 'evil'")
+    assert await denied(as_api, "DELETE FROM skill_versions")
+    assert await denied(as_api, "UPDATE skill_files SET data = 'x'")
+    assert await denied(as_api, "DELETE FROM skills")
+    assert await denied(as_worker, "INSERT INTO skill_files (sha256, data, size) VALUES "
+                        "(repeat('a', 64), 'x', 1)")  # fmt: skip
+    assert await denied(as_worker, "SELECT * FROM skills")
+    assert not await denied(as_worker, "SELECT hash FROM skill_versions LIMIT 1")
+
+
 async def test_a_full_run_works_with_only_these_privileges(
     as_api: Pool, as_worker: Pool, test_settings: Settings
 ) -> None:

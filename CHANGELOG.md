@@ -18,6 +18,28 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - CR-004 + ADR-0003 (accepted): agents defined as `backend/agents/*.agent.md` (name, max turns, prompt, tools, limits, hooks); hooks for session start/end, turn start/end and pre/post tool, built on LangChain middleware plus harness-owned session hooks.
 - CR-003 (accepted): harness guardrails. Run budgets with a soft→hard wrap-up, loop detection, ceilings that callers can only tighten, deny-by-default tool grants, least-privilege DB roles, untrusted-content handling, audit trail, kill switch.
 
+### L3c — Agent Studio: skills & "describe your agent"
+#### Added
+- **Skills** (sidebar → Skills; CR-006 R17.4):
+  - write one in the app or upload one in the open Agent Skills format (a zip of its folder, or a `SKILL.md`);
+  - every save is checked and **scanned**: a secret refuses it; injection phrasing, links, encoded blobs, invisible characters, code and length are reported for a look;
+  - edit (a new version), upload a new version, download, remove; built-in skills `trip-planning` and `plain-writing`.
+- **Skills on agents and helpers** in the Studio. Agents see a skill's name and "when to use it" and load it when needed (`load_skill`, `read_skill_file`); each sees only its own; scripts are kept and never run.
+- **Pinned skills:** a turn pins its skill versions in its bundle; publishing locks them (`skill_lock`), so editing a skill never changes a published agent; a draft needs a new test after a skill changes.
+- **"Describe it"** (New agent's default): the builder agent drafts the form from a description, checked by the one validator; nothing is saved until you accept. Also **From a template** and **Start blank**.
+- **"Improve my instructions"**: a suggestion side by side with yours.
+- **Untrusted text stays data** (CR-003 R14.15): every tool result reaches the model marked as data, and the rule closes every prompt; 22 injection cases as a gate.
+- Agent exports carry their skills; imports add them (scanned), reuse identical ones and refuse a clash.
+- **Database:** `skills`, `skill_versions`, `skill_files`, `agent_versions.skill_lock` (migration 0012).
+- **API:** `/skills`, `/studio/describe`, `/studio/agents/{id}/improve`, `/studio/assist/{run_id}`, `/studio/agents/from-proposal`.
+- Docs: [Skills](docs/setup/skills.md), the agents guide, and a [tester script](docs/setup/tester-script.md) for AC43.
+
+#### Fixed
+- A gated tool ran on any resume value, not only an approval (unreachable through the API, which cancels on a rejection; now fails closed).
+- A Redis timeout (a paused host) made workers exit and restart: they now back off and keep serving.
+- Migration 0010's downgrade deleted bundle snapshots that agent versions still referenced.
+- Uploads through nginx were capped at 256 KB: skills (10 MB) and agent imports now have their own limit.
+
 ### L3b — Agent Studio: your own model
 #### Added
 - **Settings → Models** (sidebar → Models):

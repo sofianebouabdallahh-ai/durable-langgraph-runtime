@@ -50,7 +50,7 @@ async def test_a_queued_turn_runs_the_definition_it_was_created_with(
     turn = await sessions.send(sid, "6*7?", script=CALC)
     assert turn.run.agent_hash is not None
     async with pool.connection() as conn:  # the snapshot is the whole team
-        pinned = await load_bundle(conn, turn.run.agent_hash)
+        pinned = (await load_bundle(conn, turn.run.agent_hash)).definition
     original = graphs.get("chat").agent
     assert original is not None
     assert pinned == original  # rebuilt from the snapshot: identical, helpers in order

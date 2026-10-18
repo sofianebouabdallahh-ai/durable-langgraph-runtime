@@ -84,6 +84,7 @@ from agent_runtime.runs.store import (
 from agent_runtime.sessions.store import SessionRepository
 from agent_runtime.sessions.transcript import TranscriptWriter
 from agent_runtime.sessions.turns import turn_input
+from agent_runtime.skills.binding import MAIN
 from agent_runtime.streaming.bus import EventBus, publish_events, run_channel, session_channel
 from agent_runtime.streaming.tokens import TokenRelay
 from agent_runtime.subagents.orchestrator import SubagentLimits, SubagentOrchestrator
@@ -545,7 +546,10 @@ class RunExecutor:
             started = run.started_at.timestamp() if run.started_at else time.time()
             self._orchestrator = SubagentOrchestrator(
                 pool=self._pool, fence=fence, bus=self._bus, main=agent,
-                build=lambda sub, cp: subagent_graph(sub, self._tools, cp),
+                build=lambda sub, cp: subagent_graph(
+                    sub, self._tools, cp, spec.skills.get(sub.frontmatter.name, ())
+                ),
+                skills=spec.skills,
                 tools=self._tools, hooks=self._hooks, policy=self._policy,
                 run_limits=limits, deadline=started + limits.timeout_s,
                 scripts=inp.subagent_scripts,
@@ -570,6 +574,7 @@ class RunExecutor:
             max_tool_calls=limits.max_tool_calls,
             orchestrator=self._orchestrator,
             simulate_side_effects=self._test_chat,
+            skills={s.name: s for s in spec.skills.get(MAIN, ())},  # its own only (R16.7)
         )
         pipeline = ToolPipeline(self._tools, self._policy, interrupt=interrupt)
         turn = TurnInfo(

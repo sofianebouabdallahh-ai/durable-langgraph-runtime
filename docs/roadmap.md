@@ -2,7 +2,7 @@
 
 The delivery plan for **Durable, Distributed Runtime for LangGraph Agents**: what we build, in what order, and how we know each part is done.
 
-**Where we are (2026-10-17):** the runtime core is done (phases 0–6). In the local release, L1 (one-command setup) and **L2 (the chat UI, now called _Nuria_)** are merged: milestone **M1** is reached. L3a (the Agent Studio: build agents and helpers) and **L3b (your own model) are merged. Next: L3c, skills & "describe your agent"**, which reaches M2.
+**Where we are (2026-10-17):** the runtime core is done (phases 0–6). In the local release, L1 (one-command setup) and **L2 (the chat UI, now called _Nuria_)** are merged: milestone **M1** is reached. L3a (agents and helpers), L3b (your own model) and **L3c (skills and "describe your agent") are merged**. **M2** is declared once 2–3 non-technical testers pass the [tester script](setup/tester-script.md). Next: L4, dashboards and local Kubernetes.
 
 **Sources of truth for scope**
 - Base spec: [`Project_4_Detailed_Requirements_K8s.pdf`](requirements/Project_4_Detailed_Requirements_K8s.pdf). Requirements are `R<section>.<n>`; acceptance criteria are `AC<n>`.
@@ -27,7 +27,7 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 ```
  DONE                      LOCAL RELEASE (on testers' machines)                    HOSTED BETA (after feedback)
  ────────────────────      ─────────────────────────────────────────────────      ────────────────────────────────
- 0–6 runtime core    ──►  L1 ✅ ─► L2 ✅ ─► L3a ✅ ─► L3b ✅ ─► L3c ─► L4 ─► L5 ──►  P7 ─► P8 ─► P9 ─► P10 ─► P11 ─► P12
+ 0–6 runtime core    ──►  L1 ✅ ─► L2 ✅ ─► L3a ✅ ─► L3b ✅ ─► L3c ✅ ─► L4 ─► L5 ──►  P7 ─► P8 ─► P9 ─► P10 ─► P11 ─► P12
  durable runs, workers,     setup  chat  Studio Studio dash- v0.1               identity keys Studio fair  UI   Azure
  streaming, tools, HITL,          UI    backend UI    boards feedback                       multi- sched.     closed
  sub-agents, chat, models           ▲            ▲    + K8s    ▲                                 user              beta
@@ -52,8 +52,8 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 | **L2** | Chat UI (Nuria) → M1 | ✅ Done ([plan](plans/phase-L2.md), [summary](progress/phase-L2.md)) | ~18–24 h |
 | **L3a** | Agent Studio: agents & helpers | ✅ Done ([plan](plans/phase-L3a.md), [summary](progress/phase-L3a.md)) | ~22–28 h |
 | **L3b** | Agent Studio: your own model | ✅ Done ([plan](plans/phase-L3b.md), [summary](progress/phase-L3b.md)) | ~14–18 h |
-| **L3c** | **Agent Studio: skills & "describe your agent" → M2** | ⏳ Next | ~16–20 h |
-| L4 | Dashboards & local Kubernetes | — | ~16–22 h |
+| **L3c** | Agent Studio: skills & "describe your agent" → M2 | ✅ Done ([plan](plans/phase-L3c.md), [summary](progress/phase-L3c.md)); M2 after the tester sessions | ~16–20 h |
+| **L4** | **Dashboards & local Kubernetes** | ⏳ Next | ~16–22 h |
 | L5 | Release v0.1 & feedback loop → M3 | — | ~10–14 h |
 | P7–P12 | Hosted beta → M4 | After the feedback | ~160–200 h |
 | P13–P16 | Sandboxes, research agent, evals, AKS | After the beta opens | ~65–90 h |

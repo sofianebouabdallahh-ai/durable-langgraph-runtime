@@ -29,6 +29,8 @@ from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, Tool
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from pydantic import BaseModel, ConfigDict, Field
 
+from agent_runtime.untrusted import unwrap
+
 
 class ScriptedToolCall(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -53,7 +55,7 @@ _MISSING = object()
 def _lookup(m: re.Match[str], messages: list[BaseMessage]) -> Any:
     results = [msg for msg in messages if isinstance(msg, ToolMessage) and msg.name == m["tool"]]
     try:
-        return json.loads(str(results[int(m["i"])].content))[m["field"]]
+        return json.loads(unwrap(str(results[int(m["i"])].content)))[m["field"]]
     except (IndexError, KeyError, ValueError, TypeError):
         return _MISSING
 

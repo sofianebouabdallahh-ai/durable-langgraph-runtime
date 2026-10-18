@@ -66,6 +66,8 @@ class AgentSettings(BaseSettings):
 
     # Agent definitions (R15.1): one folder per agent, relative to the working directory.
     agents_dir: Path = Path("agents")
+    # Built-in skills (CR-006 R17.4): one Agent Skills folder each, reviewed like code.
+    skills_dir: Path = Path("skills")
     # The fixture search tool's data (R3.3), relative to the working directory.
     search_fixtures_dir: Path = Path("fixtures/search")
 

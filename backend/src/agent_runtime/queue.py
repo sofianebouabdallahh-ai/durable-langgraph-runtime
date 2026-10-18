@@ -26,7 +26,9 @@ from dataclasses import dataclass, field
 from typing import Protocol, cast
 
 from redis.asyncio import Redis
+from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import ResponseError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +43,11 @@ class Delivery:
 class Claimed:
     deliveries: list[Delivery]
     deleted_ids: list[str]  # pending but gone from the stream; dropped from the PEL
+
+
+class QueueUnavailable(Exception):
+    """The queue can't be reached right now (a timeout, a dropped connection). Transient:
+    readers back off and try again; nothing is lost (runs are durable in Postgres)."""
 
 
 class WorkQueue(Protocol):
@@ -80,9 +87,12 @@ class RedisWorkQueue:
         return str(await self._r.xadd(self.stream, {"run_id": str(run_id)}))
 
     async def read(self, consumer: str, count: int, block_ms: int) -> list[Delivery]:
-        reply = await self._r.xreadgroup(
-            self.group, consumer, {self.stream: ">"}, count=count, block=block_ms
-        )
+        try:
+            reply = await self._r.xreadgroup(
+                self.group, consumer, {self.stream: ">"}, count=count, block=block_ms
+            )
+        except (RedisConnectionError, RedisTimeoutError) as exc:
+            raise QueueUnavailable(str(exc)) from exc
         # RESP2 reply: [[stream, [(id, {field: value}), ...]], ...]. Strings, because the
         # client is created with decode_responses=True (redis-py's types can't know that).
         streams = cast("list[tuple[str, list[tuple[str, dict[str, str]]]]]", reply or [])

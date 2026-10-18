@@ -25,6 +25,7 @@ from agent_runtime.tools.invocations import BudgetExceeded
 from agent_runtime.tools.pipeline import Grant, ToolCall, ToolPipeline, ToolRunContext
 from agent_runtime.tools.policy import RiskClassPolicy
 from agent_runtime.tools.spec import ToolArgs, ToolContext, ToolRegistry
+from agent_runtime.untrusted import as_data
 
 pytestmark = pytest.mark.integration
 
@@ -108,9 +109,9 @@ def call(name: str, index: int = 0, **args: Any) -> ToolCall:
 async def test_sc1_stages_run_in_the_fixed_order(pool: Pool, fence: Fence) -> None:
     h = Harness()
     result = await h.pipeline().run(call("calculator", expression="6*7"), h.ctx(fence, pool))
-    assert (result.status, result.content) == ("success", '{"value": 42.0}')
+    assert (result.status, result.content) == ("success", as_data("calculator", '{"value": 42.0}'))
     assert h.stages == ["resolve", "schema", "grant", "pre_tool", "policy", "ledger", "execute",
-                        "post_tool", "truncate"]  # fmt: skip
+                        "post_tool", "truncate", "mark"]  # fmt: skip
     assert h.event_types() == [E.TOOL_CALLED, E.TOOL_COMPLETED]
 
 
@@ -183,7 +184,7 @@ async def test_sc6_hook_modify_changes_what_executes_and_the_key(pool: Pool, fen
 
     ctx = h.ctx(fence, pool, pre_hooks=[hooks.get("shout")])
     result = await h.pipeline().run(call("echo", text="hi"), ctx)
-    assert result.content == '{"text": "HI"}'
+    assert result.content == as_data("echo", '{"text": "HI"}')
     assert "revalidate" in h.stages
     assert (E.HOOK_DECISION, "modify") in [(t, p.get("decision")) for t, p in h.events]
 
@@ -246,6 +247,22 @@ async def test_external_side_effects_need_approval_and_edits_are_applied(
         )
         assert await cur.fetchall() == [{"recipient": "ops", "message": "edited"}]
     assert h.events[0][1]["decision"] == "require_approval"
+
+
+@pytest.mark.parametrize(
+    "resume", [None, {}, {"decision": "reject"}, {"decision": "APPROVE"}, "yes"]
+)
+async def test_only_an_explicit_approval_runs_a_gated_tool(
+    pool: Pool, fence: Fence, resume: Any
+) -> None:
+    h = Harness(resume=resume)
+    result = await h.pipeline().run(call("notify", to="ceo", message="hi"), h.ctx(fence, pool))
+    assert result.status == "error" and "Deny(not_approved)" in result.content
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT count(*) AS n FROM outbox_notifications WHERE run_id = %s", (fence.run_id,)
+        )
+        assert (await cur.fetchone() or {}).get("n") == 0
 
 
 async def test_invalid_approved_edits_are_rejected(pool: Pool, fence: Fence) -> None:

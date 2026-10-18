@@ -28,6 +28,9 @@ TABLES = {
     "agent_versions",
     "model_connections",
     "workspace_settings",
+    "skills",
+    "skill_versions",
+    "skill_files",
 }
 
 

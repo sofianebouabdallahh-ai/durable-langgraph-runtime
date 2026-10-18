@@ -96,3 +96,18 @@ describe("ids and documents", () => {
     expect(documentOf({ name: "x", display_name: "X", draft: null, published_document: null })).toMatchObject({ name: "x", instructions: "" });
   });
 });
+
+describe("skills in the form", () => {
+  it("sets the agent's skills, and a new helper starts with none", () => {
+    const next = edit(doc, { kind: "skills", value: ["trip-planning"] });
+    expect(next.skills).toEqual(["trip-planning"]);
+    expect(doc.skills).toBeUndefined(); // the reducer is pure
+    expect(newHelper("Scout", [], presets.quick ?? { max_turns: 1, limits: {} }, {}).skills).toEqual([]);
+  });
+
+  it("places a skill issue in the Skills section, not at the top", () => {
+    const issue = { where: "agent", field: "skills", message: "There's no skill called “x”" };
+    expect(issuesFor([issue], "agent", ["skills"])).toEqual([issue]);
+    expect(unplaced([issue], [])).toEqual([]);
+  });
+});

@@ -38,7 +38,7 @@ from agent_runtime.admin import AdminRepository
 from agent_runtime.config import Settings
 from agent_runtime.db import Pool
 from agent_runtime.graphs import GraphRegistry
-from agent_runtime.queue import Delivery, WorkQueue
+from agent_runtime.queue import Delivery, QueueUnavailable, WorkQueue
 from agent_runtime.runs.executor import RunExecutor, default_owner
 from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.service import RunService
@@ -48,6 +48,7 @@ from agent_runtime.sessions.service import SessionService
 from agent_runtime.streaming.bus import EventBus
 
 log = logging.getLogger(__name__)
+READ_BACKOFF_S, READ_BACKOFF_MAX_S = 1.0, 15.0
 
 _DONE = frozenset(
     {
@@ -97,6 +98,7 @@ class Worker:
             asyncio.create_task(self._every(self._settings.session_sweep_s, self._archive_idle)),
         ]
         log.info("worker %s up (concurrency %d)", self.consumer, self.concurrency)
+        backoff = READ_BACKOFF_S
         try:
             while not stop.is_set():
                 if await self._paused():
@@ -106,9 +108,24 @@ class Worker:
                 if free <= 0:
                     await self._wait_for_a_slot(stop)
                     continue
-                for delivery in await self._queue.read(
-                    self.consumer, free, self._settings.worker_block_ms
-                ):
+                try:
+                    deliveries = await self._queue.read(
+                        self.consumer, free, self._settings.worker_block_ms
+                    )
+                except QueueUnavailable as exc:
+                    # A blip (Redis restarting, a paused host): keep serving the runs in
+                    # flight and try again, rather than exit and be restarted.
+                    log.warning(
+                        "worker %s: queue unavailable (%s); retrying in %.0f s",
+                        self.consumer,
+                        exc,
+                        backoff,
+                    )
+                    await _sleep_unless(stop, backoff)
+                    backoff = min(backoff * 2, READ_BACKOFF_MAX_S)
+                    continue
+                backoff = READ_BACKOFF_S
+                for delivery in deliveries:
                     self._start(delivery)
         finally:
             for task in background:
@@ -144,17 +161,22 @@ class Worker:
         """R15.6: archive sessions idle past the TTL; each gets one session_end run.
         Safe on every worker at once: archiving is a conditional UPDATE."""
         runs = RunService(self._pool, self._settings, self._graphs, self._relay, self._bus)
-        sessions = SessionService(self._pool, self._settings, self._graphs, runs, self._relay,
-                                  self._bus)  # fmt: skip
+        sessions = SessionService(
+            self._pool, self._settings, self._graphs, runs, self._relay, self._bus
+        )
         return await sessions.archive_idle(self._settings.session_idle_ttl_s)
 
     async def _handle(self, delivery: Delivery) -> None:
         executor = RunExecutor(
-            self._pool, self._settings, self._graphs, owner=self.consumer,
+            self._pool,
+            self._settings,
+            self._graphs,
+            owner=self.consumer,
             on_heartbeat=lambda: self._queue.touch(self.consumer, delivery.message_id),
-            release_requested=self._draining, bus=self._bus,
+            release_requested=self._draining,
+            bus=self._bus,
             enqueue=self._relay.enqueue,  # children; a parent whose children all ended
-        )  # fmt: skip
+        )
         try:
             run = await executor.execute(delivery.run_id)
         except (RunTerminal, RunNotFound):
@@ -162,8 +184,9 @@ class Worker:
             self.handled += 1
             return
         except Exception:
-            log.exception("run %s: execution failed; leaving the message for the reaper",
-                          delivery.run_id)  # fmt: skip
+            log.exception(
+                "run %s: execution failed; leaving the message for the reaper", delivery.run_id
+            )
             return
         await self._settle(delivery, run, deferred=executor.deferred)
         self.handled += 1
@@ -184,8 +207,9 @@ class Worker:
             if await self._queue.holder(delivery.message_id) == self.consumer:
                 await self._queue.ack(delivery.message_id)
         else:
-            log.warning("run %s left %s/%s; leaving its message pending",
-                        run.id, run.status, run.owner)  # fmt: skip
+            log.warning(
+                "run %s left %s/%s; leaving its message pending", run.id, run.status, run.owner
+            )
 
     # ------------------------------------------------------------ background
 

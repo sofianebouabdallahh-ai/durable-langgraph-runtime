@@ -232,6 +232,14 @@
             "title": "Name",
             "type": "string"
           },
+          "skills": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Skills",
+            "type": "array"
+          },
           "temperature": {
             "default": 0.2,
             "title": "Temperature",
@@ -434,6 +442,74 @@
           "decision"
         ],
         "title": "ApprovalRequest",
+        "type": "object"
+      },
+      "AssistStarted": {
+        "properties": {
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "title": "AssistStarted",
+        "type": "object"
+      },
+      "AssistView": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "draft",
+              "instructions"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why there's no proposal, in plain words",
+            "title": "Problem"
+          },
+          "proposal": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A DraftProposal or an InstructionsProposal, when done",
+            "title": "Proposal"
+          },
+          "status": {
+            "enum": [
+              "working",
+              "done",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "kind",
+          "proposal",
+          "problem"
+        ],
+        "title": "AssistView",
         "type": "object"
       },
       "ConnectionView": {
@@ -743,6 +819,88 @@
         "title": "DefaultView",
         "type": "object"
       },
+      "DescribeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "description": "The assistant the person wants",
+            "maxLength": 4000,
+            "minLength": 10,
+            "title": "Description",
+            "type": "string"
+          }
+        },
+        "required": [
+          "description"
+        ],
+        "title": "DescribeRequest",
+        "type": "object"
+      },
+      "DraftProposal": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "description": "What it's for, in one sentence",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "description": "The assistant's name, e.g. 'Trip planner'",
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "effort": {
+            "default": "standard",
+            "description": "quick, standard or thorough",
+            "pattern": "^(quick|standard|thorough)$",
+            "title": "Effort",
+            "type": "string"
+          },
+          "helpers": {
+            "description": "Only if the job has clearly separate parts",
+            "items": {
+              "$ref": "#/components/schemas/HelperProposal"
+            },
+            "maxItems": 3,
+            "title": "Helpers",
+            "type": "array"
+          },
+          "instructions": {
+            "description": "Its instructions, written to it ('You are\u2026'): what it does, how it answers, what it never does. Placeholders allowed: {{date}}",
+            "maxLength": 6000,
+            "minLength": 1,
+            "title": "Instructions",
+            "type": "string"
+          },
+          "skills": {
+            "description": "Names of skills from the library that fit",
+            "items": {
+              "type": "string"
+            },
+            "title": "Skills",
+            "type": "array"
+          },
+          "tools": {
+            "description": "From the tools offered",
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "display_name",
+          "description",
+          "instructions"
+        ],
+        "title": "DraftProposal",
+        "type": "object"
+      },
       "DraftView": {
         "properties": {
           "blockers": {
@@ -845,6 +1003,54 @@
         "title": "EditConnection",
         "type": "object"
       },
+      "EditSkill": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "files": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "maxLength": 200000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "path \u2192 new text, or null to remove the file",
+            "maxProperties": 20,
+            "title": "Files",
+            "type": "object"
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "maxLength": 60000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instructions"
+          }
+        },
+        "title": "EditSkill",
+        "type": "object"
+      },
       "EventView": {
         "properties": {
           "epoch": {
@@ -900,6 +1106,74 @@
           "next_after_seq"
         ],
         "title": "EventsPage",
+        "type": "object"
+      },
+      "FileView": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "reference",
+              "asset",
+              "script",
+              "other"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "kind"
+        ],
+        "title": "FileView",
+        "type": "object"
+      },
+      "Finding": {
+        "properties": {
+          "check": {
+            "title": "Check",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "block",
+              "review"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "where": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Where"
+          }
+        },
+        "required": [
+          "check",
+          "severity",
+          "message",
+          "where"
+        ],
+        "title": "Finding",
         "type": "object"
       },
       "GraphEdge": {
@@ -1045,6 +1319,14 @@
             "title": "Name",
             "type": "string"
           },
+          "skills": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Skills",
+            "type": "array"
+          },
           "temperature": {
             "default": 0.2,
             "title": "Temperature",
@@ -1062,6 +1344,47 @@
           "name"
         ],
         "title": "HelperDocument",
+        "type": "object"
+      },
+      "HelperProposal": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "description": "What it does, in one sentence",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "description": "Its name, e.g. 'Flight finder'",
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "instructions": {
+            "description": "How it should do its job",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Instructions",
+            "type": "string"
+          },
+          "tools": {
+            "description": "From the tools offered",
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "display_name",
+          "description",
+          "instructions"
+        ],
+        "title": "HelperProposal",
         "type": "object"
       },
       "HelperView": {
@@ -1230,6 +1553,44 @@
           "next_after_seq"
         ],
         "title": "MessagesPage",
+        "type": "object"
+      },
+      "NewSkill": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "maxLength": 2000,
+            "title": "Description",
+            "type": "string"
+          },
+          "files": {
+            "additionalProperties": {
+              "maxLength": 200000,
+              "type": "string"
+            },
+            "description": "Reference files typed in the form: path \u2192 text",
+            "maxProperties": 20,
+            "title": "Files",
+            "type": "object"
+          },
+          "instructions": {
+            "maxLength": 60000,
+            "title": "Instructions",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "instructions"
+        ],
+        "title": "NewSkill",
         "type": "object"
       },
       "OllamaView": {
@@ -1597,6 +1958,52 @@
         "title": "RunView",
         "type": "object"
       },
+      "SavedView": {
+        "properties": {
+          "skill": {
+            "$ref": "#/components/schemas/SkillDetail"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/Warning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "skill",
+          "warnings"
+        ],
+        "title": "SavedView",
+        "type": "object"
+      },
+      "ScanView": {
+        "properties": {
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "clean",
+              "review",
+              "blocked"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "findings"
+        ],
+        "title": "ScanView",
+        "type": "object"
+      },
       "SendMessageRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1778,6 +2185,209 @@
           "ended_at"
         ],
         "title": "SessionView",
+        "type": "object"
+      },
+      "SkillDetail": {
+        "properties": {
+          "allowed_tools": {
+            "description": "What it asks for; never granted by it",
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Tools",
+            "type": "array"
+          },
+          "description": {
+            "description": "What it does and when to use it",
+            "title": "Description",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/FileView"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "instructions": {
+            "title": "Instructions",
+            "type": "string"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "title": "Meta",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "created",
+              "uploaded",
+              "imported",
+              "built_in"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "scan": {
+            "$ref": "#/components/schemas/ScanView"
+          },
+          "tokens": {
+            "description": "About how long its instructions are",
+            "title": "Tokens",
+            "type": "integer"
+          },
+          "trust": {
+            "enum": [
+              "private",
+              "built_in"
+            ],
+            "title": "Trust",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "used_by": {
+            "description": "Agents whose draft or published version use it",
+            "items": {
+              "type": "string"
+            },
+            "title": "Used By",
+            "type": "array"
+          },
+          "version": {
+            "description": "The current version's content hash",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "trust",
+          "origin",
+          "version",
+          "files",
+          "allowed_tools",
+          "meta",
+          "tokens",
+          "scan",
+          "used_by",
+          "updated_at",
+          "instructions"
+        ],
+        "title": "SkillDetail",
+        "type": "object"
+      },
+      "SkillView": {
+        "properties": {
+          "allowed_tools": {
+            "description": "What it asks for; never granted by it",
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Tools",
+            "type": "array"
+          },
+          "description": {
+            "description": "What it does and when to use it",
+            "title": "Description",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/FileView"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "title": "Meta",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "created",
+              "uploaded",
+              "imported",
+              "built_in"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "scan": {
+            "$ref": "#/components/schemas/ScanView"
+          },
+          "tokens": {
+            "description": "About how long its instructions are",
+            "title": "Tokens",
+            "type": "integer"
+          },
+          "trust": {
+            "enum": [
+              "private",
+              "built_in"
+            ],
+            "title": "Trust",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "used_by": {
+            "description": "Agents whose draft or published version use it",
+            "items": {
+              "type": "string"
+            },
+            "title": "Used By",
+            "type": "array"
+          },
+          "version": {
+            "description": "The current version's content hash",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "trust",
+          "origin",
+          "version",
+          "files",
+          "allowed_tools",
+          "meta",
+          "tokens",
+          "scan",
+          "used_by",
+          "updated_at"
+        ],
+        "title": "SkillView",
         "type": "object"
       },
       "StudioAgentView": {
@@ -2253,6 +2863,24 @@
           "published_at"
         ],
         "title": "VersionView",
+        "type": "object"
+      },
+      "Warning": {
+        "properties": {
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "message"
+        ],
+        "title": "Warning",
         "type": "object"
       }
     }
@@ -3851,6 +4479,389 @@
         ]
       }
     },
+    "/skills": {
+      "get": {
+        "operationId": "library_skills_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SkillView"
+                  },
+                  "title": "Response Library Skills Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "The skill library",
+        "tags": [
+          "skills"
+        ]
+      },
+      "post": {
+        "operationId": "create_skills_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSkill"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create a skill from the form",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/upload": {
+      "post": {
+        "operationId": "upload_skills_upload_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Filename",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload a skill (a zip of its folder, or a SKILL.md) as the body",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}": {
+      "delete": {
+        "operationId": "archive_skills__skill_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archive (published agents keep the version they use)",
+        "tags": [
+          "skills"
+        ]
+      },
+      "get": {
+        "operationId": "get_skills__skill_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One skill",
+        "tags": [
+          "skills"
+        ]
+      },
+      "patch": {
+        "operationId": "edit_skills__skill_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditSkill"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Edit (saves a new version; the name stays)",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/export": {
+      "get": {
+        "operationId": "export_skills__skill_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "application/zip": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download the skill's folder (zip)",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/files/{path}": {
+      "get": {
+        "operationId": "file_skills__skill_id__files__path__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "application/octet-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download one of its files",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/upload": {
+      "post": {
+        "operationId": "replace_skills__skill_id__upload_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Filename",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "A new version of this skill from an upload (same name)",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
     "/studio/agents": {
       "get": {
         "operationId": "list_agents_studio_agents_get",
@@ -3910,6 +4921,47 @@
           }
         },
         "summary": "A new agent (blank, or a copy) with a draft",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/studio/agents/from-proposal": {
+      "post": {
+        "operationId": "from_proposal_studio_agents_from_proposal_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftProposal"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioAgentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "A new agent from a proposal",
         "tags": [
           "studio"
         ]
@@ -4200,6 +5252,49 @@
         ]
       }
     },
+    "/studio/agents/{agent_id}/improve": {
+      "post": {
+        "operationId": "improve_studio_agents__agent_id__improve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistStarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Suggest clearer instructions",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
     "/studio/agents/{agent_id}/publish": {
       "post": {
         "operationId": "publish_studio_agents__agent_id__publish_post",
@@ -4348,6 +5443,49 @@
         ]
       }
     },
+    "/studio/assist/{run_id}": {
+      "get": {
+        "operationId": "assist_studio_assist__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "A builder's proposal",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
     "/studio/catalog": {
       "get": {
         "operationId": "catalog_studio_catalog_get",
@@ -4364,6 +5502,47 @@
           }
         },
         "summary": "What the form offers",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/studio/describe": {
+      "post": {
+        "operationId": "describe_studio_describe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DescribeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistStarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Draft an agent from a description (the builder agent)",
         "tags": [
           "studio"
         ]

@@ -16,6 +16,7 @@ type Limits = Record<string, unknown>;
 export type Edit =
   | { kind: "set"; field: "display_name" | "description" | "instructions" | "model"; value: string }
   | { kind: "tool"; name: string; on: boolean }
+  | { kind: "skills"; value: string[] }
   | { kind: "tool-cap"; name: string; cap: number | null }
   | { kind: "preset"; preset: { max_turns: number; limits: Limits } }
   | { kind: "limit"; field: "max_turns" | "max_tool_calls" | "timeout_s"; value: number }
@@ -31,6 +32,8 @@ export function edit(doc: AgentDocument, e: Edit): AgentDocument {
       return { ...doc, [e.field]: e.value };
     case "tool":
       return { ...doc, tools: toggleTool(doc.tools ?? [], e.name, e.on) };
+    case "skills":
+      return { ...doc, skills: e.value };
     case "tool-cap":
       return {
         ...doc,
@@ -97,7 +100,7 @@ export function issuesFor(issues: readonly Issue[], where: string, fields: reado
   return issues.filter((i) => i.where === where && fields.some((f) => (i.field ?? "") === f || (i.field ?? "").startsWith(`${f}.`)));
 }
 
-const SECTION_FIELDS = ["name", "display_name", "description", "instructions", "tools", "max_turns", "limits", "hooks", "temperature", "model"]; // "model": the Model section
+const SECTION_FIELDS = ["name", "display_name", "description", "instructions", "tools", "max_turns", "limits", "hooks", "temperature", "model", "skills"]; // "model": the Model section
 
 /** Issues no section claims: shown at the top so nothing is ever hidden. */
 export function unplaced(issues: readonly Issue[], helperNames: readonly string[]): Issue[] {
@@ -129,6 +132,7 @@ export function newHelper(displayName: string, taken: readonly string[], preset:
     max_turns: preset.max_turns,
     limits: preset.limits,
     tools: [],
+    skills: [],
     hooks: toolHooks,
   };
 }

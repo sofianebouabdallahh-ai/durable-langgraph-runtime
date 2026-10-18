@@ -6,19 +6,12 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
 
-import { getJson, waitTurnOver } from "./support";
+import { getJson, newBlankAgent, waitTurnOver } from "./support";
 
 const serious = async (page: Page) =>
   (await new AxeBuilder({ page }).analyze()).violations.filter((v) => v.impact === "serious" || v.impact === "critical");
 
-async function newAgent(page: Page, name: string): Promise<string> {
-  await page.goto("/#/agents");
-  await page.getByRole("button", { name: "New agent" }).click();
-  await page.getByRole("dialog").getByLabel("Name").fill(name);
-  await page.getByRole("button", { name: "Create" }).click();
-  await expect(page).toHaveURL(/#\/studio\//);
-  return decodeURIComponent(new URL(page.url()).hash.slice("#/studio/".length));
-}
+const newAgent = newBlankAgent;
 
 async function saved(page: Page) {
   await expect(page.getByTestId("save-state")).toHaveText(/Saved/, { timeout: 15_000 });

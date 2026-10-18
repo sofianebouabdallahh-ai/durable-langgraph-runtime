@@ -14,18 +14,21 @@
 
 from __future__ import annotations
 
+import contextlib
 import re
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ValidationError
 
+from agent_runtime.agents import builder
 from agent_runtime.agents.document import (
     AgentDocument,
     ImportRejected,
     from_definition,
     from_files,
+    read_skill_folders,
     read_upload,
     to_files,
     to_zip,
@@ -33,12 +36,20 @@ from agent_runtime.agents.document import (
 from agent_runtime.agents.loader import Issue, validate_definition
 from agent_runtime.agents.resolver import AgentResolver
 from agent_runtime.agents.schema import AgentDefinition
-from agent_runtime.agents.store import snapshot_bundle
+from agent_runtime.agents.store import bundle_digest, snapshot_bundle
 from agent_runtime.agents.studio_store import AgentStore, NameTaken, StoredAgent, Version
 from agent_runtime.config import AgentSettings
 from agent_runtime.db import Conn, Pool
+from agent_runtime.ids import new_id
+from agent_runtime.runs.service import RunService
+from agent_runtime.runs.store import Run, RunRepository
 from agent_runtime.sessions.service import SessionService
 from agent_runtime.sessions.store import Session
+from agent_runtime.skills import spec as skill_spec
+from agent_runtime.skills.binding import MissingSkills, bind, lock_of
+from agent_runtime.skills.scan import ScanReport, scan
+from agent_runtime.skills.spec import SkillContent
+from agent_runtime.skills.store import SkillStore
 
 # ------------------------------------------------------------------ the catalog
 
@@ -134,6 +145,16 @@ class BuiltinName(ValueError):
     pass
 
 
+@dataclass(frozen=True)
+class Assist:
+    """Where a "Describe it" or "Improve my instructions" request is."""
+
+    status: Literal["working", "done", "failed"]
+    kind: Literal["draft", "instructions"]
+    proposal: dict[str, Any] | None = None
+    problem: str | None = None
+
+
 # ------------------------------------------------------------------- the service
 
 
@@ -144,11 +165,13 @@ class StudioService:
         resolver: AgentResolver,
         sessions: SessionService,
         settings: AgentSettings,
+        runs: RunService | None = None,
     ) -> None:
         self._pool = pool
         self._agents = resolver
         self._sessions = sessions
         self._settings = settings
+        self._runs = runs
 
     # -------------------------------------------------------------- creating
 
@@ -205,6 +228,87 @@ class StudioService:
                 return name
         raise NameTaken(base)
 
+    # ---------------------------------------------- describe it, improve it
+
+    async def describe(self, description: str) -> Run:
+        """Start the builder agent on a description (R17.3). Nothing is saved: the
+        result is a proposal (`assist`), which `create_from_proposal` turns into a draft."""
+        skills = await self._library()
+        message = builder.describe_message(description, skills)
+        script = builder.demo_script(builder.demo_draft(description, skills))
+        return await self._assist_run(builder.BUILDER, message, script)
+
+    async def improve(self, agent_id: uuid.UUID) -> Run:
+        """Start the instructions coach on this agent's draft (or published) instructions."""
+        async with self._pool.connection() as conn:
+            store = AgentStore(conn)
+            version = await store.draft(agent_id) or await store.published(agent_id)
+        if version is None:
+            raise LookupError("nothing to improve")
+        doc = AgentDocument.model_validate(version.document)
+        message = builder.improve_message(
+            doc.display_name or doc.name, doc.description, doc.instructions,
+            [t.name for t in doc.tools],
+        )  # fmt: skip
+        script = builder.demo_script(
+            builder.demo_improve(doc.instructions, doc.display_name or doc.name)
+        )
+        return await self._assist_run(builder.COACH, message, script)
+
+    async def assist(self, run_id: uuid.UUID) -> Assist:
+        """The builder's answer, once there is one."""
+        async with self._pool.connection() as conn:
+            repo = RunRepository(conn)
+            run = await repo.get(run_id)
+            if run.graph_name not in (builder.BUILDER, builder.COACH):
+                raise LookupError(f"run {run_id} isn't a Studio assist")
+            result = await repo.get_result(run_id) if run.status.is_terminal else None
+        kind: Literal["draft", "instructions"] = (
+            "draft" if run.graph_name == builder.BUILDER else "instructions"
+        )
+        if not run.status.is_terminal:
+            return Assist("working", kind)
+        proposal = (result or {}).get("output", {}).get("proposal") if result else None
+        if run.status.value == "completed" and proposal:
+            return Assist("done", kind, proposal)
+        problem = (
+            "The model didn't come up with a proposal. Try again, or describe it a little "
+            "differently (a model that passed its test in Settings → Models works best)."
+            if run.status.value == "completed"
+            else f"It didn't finish ({plain(run.reason or run.status.value)}). Try again."
+        )
+        return Assist("failed", kind, None, problem)
+
+    async def create_from_proposal(self, proposal: builder.DraftProposal) -> AgentState:
+        """A new agent whose draft is the builder's proposal (skills it named that aren't
+        in the library are left out)."""
+        library = {n for n, _ in await self._library()}
+        proposal = proposal.model_copy(update={
+            "skills": [s for s in proposal.skills if s in library]})  # fmt: skip
+        async with self._pool.connection() as conn, conn.transaction():
+            store = AgentStore(conn)
+            name = await self._free_name(store, proposal.display_name)
+            document = AgentDocument.model_validate(
+                builder.to_document(proposal, name, self._settings)
+            )
+            agent, _ = await store.create(name, document.model_dump(mode="json"))
+        return await self.save_draft(agent.id, document)
+
+    async def _library(self) -> list[tuple[str, str]]:
+        async with self._pool.connection() as conn:
+            store = SkillStore(conn)
+            skills = await store.all()
+            versions = await store.versions(s.current_hash for s in skills)
+        return [(s.name, versions[s.current_hash].description) for s in skills]
+
+    async def _assist_run(self, graph: str, message: str, script: list[dict[str, Any]]) -> Run:
+        if self._runs is None:
+            raise RuntimeError("the Studio needs the run service to start a builder")
+        inp: dict[str, Any] = {"message": message}
+        if getattr(self._settings, "model_provider", "scripted") == "scripted":
+            inp["script"] = script  # the offline demo: a deterministic proposal
+        return await self._runs.create_run(graph, inp)
+
     # --------------------------------------------------------------- drafts
 
     async def get(self, agent_id: uuid.UUID) -> AgentState:
@@ -216,12 +320,16 @@ class StudioService:
             published = next((v for v in versions if v.state == "published"), None)
             draft = None
             if draft_version is not None:
-                issues = self._check(draft_version.document, draft_version.number)[1]
+                definition, issues = self._check(draft_version.document, draft_version.number)
                 model_issues, untested = await self._models_of(conn, draft_version.document)
-                tested = bool(draft_version.bundle_hash) and await store.tested(
-                    agent_id, str(draft_version.bundle_hash)
-                )
-                draft = Draft(draft_version, issues + model_issues, tested, untested)
+                skill_issues = await self._skills_of(conn, draft_version.document)
+                # "Tested" means: this exact draft with the library's skills as they are
+                # now. A skill edited since the test makes it untested (the hash moves).
+                tested = False
+                if definition is not None and not skill_issues:
+                    current = bundle_digest(definition, await bind(conn, definition, None))
+                    tested = await store.tested(agent_id, current)
+                draft = Draft(draft_version, issues + model_issues + skill_issues, tested, untested)
         return AgentState(agent, draft, published, versions)
 
     async def save_draft(self, agent_id: uuid.UUID, document: AgentDocument) -> AgentState:
@@ -233,7 +341,13 @@ class StudioService:
             document = document.model_copy(update={"name": agent.name})  # the id is fixed
             draft = await store.open_draft(agent_id, document.model_dump(mode="json"))
             definition, _ = self._check(document.model_dump(mode="json"), draft.number)
-            bundle = await snapshot_bundle(conn, definition) if definition else None
+            bundle = None
+            if definition is not None:
+                # A missing skill is an issue on the form until it exists again.
+                with contextlib.suppress(MissingSkills):
+                    bundle = await snapshot_bundle(
+                        conn, definition, await bind(conn, definition, None)
+                    )
             await store.save_draft(agent_id, document.model_dump(mode="json"), bundle)
         return await self.get(agent_id)
 
@@ -273,8 +387,17 @@ class StudioService:
             raise PublishBlocked(["There are no changes to publish"])
         if state.draft.blockers:
             raise PublishBlocked(state.draft.blockers)
+        version = state.draft.version
         async with self._pool.connection() as conn, conn.transaction():
-            await AgentStore(conn).publish(agent_id, (changelog or "").strip()[:500] or None)
+            store = AgentStore(conn)
+            definition, _ = self._check(version.document, version.number)
+            assert definition is not None  # no blockers: it validated
+            skills = await bind(conn, definition, None)
+            digest = await snapshot_bundle(conn, definition, skills)
+            if not await store.tested(agent_id, digest):  # a skill changed since get()
+                raise PublishBlocked(["A skill changed since the test: test it again"])
+            note = (changelog or "").strip()[:500] or None
+            await store.publish(agent_id, note, digest, lock_of(skills))
         return await self.get(agent_id)
 
     async def archive(self, agent_id: uuid.UUID) -> AgentState:
@@ -336,8 +459,9 @@ class StudioService:
         definition, issues = self._check(version.document, version.number)
         if definition is None:
             raise PublishBlocked([f"{i.where}: {i.message}" for i in issues])
-        if definition.subagents:
-            return f"{agent.name}.zip", to_zip(definition), "application/zip"
+        skills = await self._skill_contents(definition, version)
+        if definition.subagents or skills:
+            return f"{agent.name}.zip", to_zip(definition, skills), "application/zip"
         (text,) = to_files(definition).values()
         return f"{agent.name}.agent.md", text.encode(), "text/markdown; charset=utf-8"
 
@@ -352,12 +476,60 @@ class StudioService:
         )
         if definition is None:
             raise ImportRejected("; ".join(str(i) for i in issues))
+        carried = self._carried_skills(filename, data)
         async with self._pool.connection() as conn, conn.transaction():
+            await self._import_skills(SkillStore(conn), carried)
             store = AgentStore(conn)
             name = await self._free_name(store, definition.id)  # never replaces an agent
             document = from_definition(definition, name=name)
             agent, _ = await store.create(name, document.model_dump(mode="json"))
         return await self.save_draft(agent.id, document)
+
+    # --------------------------------------------------------------- skills in files
+
+    async def _skill_contents(self, definition: Any, version: Version) -> list[SkillContent]:
+        """The skills an exported version uses: its locked versions once published,
+        the library's current ones for a draft."""
+        lock = version.skill_lock if version.state != "draft" else None
+        async with self._pool.connection() as conn:
+            skills = await bind(conn, definition, lock)
+            store = SkillStore(conn)
+            hashes = list(dict.fromkeys(v.hash for vs in skills.values() for v in vs))
+            return [await store.content(h) for h in hashes]
+
+    @staticmethod
+    def _carried_skills(filename: str, data: bytes) -> list[tuple[SkillContent, ScanReport]]:
+        """The skills in an uploaded agent zip, checked and scanned like any upload."""
+        out: list[tuple[SkillContent, ScanReport]] = []
+        for folder, files in read_skill_folders(filename, data).items():
+            content, issues = skill_spec.parse(files, folder)
+            if content is None:
+                problems = "; ".join(i.message for i in issues if i.blocking)
+                raise ImportRejected(f"the skill “{folder}” can't be read: {problems}")
+            report = scan(content)
+            if report.status == "blocked":
+                raise ImportRejected(f"the skill “{folder}” contains what looks like a secret: "
+                                     "remove it and export again")  # fmt: skip
+            out.append((content, report))
+        return out
+
+    @staticmethod
+    async def _import_skills(
+        store: SkillStore, carried: list[tuple[SkillContent, ScanReport]]
+    ) -> None:
+        """Into the library: new ones are added; the same content is reused; a different
+        skill with the same name refuses the import (an agent must not silently get
+        someone else's know-how)."""
+        for content, report in carried:
+            existing = await store.by_name(content.name, archived=True)
+            if existing is None:
+                digest = await store.put_version(content, report)
+                await store.insert(new_id(), content.name, "private", "imported", digest)
+            elif existing.current_hash != content.content_hash():
+                raise ImportRejected(
+                    f"your library already has a different skill called “{content.name}”: "
+                    "rename one of them, then import again"
+                )
 
     # --------------------------------------------------------------- checks
 
@@ -387,6 +559,25 @@ class StudioService:
             elif connection.test_status != "ready" and connection.display_name not in untested:
                 untested.append(connection.display_name)
         return issues, untested
+
+    async def _skills_of(self, conn: Conn, raw: dict[str, Any]) -> list[PlainIssue]:
+        """An issue for each skill the document names that isn't in the library."""
+        places = [("agent", raw.get("skills") or [])]
+        places += [(f"helpers.{h.get('name')}", h.get("skills") or [])
+                   for h in raw.get("helpers") or []]  # fmt: skip
+        wanted = {n for _, names in places for n in names if isinstance(n, str)}
+        found = await SkillStore(conn).by_names(wanted) if wanted else {}
+        return [
+            PlainIssue(
+                where,
+                "skills",
+                f"There's no skill called “{name}” in your library: "
+                "add it on the Skills page, or remove it here",
+            )
+            for where, names in places
+            for name in names
+            if isinstance(name, str) and name not in found
+        ]
 
     def _check(self, raw: dict[str, Any], version: int) -> tuple[Any, list[PlainIssue]]:
         try:

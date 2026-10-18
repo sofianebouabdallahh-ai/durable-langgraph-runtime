@@ -35,12 +35,15 @@ interface Problem {
 export class ApiError extends Error {
   readonly status: number;
   readonly problemType: string | undefined;
+  /** The problem's extensions (e.g. a skill's `issues` or its `scan` report). */
+  readonly extra: Record<string, unknown>;
 
   constructor(status: number, problem: Problem | undefined) {
     super(problem?.detail ?? problem?.title ?? `request failed (HTTP ${status})`);
     this.name = "ApiError";
     this.status = status;
     this.problemType = problem?.type;
+    this.extra = { ...(problem ?? {}) };
   }
 
   /** e.g. `turn-active`, `session-archived`, from the problem's type URI. */
