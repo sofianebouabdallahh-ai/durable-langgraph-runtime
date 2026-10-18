@@ -27,7 +27,7 @@ def test_the_demo_drafter_is_deterministic_and_reads_the_description() -> None:
     one, two = demo_draft(text, LIBRARY), demo_draft(text, LIBRARY)
     assert one == two
     assert one.tools == ["save_note", "notify"] and one.helpers == [] and one.skills == []
-    assert one.display_name == "Remember My Notes assistant"
+    assert one.display_name == "Remember Notes assistant"  # filler words dropped
 
 
 async def test_every_demo_draft_is_valid() -> None:

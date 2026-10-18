@@ -248,22 +248,47 @@ _TOOL_WORDS = {
     "save_note": r"remember|notes?|keep track|save",
     "notify": r"notify|tell (the )?team|send (a )?message|email|alert",
 }
+_FILLER = frozenset(
+    [
+        "a",
+        "an",
+        "and",
+        "the",
+        "for",
+        "to",
+        "of",
+        "my",
+        "our",
+        "your",
+        "me",
+        "i",
+        "it",
+        "that",
+        "this",
+        "with",
+        "who",
+        "which",
+    ]
+)
 _HELPER = re.compile(r"\b(?:and|with) a helper (?:that|who|to) ([^.;\n]{3,120})", re.IGNORECASE)
 
 
 def demo_draft(description: str, skills: list[tuple[str, str]]) -> DraftProposal:
     """The offline demo's draft: a deterministic reading of the description."""
     text = " ".join(description.split())
-    words = re.findall(r"[A-Za-z][A-Za-z'-]+", text)
-    topic = " ".join(words[:3]).title() if words else "My"
+    words = [w for w in re.findall(r"[A-Za-z][A-Za-z'-]+", text) if w.lower() not in _FILLER]
+    topic = " ".join(words[:2]).title() if words else "My"
     name = (topic if "assistant" in topic.lower() else f"{topic} assistant")[:60]
     tools = [t for t, pattern in _TOOL_WORDS.items() if re.search(pattern, text, re.IGNORECASE)]
     helpers = []
     if m := _HELPER.search(text):
         job = m.group(1).strip()
+        named = job.split()
+        if len(named) > 1 and named[0].lower().endswith("s"):  # "finds kid-friendly …"
+            named = named[1:]
         helpers.append(
             HelperProposal(
-                display_name=" ".join(job.split()[:2]).title()[:60] or "Helper",
+                display_name=" ".join(named[:2]).title()[:60] or "Helper",
                 description=job[:1].upper() + job[1:300],
                 instructions=f"You {job}. Be brief.",
                 tools=[t for t in tools if t != "notify"],

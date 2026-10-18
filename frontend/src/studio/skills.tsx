@@ -3,7 +3,7 @@
  * helper, and "Improve my instructions" (the instructions coach's suggestion, shown
  * next to yours: you choose).
  */
-import { BookOpen, Code2, Plus, Wand2, X } from "lucide-react";
+import { BookOpen, Check, Code2, Wand2, X } from "lucide-react";
 import { type Dispatch, useState } from "react";
 
 import { href } from "../app/route";
@@ -148,6 +148,7 @@ export function ImproveInstructions({
   };
   const result = answer.data;
   const proposal = result?.status === "done" ? (result.proposal as unknown as InstructionsProposal) : null;
+  const changed = proposal !== null && proposal.instructions.trim() !== current.trim();
   return (
     <>
       <Button
@@ -172,7 +173,7 @@ export function ImproveInstructions({
           {error}
         </span>
       )}
-      <Dialog open={runId !== null} onClose={close} title="Suggested instructions">
+      <Dialog open={runId !== null} onClose={close} title="Suggested instructions" wide>
         {(!result || result.status === "working") && <Spinner label="Reading your instructions…" />}
         {result?.status === "failed" && (
           <div role="alert" className="text-sm text-rose-700 dark:text-rose-400">
@@ -189,8 +190,8 @@ export function ImproveInstructions({
           </div>
         )}
         <div className="mt-4 flex justify-end gap-2">
-          <Button onClick={close}>{proposal ? "Keep mine" : "Close"}</Button>
-          {proposal && (
+          <Button onClick={close}>{changed ? "Keep mine" : "Close"}</Button>
+          {changed && (
             <Button
               variant="primary"
               onClick={() => {
@@ -198,7 +199,7 @@ export function ImproveInstructions({
                 close();
               }}
             >
-              <Plus aria-hidden className="size-4" /> Use the suggestion
+              <Check aria-hidden className="size-4" /> Use the suggestion
             </Button>
           )}
         </div>

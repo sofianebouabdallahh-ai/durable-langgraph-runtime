@@ -61,7 +61,7 @@ async def test_describe_it_offline_then_accept(
     assert (done["status"], done["kind"]) == ("done", "draft")
     proposal = done["proposal"]
     assert set(proposal["tools"]) == {"search", "calculator"}
-    assert [h["display_name"] for h in proposal["helpers"]] == ["Finds Kid-Friendly"]
+    assert [h["display_name"] for h in proposal["helpers"]] == ["Kid-Friendly Restaurants"]
     assert proposal["skills"] == ["trip-planning"]  # a built-in that fits
     assert len((await c.get("/studio/agents")).json()) == before  # nothing saved yet
 
@@ -72,7 +72,7 @@ async def test_describe_it_offline_then_accept(
     document = agent["draft"]["document"]
     assert [t["name"] for t in document["tools"]] == ["search", "calculator"]
     assert document["skills"] == ["trip-planning"]
-    assert document["helpers"][0]["name"] == "finds-kid-friendly"
+    assert document["helpers"][0]["name"] == "kid-friendly-restaurants"
     assert document["hooks"]["pre_tool"] == ["redact_secrets_in_args"]  # default protections
 
 

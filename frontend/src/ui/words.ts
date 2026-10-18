@@ -11,6 +11,8 @@ const TOOLS: Record<string, string> = {
   retrieve: "Documents",
   save_note: "Saved a note",
   notify: "Notification",
+  load_skill: "Used a skill",
+  read_skill_file: "Read a skill's file",
 };
 
 /** An agent's display name. The general assistant is Nuria herself. */

@@ -158,8 +158,9 @@ export function Segmented<T extends string>({
   onChange: (value: T) => void;
   label: string;
 }) {
+  const columns = options.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-4";
   return (
-    <div role="radiogroup" aria-label={label} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+    <div role="radiogroup" aria-label={label} className={`grid grid-cols-2 gap-2 ${columns}`}>
       {options.map((o) => (
         <button
           key={o.value}
@@ -189,11 +190,13 @@ export function Dialog({
   onClose,
   title,
   children,
+  wide = false,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
+  wide?: boolean; // side-by-side content (a comparison)
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -207,7 +210,7 @@ export function Dialog({
       ref={ref}
       aria-label={title}
       onClose={onClose}
-      className="m-auto w-[min(32rem,calc(100%-2rem))] rounded-2xl border border-stone-200 bg-white p-0 text-stone-900 shadow-lift backdrop:bg-stone-950/30 backdrop:backdrop-blur-sm dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100"
+      className={`m-auto ${wide ? "w-[min(56rem,calc(100%-2rem))]" : "w-[min(32rem,calc(100%-2rem))]"} rounded-2xl border border-stone-200 bg-white p-0 text-stone-900 shadow-lift backdrop:bg-stone-950/30 backdrop:backdrop-blur-sm dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100`}
     >
       {open && (
         <div className="p-6">
