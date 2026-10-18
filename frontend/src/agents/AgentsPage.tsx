@@ -4,14 +4,14 @@
  * instructions, tools, limits and helpers (sub-agents).
  */
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ChevronDown, Copy, Gauge, MessageSquarePlus, Plus, Upload, Users, Wrench, Zap } from "lucide-react";
+import { ArrowLeft, ChevronDown, Copy, Gauge, MessageSquarePlus, Plus, Sparkles, Upload, Users, Wrench, Zap } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { api, type Schemas, unwrap } from "../api/client";
 import { href, type Route } from "../app/route";
 import { problemText } from "../chat/problems";
-import { studio, useCreateAgent, useStudioAgents, useStudioRefresh } from "../studio/api";
-import { Dialog, TextArea, TextField } from "../ui/form";
+import { type DraftProposal, studio, useAssist, useCreateAgent, useStudioAgents, useStudioRefresh } from "../studio/api";
+import { Dialog, Segmented, TextArea, TextField } from "../ui/form";
 import { ToolIcon } from "../ui/icons";
 import { Markdown } from "../ui/Markdown";
 import { Avatar, Button, Pill, Spinner } from "../ui/primitives";
@@ -89,7 +89,7 @@ export function AgentsPage({ go }: { go: (route: Route) => void }) {
       {mine.data?.length === 0 && (
         <div className="mt-3 rounded-2xl border border-dashed border-stone-300 p-8 text-center dark:border-stone-700">
           <p className="font-display text-xl">Build your first agent</p>
-          <p className="mt-1 text-sm text-stone-500">Start blank, or copy a built-in agent below and make it yours.</p>
+          <p className="mt-1 text-sm text-stone-500">Describe the assistant you want and Nuria drafts it, or copy a built-in agent below.</p>
         </div>
       )}
       <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -152,6 +152,7 @@ export function AgentsPage({ go }: { go: (route: Route) => void }) {
       <NewAgentDialog
         open={creating !== null}
         copyOf={creating?.copyOf ?? null}
+        templates={builtins}
         onClose={() => {
           setCreating(null);
         }}
@@ -164,75 +165,237 @@ export function AgentsPage({ go }: { go: (route: Route) => void }) {
   );
 }
 
+type Start = "describe" | "template" | "blank";
+const STARTS: readonly { value: Start; label: string; hint: string }[] = [
+  { value: "describe", label: "Describe it", hint: "We draft it for you" },
+  { value: "template", label: "From a template", hint: "Start from a built-in" },
+  { value: "blank", label: "Start blank", hint: "Fill it in yourself" },
+];
+
 function NewAgentDialog({
   open,
   copyOf,
+  templates,
   onClose,
   onCreated,
 }: {
   open: boolean;
   copyOf: Agent | null;
+  templates: readonly Agent[];
   onClose: () => void;
   onCreated: (id: string) => void;
 }) {
+  const [start, setStart] = useState<Start>("describe");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [template, setTemplate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const create = useCreateAgent((a) => {
     setName("");
     setDescription("");
     onCreated(a.id);
   });
+  const source = copyOf ?? templates.find((t) => t.name === template) ?? null;
+  const copying = copyOf !== null || start === "template";
   const title = copyOf ? `Copy ${copyOf.display_name}` : "New agent";
   return (
     <Dialog open={open} onClose={onClose} title={title}>
-      <form
-        className="space-y-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setError(null);
-          create.mutate(
-            { display_name: name.trim(), description: description.trim(), copy_of: copyOf?.name ?? null },
-            { onError: (err) => { setError(problemText(err)); } },
-          );
-        }}
-      >
-        <p className="text-sm text-stone-600 dark:text-stone-400">
-          {copyOf
-            ? `You'll get your own editable agent, starting from ${copyOf.display_name}'s instructions, tools and helpers. The original stays as it is.`
-            : "Give it a name; you'll fill in the rest next, and try it before anyone else sees it."}
-        </p>
-        <TextField
-          label="Name"
-          value={name}
-          maxLength={60}
-          required
-          autoFocus
-          placeholder={copyOf ? `My ${copyOf.display_name}` : "Trip planner"}
-          onChange={(e) => {
-            setName(e.target.value);
+      {!copyOf && (
+        <div className="mb-4">
+          <Segmented label="How to start" value={start} options={STARTS} onChange={setStart} />
+        </div>
+      )}
+      {!copyOf && start === "describe" ? (
+        <DescribeIt onCreated={onCreated} onClose={onClose} />
+      ) : (
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setError(null);
+            create.mutate(
+              { display_name: name.trim(), description: description.trim(), copy_of: copying ? (source?.name ?? null) : null },
+              { onError: (err) => { setError(problemText(err)); } },
+            );
           }}
-        />
-        {!copyOf && (
-          <TextArea
-            label="What is it for? (optional)"
-            rows={2}
-            maxLength={500}
-            value={description}
+        >
+          {!copyOf && start === "template" && (
+            <label className="block text-sm">
+              <span className="mb-1.5 block font-medium">Template</span>
+              <select
+                value={template}
+                required
+                onChange={(e) => {
+                  setTemplate(e.target.value);
+                  const picked = templates.find((t) => t.name === e.target.value);
+                  if (picked && !name) setName(`My ${picked.display_name}`);
+                }}
+                className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-[15px] dark:border-stone-700 dark:bg-stone-950"
+              >
+                <option value="">Choose one…</option>
+                {templates.map((t) => (
+                  <option key={t.name} value={t.name}>
+                    {t.display_name}: {t.description.slice(0, 70)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <p className="text-sm text-stone-600 dark:text-stone-400">
+            {copying
+              ? `You'll get your own editable agent, starting from ${source?.display_name ?? "the template"}'s instructions, tools and helpers. The original stays as it is.`
+              : "Give it a name; you'll fill in the rest next, and try it before anyone else sees it."}
+          </p>
+          <TextField
+            label="Name"
+            value={name}
+            maxLength={60}
+            required
+            autoFocus
+            placeholder={source ? `My ${source.display_name}` : "Trip planner"}
             onChange={(e) => {
-              setDescription(e.target.value);
+              setName(e.target.value);
             }}
           />
-        )}
+          {!copying && (
+            <TextArea
+              label="What is it for? (optional)"
+              rows={2}
+              maxLength={500}
+              value={description}
+              onChange={(e) => {
+                setDescription(e.target.value);
+              }}
+            />
+          )}
+          {error && <div role="alert" className="text-sm text-rose-600">{error}</div>}
+          <div className="flex justify-end gap-2">
+            <Button onClick={onClose}>Cancel</Button>
+            <Button variant="primary" type="submit" disabled={!name.trim() || create.isPending || (copying && !source)}>
+              {copying ? "Copy" : "Create"}
+            </Button>
+          </div>
+        </form>
+      )}
+    </Dialog>
+  );
+}
+
+/** "Describe it" (R17.3): the builder agent drafts the form; nothing is saved until you accept. */
+function DescribeIt({ onCreated, onClose }: { onCreated: (id: string) => void; onClose: () => void }) {
+  const [text, setText] = useState("");
+  const [runId, setRunId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [accepting, setAccepting] = useState(false);
+  const refresh = useStudioRefresh();
+  const answer = useAssist(runId);
+  const result = answer.data;
+  const draft = result?.status === "done" ? (result.proposal as unknown as DraftProposal) : null;
+  const working = runId !== null && (!result || result.status === "working");
+
+  if (draft) {
+    return (
+      <div className="space-y-4" data-testid="draft-preview">
+        <div className="rounded-xl border border-stone-200 p-4 dark:border-stone-700">
+          <div className="font-display text-lg font-medium">{draft.display_name}</div>
+          <p className="mt-0.5 text-sm text-stone-600 dark:text-stone-400">{draft.description}</p>
+          <dl className="mt-3 space-y-1.5 text-sm">
+            <Row label="Tools" value={(draft.tools ?? []).map(toolLabel).join(", ") || "none"} />
+            <Row label="Helpers" value={(draft.helpers ?? []).map((h) => h.display_name).join(", ") || "none"} />
+            <Row label="Skills" value={(draft.skills ?? []).join(", ") || "none"} />
+            <Row label="Effort" value={draft.effort} />
+          </dl>
+        </div>
+        <p className="text-sm text-stone-500">Next you can change anything, then try it in a test chat.</p>
         {error && <div role="alert" className="text-sm text-rose-600">{error}</div>}
         <div className="flex justify-end gap-2">
-          <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" type="submit" disabled={!name.trim() || create.isPending}>
-            {copyOf ? "Copy" : "Create"}
+          <Button
+            onClick={() => {
+              setRunId(null);
+            }}
+          >
+            Try again
+          </Button>
+          <Button
+            variant="primary"
+            disabled={accepting}
+            onClick={() => {
+              setAccepting(true);
+              studio
+                .fromProposal(draft)
+                .then((agent) => {
+                  refresh(agent);
+                  onCreated(agent.id);
+                })
+                .catch((e: unknown) => {
+                  setError(problemText(e));
+                })
+                .finally(() => {
+                  setAccepting(false);
+                });
+            }}
+          >
+            Use this draft
           </Button>
         </div>
-      </form>
-    </Dialog>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      className="space-y-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        setError(null);
+        studio
+          .describe(text.trim())
+          .then((r) => {
+            setRunId(r.run_id);
+          })
+          .catch((err: unknown) => {
+            setError(problemText(err));
+          });
+      }}
+    >
+      <TextArea
+        label="Describe the assistant you want"
+        rows={5}
+        minLength={10}
+        maxLength={4000}
+        required
+        autoFocus
+        value={text}
+        disabled={working}
+        placeholder="It plans family trips: finds things to do, keeps to a budget, and has a helper that finds kid-friendly restaurants."
+        hint="What it's for, what it should do, and anything it must never do. You'll check and change the draft before anyone uses it."
+        onChange={(e) => {
+          setText(e.target.value);
+        }}
+      />
+      {working && <Spinner label="Drafting your agent…" />}
+      {result?.status === "failed" && (
+        <div role="alert" className="text-sm text-rose-700 dark:text-rose-400">
+          {result.problem}
+        </div>
+      )}
+      {error && <div role="alert" className="text-sm text-rose-600">{error}</div>}
+      <div className="flex justify-end gap-2">
+        <Button onClick={onClose}>Cancel</Button>
+        <Button variant="primary" type="submit" disabled={text.trim().length < 10 || working}>
+          <Sparkles aria-hidden className="size-4" /> Draft it
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-2">
+      <dt className="w-16 shrink-0 text-stone-500">{label}</dt>
+      <dd className="min-w-0">{value}</dd>
+    </div>
   );
 }
 

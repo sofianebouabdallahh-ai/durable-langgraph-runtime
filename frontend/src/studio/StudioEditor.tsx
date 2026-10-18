@@ -18,6 +18,7 @@ import { Avatar, Button, Pill, Spinner } from "../ui/primitives";
 import { type AgentDocument, documentOf, type Edit, edit, unplaced } from "./editor";
 import { studio, type StudioAgent, useCatalog, useStudioAgent, useStudioRefresh } from "./api";
 import { BasicsSection, HelpersSection, InstructionsSection, LimitsSection, ModelSection, ProtectionsSection, ToolsSection } from "./sections";
+import { ImproveInstructions, SkillsSection } from "./skills";
 
 type SaveState = "saved" | "saving" | "pending" | "error";
 const AUTOSAVE_MS = 700;
@@ -191,8 +192,23 @@ function Editor({ initial, catalog, go }: { initial: StudioAgent; catalog: NonNu
               </div>
             )}
             <BasicsSection {...props} />
-            <InstructionsSection {...props} />
+            <InstructionsSection
+              {...props}
+              aside={
+                editable && (
+                  <ImproveInstructions
+                    agentId={state.id}
+                    current={doc.instructions}
+                    disabled={save !== "saved"}
+                    onAccept={(value) => {
+                      dispatch({ kind: "set", field: "instructions", value });
+                    }}
+                  />
+                )
+              }
+            />
             <ToolsSection {...props} />
+            <SkillsSection {...props} />
             <HelpersSection {...props} />
             <LimitsSection {...props} />
             <ProtectionsSection {...props} />

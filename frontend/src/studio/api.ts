@@ -5,6 +5,11 @@ import { api, unwrap, type Schemas } from "../api/client";
 import type { AgentDocument } from "./editor";
 
 export type StudioAgent = Schemas["StudioAgentView"];
+export type DraftProposal = Schemas["DraftProposal"];
+export interface InstructionsProposal {
+  instructions: string;
+  what_changed: string;
+}
 
 export const studioKeys = {
   catalog: ["studio", "catalog"] as const,
@@ -61,6 +66,10 @@ export const studio = {
     if (!response.ok) throw new Error(body.detail ?? `import failed (HTTP ${String(response.status)})`);
     return body;
   },
+  /** The builder agents (R17.3): each returns a run whose answer `assist` reads. */
+  describe: (description: string) => unwrap(api.POST("/studio/describe", { body: { description } })),
+  improve: (id: string) => unwrap(api.POST("/studio/agents/{agent_id}/improve", { params: { path: { agent_id: id } } })),
+  fromProposal: (proposal: DraftProposal) => unwrap(api.POST("/studio/agents/from-proposal", { body: proposal })),
   exportUrl: (id: string, version?: number) =>
     `/api/studio/agents/${encodeURIComponent(id)}/export${version ? `?version=${String(version)}` : ""}`,
 };
@@ -73,5 +82,15 @@ export function useCreateAgent(onDone: (agent: StudioAgent) => void) {
       refresh(agent);
       onDone(agent);
     },
+  });
+}
+
+/** A builder's answer: polled while it works (a second or two offline, longer on a model). */
+export function useAssist(runId: string | null) {
+  return useQuery({
+    queryKey: ["studio", "assist", runId ?? ""],
+    queryFn: () => unwrap(api.GET("/studio/assist/{run_id}", { params: { path: { run_id: runId ?? "" } } })),
+    enabled: runId !== null,
+    refetchInterval: (query) => (query.state.data?.status === "working" || query.state.data === undefined ? 1000 : false),
   });
 }
