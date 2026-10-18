@@ -8,6 +8,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from typing import Any
 
 import pytest
 
@@ -253,3 +254,33 @@ async def test_worker_drains_and_leaves_the_group_on_stop(
     assert time.monotonic() - t0 < 3  # an idle worker stops promptly
     consumers = await queue._r.xinfo_consumers(queue.stream, queue.group)
     assert "w-a:1" not in {c["name"] for c in consumers}
+
+
+async def test_a_queue_blip_doesnt_stop_the_worker(
+    pool: Pool,
+    fast: Settings,
+    queue: RedisWorkQueue,
+    service: RunService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Redis timing out (a restart, a paused host) is retried with a backoff: the worker
+    stays up, and runs it can't read yet are served once the queue is back."""
+    from agent_runtime import worker as worker_module
+    from agent_runtime.queue import QueueUnavailable
+
+    monkeypatch.setattr(worker_module, "READ_BACKOFF_S", 0.05)
+    real_read, failures = queue.read, [2]
+
+    async def flaky(consumer: str, count: int, block_ms: int) -> list[Any]:
+        if failures[0] > 0:
+            failures[0] -= 1
+            raise QueueUnavailable("Timeout reading from redis:6379")
+        return await real_read(consumer, count, block_ms)
+
+    monkeypatch.setattr(queue, "read", flaky)
+    run = await service.create_run("toy", {"question": "q", "delay_s": 0.1})
+    await queue.enqueue(run.id)
+    async with workers(pool, queue, fast, "w-blip:1") as started:
+        await wait_until(status_is(pool, run.id, S.COMPLETED), timeout_s=20)
+        task_alive = not started["w-blip:1"][1].is_set()
+    assert failures == [0] and task_alive
