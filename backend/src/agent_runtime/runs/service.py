@@ -20,6 +20,7 @@ from agent_runtime.agents.resolver import AgentResolver, Resolved
 from agent_runtime.config import AgentSettings, Settings
 from agent_runtime.db import Pool
 from agent_runtime.graphs import GraphRegistry, GraphSpec
+from agent_runtime.models.connections import ModelRouter
 from agent_runtime.runs.limits import RunOptions, profile_of, resolve_limits
 from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.state import RunStatus
@@ -115,6 +116,7 @@ class RunService:
         self._relay = relay
         self._bus = bus
         self.agents = agents or AgentResolver(pool, graphs, default_tools())
+        self.models = ModelRouter(pool, settings)  # model strings → connections (L3b)
         self._depth: tuple[float, int] | None = None  # (read at, value): cached per replica
 
     async def create_run(
@@ -137,9 +139,11 @@ class RunService:
         await self._check_paused()
         pinned: Resolved | None = None
         agent: tuple[str, str, int] | None = None
+        bindings: dict[str, Any] | None = None
         if self.agents.builtin(graph) is not None:  # an agent: pin its definition (R15.4)
             async with self._pool.connection() as conn:
                 pinned = await self.agents.resolve(conn, graph)
+                bindings = await self.models.bind(conn, pinned.definition)
             prepared = prepare_spec(self.agents.spec_of(pinned), self._settings, input, options)
             agent = (pinned.bundle_hash, pinned.definition.id, pinned.version)
         else:
@@ -153,6 +157,7 @@ class RunService:
                 options=prepared.options,
                 limits=prepared.limits,
                 agent=agent,
+                model_bindings=bindings,
             )
         await publish_events(self._bus, repo.emitted)  # after commit (R1.5)
         if enqueue and self._relay is not None:

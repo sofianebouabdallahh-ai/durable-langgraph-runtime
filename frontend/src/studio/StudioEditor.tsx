@@ -196,7 +196,7 @@ function Editor({ initial, catalog, go }: { initial: StudioAgent; catalog: NonNu
             <HelpersSection {...props} />
             <LimitsSection {...props} />
             <ProtectionsSection {...props} />
-            <ModelSection />
+            <ModelSection {...props} />
             {editable && state.published && (
               <div className="flex justify-end">
                 <Button variant="ghost" size="sm" onClick={() => void run(() => studio.discard(state.id), (a) => { show(documentOf(a)); })}>

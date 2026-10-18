@@ -18,6 +18,24 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - CR-004 + ADR-0003 (accepted): agents defined as `backend/agents/*.agent.md` (name, max turns, prompt, tools, limits, hooks); hooks for session start/end, turn start/end and pre/post tool, built on LangChain middleware plus harness-owned session hooks.
 - CR-003 (accepted): harness guardrails. Run budgets with a soft→hard wrap-up, loop detection, ceilings that callers can only tighten, deny-by-default tool grants, least-privilege DB roles, untrusted-content handling, audit trail, kill switch.
 
+### L3b — Agent Studio: your own model
+#### Added
+- **Settings → Models** (sidebar → Models):
+  - add a local **Ollama** (found automatically), **OpenAI**, **Azure AI Foundry** or any **OpenAI-compatible** service;
+  - **Save and test** checks the address, the key, the model and tool use in one tiny request, and explains a failure in plain words;
+  - a **default model**; edit (a new key replaces the old), remove.
+- **A model per agent and per helper** in the Studio (`<connection>:<model>`, or the default). Publishing needs every chosen model to have passed its test; a missing connection is named next to the field.
+- **Keys encrypted on this machine** (R18.3, AC45): envelope AES-256-GCM, a data key per secret wrapped by `NURIA_SECRET_KEY` (setup generates it, also into an existing `.env`); each ciphertext bound to its workspace, row and purpose. Keys are never returned, shown or logged: the app shows a fingerprint.
+- **Model bindings pinned on each run** (`runs.model_bindings`): a conversation keeps its model when the default changes, and across a worker crash. Circuit breaker per connection.
+- **Different models in one conversation** (AC44): an agent and its helpers each on their own connection.
+- The chat shows which model answered. Agents with helpers are told about them in their prompt ("## Your helpers"), so real models can delegate.
+- **Database:** `model_connections`, `workspace_settings`, `runs.model_bindings` (migration 0011).
+- **`/models` API:** connections, test, models, Ollama discovery, the default.
+- **`runtime fake-model`:** a deterministic OpenAI-compatible server for tests (Compose profile `test`, used in CI).
+
+#### Fixed
+- Studio agents' helpers were invisible to real models (only the demo model knew them): the prompt now lists them.
+
 ### L3a — Agent Studio: agents & helpers
 #### Added
 - **The Agent Studio** (Agents → New agent / Copy / Import):

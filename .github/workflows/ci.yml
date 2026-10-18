@@ -174,7 +174,10 @@ jobs:
         run: uv run --locked python -m tests.e2e.compose_e2e all
       - name: Browser e2e (Playwright in a container, against the stack)
         working-directory: .
-        run: make ui-e2e
+        run: |
+          # the fake model the connection tests use (profile `test`, never in setup)
+          docker compose --file infra/compose/docker-compose.yml --env-file .env --profile test up -d --wait fake-model
+          make ui-e2e
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
         with:

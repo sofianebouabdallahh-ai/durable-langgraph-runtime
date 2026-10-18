@@ -140,6 +140,8 @@ class Run:
     child_done: int = 0
     # The agent bundle this run executes (R15.4): the snapshot it was created with.
     agent_hash: str | None = None
+    # What each model string resolved to when the run was created (phase L3b).
+    model_bindings: dict[str, Any] | None = None
 
     @property
     def root_id(self) -> uuid.UUID:
@@ -176,6 +178,7 @@ class Run:
             depth=row["depth"],
             child_key=row["child_key"],
             agent_hash=row.get("agent_hash"),
+            model_bindings=row.get("model_bindings"),
             child_total=row["child_total"],
             child_done=row["child_done"],
         )
@@ -228,7 +231,7 @@ _RUN_COLUMNS = """
     input, options, limits, steps, parent_run_id, session_id,
     created_at, started_at, finished_at, cancel_requested, reclaims, releases, message_id,
     interrupt_payload, resume_value, root_run_id, depth, child_key, child_total, child_done,
-    agent_hash
+    agent_hash, model_bindings
 """
 
 
@@ -266,6 +269,7 @@ class RunRepository:
         traceparent: str | None = None,
         agent: tuple[str, str, int] | None = None,
         idempotency_key: str | None = None,
+        model_bindings: dict[str, Any] | None = None,
     ) -> Run:
         """Insert a `queued` run and its `run.created` event, atomically.
 
@@ -280,8 +284,8 @@ class RunRepository:
                 INSERT INTO runs (id, graph_name, kind, thread_id, input, options, limits,
                                   session_id, parent_run_id, root_run_id, depth, child_key,
                                   traceparent, agent_hash, agent_name, agent_version,
-                                  idempotency_key)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                  idempotency_key, model_bindings)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING {_RUN_COLUMNS}
                 """,
                 (
@@ -302,6 +306,7 @@ class RunRepository:
                     agent[1] if agent else None,
                     agent[2] if agent else None,
                     idempotency_key,
+                    Jsonb(model_bindings) if model_bindings is not None else None,
                 ),
             )
             row = _required(await cur.fetchone(), "INSERT INTO runs … RETURNING")

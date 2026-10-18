@@ -51,7 +51,22 @@ def render_prompt(agent: AgentDefinition | SubAgentDefinition) -> str:
     prompt = agent.prompt
     for name, value in values.items():
         prompt = prompt.replace("{{" + name + "}}", value).replace("{{ " + name + " }}", value)
+    if isinstance(agent, AgentDefinition) and agent.subagents:
+        prompt += helpers_section(agent)
     return prompt
+
+
+def helpers_section(agent: AgentDefinition) -> str:
+    """What the model must know to delegate: each helper's id and what it does. Added
+    by the runtime, so an agent built in the Studio works without naming its helpers
+    in its instructions (the person may not know the ids)."""
+    lines = [f"- `{s.frontmatter.name}`: {s.frontmatter.description}" for s in agent.subagents]
+    return (
+        "\n\n## Your helpers\n"
+        "Start one with spawn_subagent(agent=<id>, task=...), several at once if the parts are "
+        "independent, then wait_subagents for their results. Give each everything it needs "
+        "in `task`: helpers can't see this conversation.\n" + "\n".join(lines)
+    )
 
 
 def _bindable(spec: ToolSpec) -> BaseTool:

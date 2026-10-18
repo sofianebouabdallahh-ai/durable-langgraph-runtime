@@ -248,6 +248,16 @@ def _print_live(type_: str, payload: dict[str, Any]) -> None:
         print(f"\n  ◇ {type_.removeprefix('subagent.')} {agent} {detail}", flush=True)
 
 
+def _fake_model(args: argparse.Namespace) -> int:
+    """Dev tooling: a deterministic OpenAI-compatible server (devtools/fake_model.py)."""
+    import uvicorn
+
+    from agent_runtime.devtools.fake_model import create_app
+
+    uvicorn.run(create_app(args.key), host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
 def _openapi(args: argparse.Namespace) -> int:
     """The published contract, for the UI's generated client and its drift check."""
     from pydantic import SecretStr
@@ -502,6 +512,13 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--api", default=None, help="also check this API's /readyz")
     doctor.add_argument("--out", default=None, help="write to this file instead of stdout")
     doctor.set_defaults(handler=_doctor)
+
+    fake = commands.add_parser("fake-model", help="a fake OpenAI-compatible model (tests, CI)")
+    fake.add_argument("--host", default="127.0.0.1")
+    fake.add_argument("--port", type=int, default=9999)
+    fake.add_argument("--key", default=os.environ.get("FAKE_MODEL_KEY"),
+                      help="require this bearer key (default: none)")  # fmt: skip
+    fake.set_defaults(handler=_fake_model)
 
     openapi = commands.add_parser("openapi", help="print the API's OpenAPI spec (JSON)")
     openapi.add_argument("--out", help="write it to this file instead")

@@ -92,3 +92,13 @@ def test_any_agents_helper_gets_the_task() -> None:
     assert set(subs) == {"place-finder"}
     for turn in [*script, *subs["place-finder"]]:
         ScriptTurn.model_validate(turn)
+
+
+def test_an_agent_with_helpers_is_told_their_ids_and_purpose() -> None:
+    from agent_runtime.graphs.assistant import render_prompt
+
+    assert CHAT is not None
+    prompt = render_prompt(CHAT)
+    assert "## Your helpers" in prompt
+    assert "- `researcher`: Finds and cites facts" in prompt
+    assert "## Your helpers" not in render_prompt(GRAPHS.get("assistant").agent)  # type: ignore[arg-type]

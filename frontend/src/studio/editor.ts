@@ -14,7 +14,7 @@ export type PresetName = "quick" | "standard" | "thorough" | "custom";
 type Limits = Record<string, unknown>;
 
 export type Edit =
-  | { kind: "set"; field: "display_name" | "description" | "instructions"; value: string }
+  | { kind: "set"; field: "display_name" | "description" | "instructions" | "model"; value: string }
   | { kind: "tool"; name: string; on: boolean }
   | { kind: "tool-cap"; name: string; cap: number | null }
   | { kind: "preset"; preset: { max_turns: number; limits: Limits } }
@@ -97,7 +97,7 @@ export function issuesFor(issues: readonly Issue[], where: string, fields: reado
   return issues.filter((i) => i.where === where && fields.some((f) => (i.field ?? "") === f || (i.field ?? "").startsWith(`${f}.`)));
 }
 
-const SECTION_FIELDS = ["name", "display_name", "description", "instructions", "tools", "max_turns", "limits", "hooks", "temperature", "model"];
+const SECTION_FIELDS = ["name", "display_name", "description", "instructions", "tools", "max_turns", "limits", "hooks", "temperature", "model"]; // "model": the Model section
 
 /** Issues no section claims: shown at the top so nothing is ever hidden. */
 export function unplaced(issues: readonly Issue[], helperNames: readonly string[]): Issue[] {

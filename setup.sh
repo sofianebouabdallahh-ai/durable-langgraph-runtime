@@ -99,6 +99,10 @@ make_env() {
   for key in $(awk -F= '$2 ~ /^change-me/ { print $1 }' "$ENV_FILE"); do
     env_set "$key" "$(random_secret)"; changed=$((changed + 1))
   done
+  # Secrets added by later versions: an existing .env gets them too (never overwritten).
+  for key in NURIA_SECRET_KEY; do
+    [ -n "$(env_get "$key")" ] || { env_set "$key" "$(random_secret)"; changed=$((changed + 1)); }
+  done
   [ "$changed" -gt 0 ] && ok "generated $changed local secret(s) (only on this machine, in .env)"
   [ -n "$(env_get COMPOSE_PROFILES)" ] || env_set COMPOSE_PROFILES app
 }

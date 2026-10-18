@@ -221,7 +221,10 @@ function TurnBlock({
         <div className="flex gap-3.5">
           <Avatar name={agent} brand={brand} />
           <div className="min-w-0 flex-1 space-y-3.5 pt-1">
-            <div className="text-sm font-semibold">{agent}</div>
+            <div className="text-sm font-semibold">
+              {agent}
+              {answeredBy(view) && <span className="ml-1.5 text-xs font-normal text-stone-500" data-testid="answered-by">· {answeredBy(view)}</span>}
+            </div>
             {renderItems(view.items, agent, waitingId, onDecide)}
             {view.draft && (
               <div data-testid="draft">
@@ -254,6 +257,14 @@ function TurnBlock({
       )}
     </section>
   );
+}
+
+/** Which model wrote the turn's reply (not shown for the offline demo model). */
+function answeredBy(view: TurnView): string | null {
+  for (const item of view.items) {
+    if (item.kind === "text" && item.message.model && item.message.model !== "scripted") return item.message.model;
+  }
+  return null;
 }
 
 /** Items in order; consecutive tool steps share one frame. */
