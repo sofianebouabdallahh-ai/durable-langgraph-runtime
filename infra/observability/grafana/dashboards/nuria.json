@@ -57,7 +57,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "count(up{job=\"api\"} == 1)",
+          "expr": "count(up{job=\"api\"} == 1 and timestamp(up{job=\"api\"}) > time() - 15)",
           "refId": "A",
           "instant": true
         }
@@ -105,7 +105,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "count(up{job=\"worker\"} == 1)",
+          "expr": "count(up{job=\"worker\"} == 1 and timestamp(up{job=\"worker\"}) > time() - 15)",
           "refId": "A",
           "instant": true
         }
@@ -1292,7 +1292,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Replicas Prometheus can scrape",
+      "description": "Replicas scraped in the last 15 s (a replica that's gone drops out at once)",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -1305,7 +1305,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (job) (up{job=~\"api|worker\"})",
+          "expr": "count by (job) (up{job=~\"api|worker\"} == 1 and timestamp(up{job=~\"api|worker\"}) > time() - 15)",
           "legendFormat": "{{job}}",
           "refId": "A"
         }
