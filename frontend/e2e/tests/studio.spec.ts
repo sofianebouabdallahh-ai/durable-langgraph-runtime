@@ -123,6 +123,7 @@ test("copy a built-in agent, publish twice, restore the first version", async ({
   const publish = async (note: string) => {
     await page.getByRole("button", { name: "Start a test chat" }).or(page.getByRole("button", { name: "New test" })).first().click();
     const chat = page.getByTestId("test-chat");
+    await expect(chat.getByText("Start the conversation")).toBeVisible(); // the new, empty test chat
     await chat.getByRole("textbox", { name: "Message" }).fill("hello");
     await chat.getByRole("textbox", { name: "Message" }).press("Enter");
     await expect(chat.getByText("Tested", { exact: true })).toBeVisible({ timeout: 30_000 });

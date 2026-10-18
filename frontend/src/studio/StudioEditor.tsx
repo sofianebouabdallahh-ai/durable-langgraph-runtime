@@ -95,6 +95,7 @@ function Editor({ initial, catalog, go }: { initial: StudioAgent; catalog: NonNu
   );
 
   const startTest = async () => {
+    setTestChat(null); // clear the panel at once: a new test starts empty
     try {
       const session = await studio.testChat(state.id);
       setTestChat(session.id);
