@@ -4,6 +4,32 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-18
+
+The first release for testers: Nuria, on your own machine, from one command (phases 0–6 and L1–L5).
+
+### L5 — Release v0.1 & the feedback loop
+#### Added
+- **Versions:** `VERSION` is the release, and the backend, UI and charts carry it (a test keeps them in step). Setup pins `NURIA_VERSION`, so Compose pulls exactly that release's images. The sidebar shows *Nuria 0.1.0*. A `v*` tag must match `VERSION`, and its GitHub Release gets this changelog's section as notes.
+- **`./setup.sh --update [--to vX.Y.Z]`:**
+  1. A checked backup first (`backups/nuria-<version>-<date>.sql.gz`); a failed backup changes nothing.
+  2. The newest (or named) release.
+  3. The new version's own setup finishes the job: its images, migrations, a restart, a smoke turn.
+  4. On any failure, the two commands that take you back.
+- **`./setup.sh --restore FILE`** (`setup.ps1 -Restore`).
+- **CI checks the upgrade** from the previous release with data in it, then the restore (`infra/ci/upgrade.sh`).
+- **Send feedback** (sidebar): what you were doing, what happened, how it felt. It shows the exact text, then **Open a GitHub issue** (pre-filled, nothing sent before your click) or **Download**.
+- **Report this reply** (under *What happened?*): a zip with the steps (no text), the agent's definition if it's yours, and the conversation only if you tick it. Plus the matching issue template.
+- **Download this chat** (Markdown).
+- **Settings → Privacy:** opt-in, content-free usage counts, shown exactly. They are only ever attached to feedback you send. Migration 0013 adds `workspace_settings.share_usage`, off.
+- **Issue templates:** feedback, something broke, my agent didn't do what I expected, an idea.
+- **Docs:** [tester guide](docs/setup/testers.md), [updating and backups](docs/setup/updating.md), [what runs where and how to delete it](docs/security.md), troubleshooting additions, and a README for v0.1.0.
+
+#### Fixed
+- `--update`'s backup was never checked (an empty dump looked like success), and there was no way to restore one.
+- During an update, the old version's setup ran the new version's start. The new version's own script now finishes the update.
+
+
 ### Changed
 - Python package renamed `runtime` → `agent_runtime` (`backend/src/agent_runtime`). The CLI command is still `runtime`.
 - Configuration and secrets follow [ADR-0002](docs/adr/0002-configuration-and-secrets.md): `make` passes `.env` to `uv run --env-file` and `compose --env-file` instead of `include`-ing it; unit tests run without `.env`.
