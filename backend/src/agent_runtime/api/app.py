@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request, Respons
 from fastapi.responses import StreamingResponse
 
 from agent_runtime import __doc__ as package_doc
-from agent_runtime import metrics, telemetry
+from agent_runtime import metrics, report, telemetry
 from agent_runtime.admin import AdminRepository, AdminState
 from agent_runtime.agents.studio import StudioService
 from agent_runtime.api import problems
@@ -49,6 +49,7 @@ from agent_runtime.api.sessions import agents as agents_router
 from agent_runtime.api.sessions import sessions as sessions_router
 from agent_runtime.api.skills import skills_router
 from agent_runtime.api.studio import studio as studio_router
+from agent_runtime.api.telemetry import telemetry_router
 from agent_runtime.config import Settings, get_agent_settings, get_settings
 from agent_runtime.db import Pool, create_pool
 from agent_runtime.graphs import GraphRegistry, GraphSpec, default_registry
@@ -141,6 +142,24 @@ async def get_result(run_id: uuid.UUID, pool: PoolDep) -> ResultView:
     if result is None:
         raise ResultNotReady(run_id)  # spec §5: 404 until completed
     return ResultView(run_id=run_id, output=result["output"], partial=result["partial"])
+
+
+@runs.get(
+    "/{run_id}/report",
+    summary="A zip to attach to a bug report (phase L5)",
+    description="README, the timeline (structural fields only unless `include_chat`), the "
+    "agent's definition when it's one you made, and the chat only if `include_chat`. Nothing "
+    "is uploaded anywhere: the person downloads it.",
+    response_class=Response,
+    responses={200: {"content": {"application/zip": {}}}},
+)
+async def run_report(
+    run_id: uuid.UUID, request: Request, pool: PoolDep, include_chat: bool = False
+) -> Response:
+    name, data = await report.build(pool, request.app.state.studio, run_id,
+                                    include_chat=include_chat)  # fmt: skip
+    return Response(data, media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})  # fmt: skip
 
 
 @runs.post(
@@ -422,6 +441,7 @@ def create_app(
     app.include_router(studio_router)
     app.include_router(models_router)
     app.include_router(skills_router)
+    app.include_router(telemetry_router)
     app.include_router(graphs_router)
     app.include_router(health)
     if settings.admin_api_enabled:
