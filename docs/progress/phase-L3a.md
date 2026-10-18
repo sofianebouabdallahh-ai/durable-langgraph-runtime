@@ -42,7 +42,7 @@ The form autosaves. Every problem is explained next to its field, in plain words
 | SC8 | **Import / export** | ✅ Export → import gives the same definition under a new id (an import never replaces an agent); zip-slip, absolute paths, oversized files, too many files, non-UTF-8, non-agent files: all rejected, nothing written |
 | SC9 | **Durability unchanged** | ✅ Browser, **5/5**: a chat with a published user agent, worker `docker kill`ed mid tool call → completes on the same version, one reclaim, screen = transcript |
 | SC10 | **Retry-safe sends** | ✅ The same key returns the same turn (API); the UI retries 502 / dropped connections with one key (unit); a different message while a turn runs is still a 409 |
-| SC11 | Quality | ✅ Backend `make check` 403 passed; UI: lint, strict types, 51 unit tests, build (the Studio and Agents pages lazy-loaded: main bundle 481 kB); browser suite __E2E__; container e2e __COMPOSE__ |
+| SC11 | Quality | ✅ Backend `make check` 403 passed; UI: lint, strict types, 51 unit tests, build (the Studio and Agents pages lazy-loaded: main bundle 481 kB); browser suite **95/95** (19 scenarios × 5), then the suites touched by the last polish 35/35 (7 × 5); container e2e **15/15** |
 | SC12 | Docs | ✅ [Build your own agent](../setup/agents.md); README; design patterns; this summary |
 
 ## Bugs found by testing
