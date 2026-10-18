@@ -1,0 +1,25 @@
+# Opened pre-filled by "Report this reply" under a reply's "What happened?".
+name: My agent didn't do what I expected
+description: A wrong answer, a tool it shouldn't have used (or should have), a helper that went astray.
+labels: [agent-behaviour]
+body:
+  - type: input
+    id: run
+    attributes:
+      label: The reply (filled in by Nuria)
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you ask, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: got
+    attributes:
+      label: What did it do instead?
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        **Attach the report** you downloaded (`nuria-report-….zip`): drag it here. It holds the steps the reply took and the agent's definition; the conversation's text only if you ticked it.

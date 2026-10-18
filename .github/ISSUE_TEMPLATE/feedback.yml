@@ -1,0 +1,27 @@
+# Opened pre-filled by "Send feedback" in Nuria: each field's id is a URL parameter.
+name: Feedback
+description: How was it? What were you doing, what happened, how did it feel.
+labels: [feedback]
+body:
+  - type: markdown
+    attributes:
+      value: Thank you for trying Nuria. Everything below is what you wrote in the app; change anything before you submit.
+  - type: textarea
+    id: doing
+    attributes:
+      label: What were you doing?
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: input
+    id: feeling
+    attributes:
+      label: How did it feel? (1 frustrating – 5 delightful)
+  - type: textarea
+    id: details
+    attributes:
+      label: Details (version, model type, browser; usage counts if you shared them)
+      render: text
