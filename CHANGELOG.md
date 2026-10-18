@@ -18,6 +18,33 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - CR-004 + ADR-0003 (accepted): agents defined as `backend/agents/*.agent.md` (name, max turns, prompt, tools, limits, hooks); hooks for session start/end, turn start/end and pre/post tool, built on LangChain middleware plus harness-owned session hooks.
 - CR-003 (accepted): harness guardrails. Run budgets with a soft→hard wrap-up, loop detection, ceilings that callers can only tighten, deny-by-default tool grants, least-privilege DB roles, untrusted-content handling, audit trail, kill switch.
 
+### L4a — Watch it work: traces, metrics, dashboard
+#### Added
+- **`./setup.sh --observability`** (`setup.ps1 -Observability`; `--no-observability` to turn it off): the Compose profile `observability` adds:
+  - the OpenTelemetry Collector and Jaeger (traces);
+  - Prometheus (metrics, 7 days);
+  - Grafana with the **Nuria** dashboard (anonymous viewers, local only);
+  - images pinned by digest, each at least two weeks old.
+- **One trace per turn, across processes and time** (R2.7, R7.1, AC8):
+  - the W3C context is stored on the run (`runs.traceparent`) and restored by whichever worker executes it: the first time, after a crash (a second `run` span, marked reclaimed), after an approval, a parent after its children;
+  - child runs hang below their parent's `run`, and sub-agents are `subagent:{name}` spans of the run's worker;
+  - our spans: `run`, `node:{name}`, `llm.call` (model, tokens, cost, attempts), `tool:{name}` (status, cached); auto-instrumentation only for FastAPI and httpx.
+- **Metrics** (R7.2 with the CR additions), on the API's `/metrics` and each worker's `:8081/metrics`:
+  - runs by outcome and reason, reclaims and releases, run and turn latency;
+  - node, tool and model latency; tokens and cost by model; tool replays;
+  - policy decisions, approvals, helpers by outcome, budget wrap-ups and stops, loop detections;
+  - queue depth, undelivered messages, leases, waiting runs, active chats, today's spend, the kill switch, open streams.
+- **The worker's health server** (`WORKER_HEALTH_PORT`, 8081 in containers, R10.5): liveness fails when its loop hasn't ticked within 30 s, readiness at once on drain. Compose now health-checks workers.
+- **JSON logs** in containers (`LOG_FORMAT=json`): every line during a run carries `run_id`, `epoch` and `trace_id`; probe and scrape requests are left out of the access log.
+- **UI:**
+  - **Open the trace** in "What happened?", and the run's trace id;
+  - **Dashboard** in the sidebar;
+  - `GET /about` says whether tracing is on.
+- Docs: [Watch Nuria work](docs/setup/observability.md).
+
+#### Changed
+- With no OTLP endpoint (the default), nothing changes: no tracing SDK, no traceparent, no export.
+
 ### L3c — Agent Studio: skills & "describe your agent"
 #### Added
 - **Skills** (sidebar → Skills; CR-006 R17.4):

@@ -10,6 +10,7 @@ Everything runs in Docker on your computer: the app, the database, the queue, tw
 
 Then:
 - **Pick a model** ([models.md](models.md)): the offline demo model, a free local model (Ollama), OpenAI, Azure AI Foundry, or any OpenAI-compatible service.
+- **Watch it work** ([observability.md](observability.md)): traces, metrics and a Grafana dashboard.
 - **If something goes wrong:** [troubleshooting.md](troubleshooting.md).
 
 ## The short version
@@ -39,6 +40,7 @@ The API and its interactive docs are behind the same address: http://localhost:3
 | `./setup.sh` | Start (again). Safe to run any time: it never overwrites your settings or passwords |
 | `./setup.sh --model ollama` | Switch the model (`scripted`, `ollama`, `openai`, `foundry`, `compatible`) |
 | `./setup.sh --port 3100` | Put the app on another port |
+| `./setup.sh --observability` | Also traces, metrics and a dashboard: see [observability.md](observability.md) (`--no-observability`: off) |
 | `./setup.sh --stop` | Stop everything; your data is kept |
 | `./setup.sh --update` | Back up the database, get the latest version, migrate, restart |
 | `./setup.sh --doctor` | Make a diagnostics file (passwords and keys removed) to attach to a GitHub issue |
