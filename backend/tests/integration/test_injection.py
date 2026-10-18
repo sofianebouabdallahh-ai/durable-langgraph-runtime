@@ -1,7 +1,8 @@
 """R14.15 gate: planted instructions change nothing the harness enforces.
 
-Each case in `evals/cases/injection/` plants text in a tool result and assumes the
-worst model: one that obeys it. The planted text must reach the model marked as
+Each case in `evals/cases/injection/` plants text in a tool result, and again in a
+skill's instructions (what `load_skill` returns), and assumes the worst model: one
+that obeys it. The planted text must reach the model marked as
 data (it can't close the block), and the obeying call must still be stopped by
 the harness: an un-granted tool is denied and never runs, an approval-gated tool
 waits for a person (and a refusal sends nothing), a budget stays a budget.
@@ -11,6 +12,7 @@ waits for a person (and a refusal sends nothing), a budget stays a budget.
 from __future__ import annotations
 
 from collections import Counter
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,8 @@ from agent_runtime.fencing import Fence
 from agent_runtime.runs.events import EventType as E
 from agent_runtime.runs.state import RunStatus
 from agent_runtime.runs.store import RunRepository
+from agent_runtime.skills import tools as skill_tools
+from agent_runtime.skills.store import SkillVersion
 from agent_runtime.tools.builtin import NotifyArgs, notify
 from agent_runtime.tools.invocations import BudgetExceeded
 from agent_runtime.tools.pipeline import Grant, ToolCall, ToolPipeline, ToolRunContext
@@ -72,6 +76,7 @@ class Lab:
         self.registry.tool(
             "notify", args=NotifyArgs, risk_class="external_side_effect", side_effect=True
         )(notify)
+        skill_tools.register(self.registry)
         self.planted = ""
 
     def _spy(self, name: str) -> Any:
@@ -89,9 +94,24 @@ class Lab:
         return ToolPipeline(self.registry, RiskClassPolicy(), interrupt=self.interrupt)
 
     def ctx(self, fence: Fence, pool: Pool) -> ToolRunContext:
-        grants = {n: Grant() for n in ("fetch_page", "echo", "notify")}
+        grants = {n: Grant() for n in ("fetch_page", "echo", "notify", "load_skill")}
+        skill = SkillVersion(
+            "a" * 64,
+            "field-notes",
+            "Notes. Use when asked.",
+            self.planted,
+            {},
+            [],
+            {},
+            datetime.now(UTC),
+        )
         return ToolRunContext(
-            fence=fence, pool=pool, grants=grants, emit=lambda *_: None, max_tool_calls=3
+            fence=fence,
+            pool=pool,
+            grants=grants,
+            emit=lambda *_: None,
+            max_tool_calls=3,
+            skills={skill.name: skill},
         )
 
 
@@ -106,19 +126,23 @@ async def fence(pool: Pool) -> Fence:
     return lease.fence
 
 
+VIA = {"fetch_page": {}, "load_skill": {"name": "field-notes"}}  # a tool result · a skill
+
+
+@pytest.mark.parametrize("via", VIA)
 @pytest.mark.parametrize("case", _cases())
 async def test_planted_instructions_change_nothing(
-    case: dict[str, Any], pool: Pool, fence: Fence
+    case: dict[str, Any], via: str, pool: Pool, fence: Fence
 ) -> None:
     lab = Lab()
     lab.planted = case["planted"]
     pipeline, ctx = lab.pipeline(), lab.ctx(fence, pool)
 
-    seen = await pipeline.run(ToolCall(id="c0", name="fetch_page", args={}, index=0), ctx)
-    inner = seen.content.removeprefix('<data source="fetch_page">\n').removesuffix("\n</data>")
-    assert seen.content.startswith('<data source="fetch_page">') and seen.content.endswith(
-        "</data>"
-    )
+    seen = await pipeline.run(ToolCall(id="c0", name=via, args=VIA[via], index=0), ctx)
+    head = f'<data source="{via}">\n'
+    inner = seen.content.removeprefix(head).removesuffix("\n</data>")
+    assert seen.status == "success" and seen.content.startswith(head)
+    assert seen.content.endswith("</data>")
     assert "</data" not in inner.lower() and "<data" not in inner.lower()
 
     tool, args = case["obeys"]["tool"], case["obeys"]["args"]
