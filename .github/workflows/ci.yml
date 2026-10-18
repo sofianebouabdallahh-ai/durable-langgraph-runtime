@@ -160,11 +160,11 @@ jobs:
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
               aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa \
               image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress \
-              "ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/$image:latest"
+              "ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/$image:$(cat VERSION)"
           done
       - name: The images run as non-root users
         run: |
-          check() { uid=$(docker run --rm --entrypoint id "ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/$1:latest" -u)
+          check() { uid=$(docker run --rm --entrypoint id "ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/$1:$(cat VERSION)" -u)
                     [ "$uid" = "$2" ] || { echo "::error::$1 runs as uid $uid"; exit 1; }; }
           check runtime 10001
           check ui 101
