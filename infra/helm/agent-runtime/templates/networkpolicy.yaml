@@ -1,0 +1,147 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $ns := .Release.Namespace }}
+{{- $inst := .Release.Name }}
+# Default deny (R10.10): no pod in the namespace receives or sends anything that a
+# policy below doesn't allow.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $inst }}-default-deny
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# Everyone may ask the cluster DNS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $inst }}-dns
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+# The UI: from the Ingress controller; to the API.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $inst }}-ui
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: ui } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace }} } }
+      ports: [{ port: 8080 }]
+  egress:
+    - to: [{ podSelector: { matchLabels: { app.kubernetes.io/name: api } } }]
+      ports: [{ port: 8000 }]
+---
+# The API: from the UI (and Prometheus); to the data stores, the collector, and
+# model providers anywhere (connection tests in Settings → Models).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $inst }}-api
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: api } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: ui } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: prometheus } }
+      ports: [{ port: 8000 }]
+  egress:
+    - {} # models and the in-cluster stores; the stores themselves only admit us
+---
+# The workers: nothing comes in but Prometheus; out to the stores and models.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $inst }}-worker
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: worker } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{ podSelector: { matchLabels: { app.kubernetes.io/name: prometheus } } }]
+      ports: [{ port: 8081 }]
+  egress:
+    - {}
+---
+# The migrate Job: out to Postgres only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $inst }}-migrate
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: migrate } }
+  policyTypes: [Egress]
+  egress:
+    - to: [{ podSelector: { matchLabels: { app.kubernetes.io/name: postgres } } }]
+      ports: [{ port: 5432 }]
+---
+# Postgres (SC12): only the API, the workers and the migrate Job reach it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $inst }}-postgres
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: postgres } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: api } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: worker } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: migrate } }
+      ports: [{ port: 5432 }]
+---
+# Redis: the API, the workers, and KEDA (it reads the consumer group's backlog).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $inst }}-redis
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: redis } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: api } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: worker } }
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ .Values.networkPolicy.kedaNamespace }} } }
+      ports: [{ port: 6379 }]
+{{- if .Values.monitoring.enabled }}
+---
+# Monitoring: the collector takes spans from the API and workers and sends them to
+# Jaeger; Prometheus scrapes; Grafana reads Prometheus; the UIs from the Ingress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $inst }}-monitoring
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/name, operator: In, values: [otel-collector, jaeger, prometheus, grafana, kube-state-metrics] }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/instance: {{ $inst }} } }
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace }} } }
+  egress:
+    - to: [{ podSelector: {} }] # within the namespace
+    - ports: [{ port: 443 }, { port: 6443 }] # kube-state-metrics → the Kubernetes API
+{{- end }}
+{{- end }}

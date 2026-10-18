@@ -1,0 +1,74 @@
+{{- $sel := dict "root" . "name" "ui" }}
+# The UI (R10.3): static files and the /api proxy, as in Compose. Its nginx follows
+# the API's pods through the headless Service.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nuria.fullname" . }}-ui
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.ui.replicas }}
+  selector:
+    matchLabels: {{- include "nuria.selector" $sel | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  template:
+    metadata:
+      labels:
+        {{- include "nuria.selector" $sel | nindent 8 }}
+        {{- include "nuria.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "nuria.fullname" . }}
+      automountServiceAccountToken: false
+      securityContext: {{- include "nuria.podSecurity" . | nindent 8 }}
+      terminationGracePeriodSeconds: 30
+      {{- include "nuria.spread" $sel | nindent 6 }}
+      containers:
+        - name: ui
+          image: {{ include "nuria.uiImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "nuria.containerSecurity" . | nindent 12 }}
+            runAsUser: 101
+          env:
+            # nginx's resolver doesn't apply search domains: the full name.
+            - name: API_UPSTREAM
+              value: {{ include "nuria.fullname" . }}-api-pods.{{ .Release.Namespace }}.svc.cluster.local:8000
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec: { command: ["sleep", "5"] }
+          resources: {{- toYaml .Values.ui.resources | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nuria.fullname" . }}-ui
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "nuria.selector" $sel | nindent 4 }}
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "nuria.fullname" . }}-ui
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.ui.pdb.minAvailable }}
+  selector:
+    matchLabels: {{- include "nuria.selector" $sel | nindent 6 }}

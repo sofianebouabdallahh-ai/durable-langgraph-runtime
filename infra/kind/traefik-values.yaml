@@ -1,0 +1,32 @@
+# Traefik (v3), the Ingress controller of the local cluster. ingress-nginx, the
+# usual choice, is retired (no releases since March 2026). Traefik reads standard
+# Ingress objects, so the chart's Ingress works with either.
+deployment:
+  replicas: 1
+# On the control plane, where kind maps 127.0.0.1:${K8S_PORT} to the node's port 80.
+nodeSelector:
+  ingress-ready: "true"
+tolerations:
+  - { key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule }
+ports:
+  web:
+    hostPort: 80
+    # Streams (SSE) stay open as long as a chat does; Traefik never buffers them.
+    transport:
+      respondingTimeouts:
+        readTimeout: 0
+        writeTimeout: 0
+        idleTimeout: 3600s
+  websecure:
+    expose: { default: false }
+service:
+  type: ClusterIP
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+providers:
+  kubernetesCRD: { enabled: false }
+  kubernetesIngress: { enabled: true }
+resources:
+  requests: { cpu: 50m, memory: 48Mi }
+  limits: { memory: 160Mi }

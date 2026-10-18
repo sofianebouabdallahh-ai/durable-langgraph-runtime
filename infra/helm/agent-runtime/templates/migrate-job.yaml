@@ -1,0 +1,45 @@
+# The schema migration (R10.6): runs before an install or an upgrade creates or
+# changes any other object of the release, so new pods never meet an old schema.
+# A hook can't read the release's own ConfigMap (it doesn't exist yet on a first
+# install): its configuration is inline.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "nuria.fullname" . }}-migrate
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation # kept after success: its logs
+spec:
+  backoffLimit: {{ .Values.migrate.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.migrate.ttlSecondsAfterFinished }}
+  activeDeadlineSeconds: {{ .Values.migrate.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels: {{- include "nuria.selector" (dict "root" . "name" "migrate") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      # The namespace's default account: the release's own doesn't exist yet when a
+      # pre-install hook runs. No token is mounted either way.
+      automountServiceAccountToken: false
+      securityContext: {{- include "nuria.podSecurity" . | nindent 8 }}
+      containers:
+        - name: migrate
+          image: {{ include "nuria.runtimeImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["db", "init"] # migrate + provision the component logins (idempotent)
+          securityContext: {{- include "nuria.containerSecurity" . | nindent 12 }}
+          env:
+            {{- range $k, $v := .Values.config }}
+            - { name: {{ $k }}, value: {{ $v | quote }} }
+            {{- end }}
+            {{- range $key := list "POSTGRES_PASSWORD" "API_POSTGRES_PASSWORD" "WORKER_POSTGRES_PASSWORD" }}
+            - name: {{ $key }}
+              valueFrom: { secretKeyRef: { name: {{ $.Values.secretName }}, key: {{ $key }} } }
+            {{- end }}
+          resources: {{- toYaml .Values.migrate.resources | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }

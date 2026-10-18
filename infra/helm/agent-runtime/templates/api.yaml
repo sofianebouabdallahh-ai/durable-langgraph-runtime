@@ -1,0 +1,130 @@
+{{- $sel := dict "root" . "name" "api" }}
+# The API (R10.3). Several replicas behind a Service; any of them serves any stream.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nuria.fullname" . }}-api
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.api.hpa.enabled }}
+  replicas: {{ .Values.api.replicas }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "nuria.selector" $sel | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } # never fewer than wanted (R10.7)
+  template:
+    metadata:
+      labels:
+        {{- include "nuria.selector" $sel | nindent 8 }}
+        {{- include "nuria.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+    spec:
+      serviceAccountName: {{ include "nuria.fullname" . }}
+      automountServiceAccountToken: false
+      securityContext: {{- include "nuria.podSecurity" . | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.api.terminationGracePeriodSeconds }}
+      {{- include "nuria.spread" $sel | nindent 6 }}
+      containers:
+        - name: api
+          image: {{ include "nuria.runtimeImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["api", "--host", "0.0.0.0", "--port", "8000"]
+          securityContext: {{- include "nuria.containerSecurity" . | nindent 12 }}
+          envFrom:
+            - configMapRef: { name: {{ include "nuria.fullname" . }}-config }
+          env:
+            # Least privilege (R14.13): the API connects as its own login.
+            - { name: POSTGRES_USER, value: {{ .Values.config.API_POSTGRES_USER | quote }} }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: API_POSTGRES_PASSWORD } }
+            - name: API_POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: API_POSTGRES_PASSWORD } }
+            - name: NURIA_SECRET_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: NURIA_SECRET_KEY } }
+            - name: OPENAI_API_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: OPENAI_API_KEY, optional: true } }
+            {{- include "nuria.downwardEnv" . | nindent 12 }}
+            {{- include "nuria.monitoringEnv" . | nindent 12 }}
+          ports:
+            - { name: http, containerPort: 8000 }
+          # Startup: up to 60 s to open the pool and sync built-in skills.
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 2
+            failureThreshold: 30
+          # Liveness never checks dependencies: a Postgres blip must not restart every pod.
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Readiness: Postgres and Redis reachable, not draining (R10.5, R10.7).
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 3
+            timeoutSeconds: 3
+            failureThreshold: 2
+          lifecycle:
+            preStop:
+              exec: { command: ["sleep", "{{ .Values.api.preStopSleepSeconds }}"] }
+          resources: {{- toYaml .Values.api.resources | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nuria.fullname" . }}-api
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "nuria.selector" $sel | nindent 4 }}
+  ports:
+    - { name: http, port: 8000, targetPort: http }
+---
+# Headless: one DNS record per ready API pod. The UI's nginx resolves it every 2 s
+# and retries the next pod when one is gone, as it does in Compose (AC20).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nuria.fullname" . }}-api-pods
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector: {{- include "nuria.selector" $sel | nindent 4 }}
+  ports:
+    - { name: http, port: 8000, targetPort: http }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "nuria.fullname" . }}-api
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.api.pdb.minAvailable }}
+  selector:
+    matchLabels: {{- include "nuria.selector" $sel | nindent 6 }}
+{{- if .Values.api.hpa.enabled }}
+---
+# The API is CPU-bound (JSON, SSE fan-out): scale it on CPU (needs metrics-server).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "nuria.fullname" . }}-api
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: {{ include "nuria.fullname" . }}-api }
+  minReplicas: {{ .Values.api.hpa.minReplicas }}
+  maxReplicas: {{ .Values.api.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: {{ .Values.api.hpa.cpuUtilization }} }
+{{- end }}

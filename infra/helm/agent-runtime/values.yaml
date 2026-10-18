@@ -1,0 +1,121 @@
+# Nuria on Kubernetes: defaults for any cluster. Local overrides: values-kind.yaml;
+# a starting point for a cloud: values-cloud.example.yaml. Every object is explained
+# in docs/kubernetes.md.
+
+image:
+  runtime: { repository: ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/runtime, tag: latest }
+  ui: { repository: ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/ui, tag: latest }
+  pullPolicy: IfNotPresent
+
+# Secrets are never in values (R10.4): this Secret must exist in the namespace, with
+# POSTGRES_PASSWORD (the migrator), API_POSTGRES_PASSWORD, WORKER_POSTGRES_PASSWORD,
+# NURIA_SECRET_KEY, and optionally OPENAI_API_KEY and GRAFANA_ADMIN_PASSWORD.
+# Locally, infra/kind/cluster.sh creates it from .env.
+secretName: nuria-secrets
+
+# Non-secret configuration (R9.1): a ConfigMap, read by every runtime pod through
+# envFrom. Its checksum is on the pods, so a change here rolls them.
+config:
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: agent_runtime
+  POSTGRES_USER: agent # the migrator; only the migrate Job connects as it
+  API_POSTGRES_USER: agent_api
+  WORKER_POSTGRES_USER: agent_worker
+  REDIS_URL: redis://redis:6379/0
+  MODEL_PROVIDER: scripted
+  LOG_FORMAT: json
+  LOG_LEVEL: INFO
+  # A model server outside the cluster, e.g. Ollama on the host: set OLLAMA_BASE_URL.
+
+# The schema migration (R10.6): `runtime db init` (Alembic + LangGraph's tables +
+# the per-component logins), a pre-install and pre-upgrade hook, so new code never
+# starts against an old schema. Migrations are expand/contract, so old pods keep
+# working while it runs.
+migrate:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  activeDeadlineSeconds: 300
+  resources:
+    requests: { cpu: 100m, memory: 192Mi }
+    limits: { memory: 384Mi }
+
+api:
+  replicas: 2
+  # R10.7: on SIGTERM the API fails /readyz, asks open streams to reconnect, and
+  # finishes within API_GRACE_S (25 s) < terminationGracePeriodSeconds.
+  terminationGracePeriodSeconds: 30
+  preStopSleepSeconds: 5 # the endpoint is removed everywhere before the pod stops
+  hpa: { enabled: true, minReplicas: 2, maxReplicas: 6, cpuUtilization: 70 }
+  pdb: { minAvailable: 1 }
+  resources:
+    requests: { cpu: 100m, memory: 192Mi }
+    limits: { memory: 512Mi }
+
+worker:
+  replicas: 2 # used when KEDA is off
+  concurrency: 4 # runs in flight per worker pod (the bulkhead)
+  # R10.7: a draining worker finishes its current steps and releases its runs within
+  # WORKER_GRACE_S (50 s) < terminationGracePeriodSeconds.
+  terminationGracePeriodSeconds: 60
+  pdb: { maxUnavailable: 1 }
+  # Workers wait on models, not the CPU: they scale on the work stream's backlog
+  # (messages not yet delivered to a worker), read by KEDA from the consumer group.
+  keda:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    lagCount: "4" # one more worker per this many waiting messages
+    scaleDownStabilizationSeconds: 120 # the backlog must stay low this long first
+  resources:
+    requests: { cpu: 100m, memory: 224Mi }
+    limits: { memory: 640Mi }
+
+ui:
+  replicas: 2
+  pdb: { minAvailable: 1 }
+  resources:
+    requests: { cpu: 20m, memory: 24Mi }
+    limits: { memory: 96Mi }
+
+ingress:
+  enabled: true
+  className: traefik
+  host: "" # "" = any host (local); set your domain in the cloud
+  annotations: {}
+  tls: []
+
+# Default deny, then only the flows Nuria needs (R10.10). The data stores accept
+# connections only from the API, the workers, the migrate Job (and KEDA for Redis).
+networkPolicy:
+  enabled: true
+  ingressNamespace: traefik # where the Ingress controller runs
+  kedaNamespace: keda
+
+# Tracing, metrics and the dashboard, inside the cluster (L4b; Compose: L4a).
+monitoring:
+  enabled: false
+  traceUiUrl: "" # the links Nuria shows (browser URLs)
+  dashboardUrl: ""
+  host: { grafana: "", jaeger: "" } # Ingress hosts, e.g. grafana.localhost
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.161.0@sha256:fd328de2552466ad78385e1b1289c3f2402b1c45f265b252aab1955b42845ac1
+    resources: { requests: { cpu: 20m, memory: 64Mi }, limits: { memory: 192Mi } }
+  jaeger:
+    image: jaegertracing/jaeger:2.21.0@sha256:3d0ac795ff98aa04d1be04311d2dac6c25b4bfc8322dc02e53bc5b170c5018c3
+    resources: { requests: { cpu: 20m, memory: 96Mi }, limits: { memory: 384Mi } }
+  prometheus:
+    image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+    retention: 2d
+    storage: 1Gi
+    resources: { requests: { cpu: 50m, memory: 160Mi }, limits: { memory: 512Mi } }
+  grafana:
+    image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
+    dashboardsConfigMap: nuria-dashboards # created from infra/observability (cluster.sh)
+    # Grafana 13 needs ~250 MiB while it migrates its database at start; at a 256 MiB
+    # limit it spun in garbage collection (6 cores, never ready). The CPU limit keeps a
+    # spin from starving the node's other pods.
+    resources: { requests: { cpu: 50m, memory: 192Mi }, limits: { cpu: "1", memory: 512Mi } }
+  kubeStateMetrics:
+    image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0@sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b
+    resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { memory: 96Mi } }

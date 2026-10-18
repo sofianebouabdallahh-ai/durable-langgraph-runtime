@@ -1,0 +1,11 @@
+# Non-secret configuration for every runtime pod (R10.4). Pods carry its checksum,
+# so changing it rolls them (a ConfigMap is only read at start).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nuria.fullname" . }}-config
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+data:
+  {{- range $k, $v := .Values.config }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}

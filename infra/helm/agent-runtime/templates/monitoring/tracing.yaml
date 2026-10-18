@@ -1,0 +1,118 @@
+{{- if .Values.monitoring.enabled }}
+{{- $name := include "nuria.fullname" . }}
+# Tracing (R7.1): the API and the workers send spans to the collector, which batches
+# them into Jaeger (traces kept in memory: a restart forgets them).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-otel-collector
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          http: { endpoint: 0.0.0.0:4318 }
+    processors:
+      memory_limiter: { check_interval: 1s, limit_mib: 150 }
+      batch: { timeout: 1s }
+    exporters:
+      otlp/jaeger:
+        endpoint: {{ $name }}-jaeger:4317
+        tls: { insecure: true }
+    extensions:
+      health_check: { endpoint: 0.0.0.0:13133 }
+    service:
+      extensions: [health_check]
+      pipelines:
+        traces: { receivers: [otlp], processors: [memory_limiter, batch], exporters: [otlp/jaeger] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-otel-collector
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {{- include "nuria.selector" (dict "root" . "name" "otel-collector") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nuria.selector" (dict "root" . "name" "otel-collector") | nindent 8 }}
+      annotations:
+        checksum/config: {{ .Values.monitoring.collector | toJson | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "nuria.podSecurity" . | nindent 8 }}
+        runAsUser: 10001
+      containers:
+        - name: collector
+          image: {{ .Values.monitoring.collector.image }}
+          args: ["--config=/etc/otelcol/config.yaml"]
+          securityContext: {{- include "nuria.containerSecurity" . | nindent 12 }}
+          ports:
+            - { name: otlp-http, containerPort: 4318 }
+          readinessProbe:
+            httpGet: { path: /, port: 13133 }
+          resources: {{- toYaml .Values.monitoring.collector.resources | nindent 12 }}
+          volumeMounts:
+            - { name: config, mountPath: /etc/otelcol }
+      volumes:
+        - name: config
+          configMap: { name: {{ $name }}-otel-collector }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-otel-collector
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "nuria.selector" (dict "root" . "name" "otel-collector") | nindent 4 }}
+  ports:
+    - { name: otlp-http, port: 4318 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-jaeger
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {{- include "nuria.selector" (dict "root" . "name" "jaeger") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "nuria.selector" (dict "root" . "name" "jaeger") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "nuria.podSecurity" . | nindent 8 }}
+        runAsUser: 10001
+      containers:
+        - name: jaeger
+          image: {{ .Values.monitoring.jaeger.image }}
+          securityContext: {{- include "nuria.containerSecurity" . | nindent 12 }}
+          ports:
+            - { name: ui, containerPort: 16686 }
+            - { name: otlp-grpc, containerPort: 4317 }
+          readinessProbe:
+            httpGet: { path: /, port: ui }
+          resources: {{- toYaml .Values.monitoring.jaeger.resources | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-jaeger
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "nuria.selector" (dict "root" . "name" "jaeger") | nindent 4 }}
+  ports:
+    - { name: ui, port: 16686 }
+    - { name: otlp-grpc, port: 4317 }
+{{- end }}

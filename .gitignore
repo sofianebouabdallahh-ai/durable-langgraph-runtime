@@ -39,3 +39,6 @@ kubeconfig*
 diagnostics-*.tar.gz
 diagnostics-*.zip
 backups/
+
+# Pinned Kubernetes tools (infra/kind/tools.sh)
+.tools/
