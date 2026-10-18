@@ -18,6 +18,35 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - CR-004 + ADR-0003 (accepted): agents defined as `backend/agents/*.agent.md` (name, max turns, prompt, tools, limits, hooks); hooks for session start/end, turn start/end and pre/post tool, built on LangChain middleware plus harness-owned session hooks.
 - CR-003 (accepted): harness guardrails. Run budgets with a soft→hard wrap-up, loop detection, ceilings that callers can only tighten, deny-by-default tool grants, least-privilege DB roles, untrusted-content handling, audit trail, kill switch.
 
+### L4b — Nuria on Kubernetes (kind)
+#### Added
+- **`./setup.sh --kubernetes`** (`setup.ps1 -Kubernetes`; needs Git Bash or WSL) runs Nuria on a local multi-node cluster ([guide](docs/kubernetes.md)):
+  - one control plane and two worker nodes;
+  - Traefik, metrics-server and KEDA, pinned;
+  - images built and loaded into the nodes;
+  - the Secret made from `.env`;
+  - two Helm releases, then a smoke chat turn.
+- **The tools are pinned:** kind, Helm and kubectl go into `.tools/` with verified checksums, and the cluster's credentials into `.tools/kubeconfig`. Nothing is installed system-wide, and `~/.kube/config` is left alone.
+- **Helm charts:**
+  - **`nuria-data`:** Postgres and Redis StatefulSets on the control-plane node, with `maxUnavailable: 0` PDBs.
+  - **`agent-runtime`:**
+    - the migrate Job as a pre-install and pre-upgrade hook;
+    - the UI, API and worker Deployments, with probes, preStop, grace periods, topology spread and resources;
+    - the API's HPA on CPU, and KEDA scaling workers on the work queue's backlog;
+    - PDBs, the Ingress, and a ConfigMap whose checksum rolls the pods;
+    - each component reads only its own database password;
+    - a ServiceAccount with no token, the restricted Pod Security Standard, and default-deny NetworkPolicies;
+    - in-cluster monitoring: collector, Jaeger, Prometheus (namespace-scoped), kube-state-metrics and Grafana.
+- **The "Nuria on Kubernetes" dashboard:** pods per component and node, restarts, KEDA and HPA replicas against the backlog.
+- **Demos with PASS/FAIL:** `make k8s-demo-podkill`, `-drain`, `-scale`, `-upgrade` and `-security`.
+- **A CI job on kind:** helm lint and kubeconform on both charts, the setup from clean, then the security, podkill and upgrade demos; diagnostics are uploaded on failure.
+- **`docs/kubernetes.md`:** every object (why it's there, what breaks without it) and the measured numbers.
+
+#### Changed
+- The UI's nginx config is a template: the resolver comes from `/etc/resolv.conf` and the API address from `API_UPSTREAM`, so the same image works in Compose and on Kubernetes.
+- Dashboards count only replicas scraped in the last 15 s; stale series lingered for up to 5 minutes after Prometheus moved.
+- `make help` lists targets with digits in their names (`k8s-*`).
+
 ### L4a — Watch it work: traces, metrics, dashboard
 #### Added
 - **`./setup.sh --observability`** (`setup.ps1 -Observability`; `--no-observability` to turn it off): the Compose profile `observability` adds:

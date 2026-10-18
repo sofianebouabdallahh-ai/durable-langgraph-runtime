@@ -41,6 +41,7 @@ The API and its interactive docs are behind the same address: http://localhost:3
 | `./setup.sh --model ollama` | Switch the model (`scripted`, `ollama`, `openai`, `foundry`, `compatible`) |
 | `./setup.sh --port 3100` | Put the app on another port |
 | `./setup.sh --observability` | Also traces, metrics and a dashboard: see [observability.md](observability.md) (`--no-observability`: off) |
+| `./setup.sh --kubernetes` | Run it on a local Kubernetes cluster instead: see [kubernetes.md](../kubernetes.md) |
 | `./setup.sh --stop` | Stop everything; your data is kept |
 | `./setup.sh --update` | Back up the database, get the latest version, migrate, restart |
 | `./setup.sh --doctor` | Make a diagnostics file (passwords and keys removed) to attach to a GitHub issue |
