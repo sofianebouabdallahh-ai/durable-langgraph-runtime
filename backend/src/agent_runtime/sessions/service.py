@@ -193,6 +193,8 @@ class SessionService:
         async with self._pool.connection() as conn:
             pinned = await self._agents.resolve(conn, session.graph_name,
                                                 draft_of=session.playground_of)  # fmt: skip
+            # Its models, bound now: a later change of the default can't move this turn.
+            bindings = await self._runs.models.bind(conn, pinned.definition)
         if script is None and self._settings.model_provider == "scripted":
             script, subagent_scripts = self._demo(pinned.definition, content)
         inp: dict[str, Any] = {"message": content}
@@ -221,7 +223,7 @@ class SessionService:
                         graph_name=prepared.graph_name, kind="turn", input=prepared.input,
                         options=prepared.options, limits=limits, session_id=session_id,
                         agent=(pinned.bundle_hash, pinned.definition.id, pinned.version),
-                        idempotency_key=idempotency_key,
+                        idempotency_key=idempotency_key, model_bindings=bindings,
                     )  # fmt: skip
                 except UniqueViolation:  # the same send, raced: the other attempt won
                     raise DuplicateSend from None

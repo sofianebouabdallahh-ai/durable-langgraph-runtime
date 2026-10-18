@@ -21,6 +21,8 @@ from agent_runtime.agents.resolver import AgentUnavailable
 from agent_runtime.agents.studio import PublishBlocked
 from agent_runtime.agents.studio_store import AgentNotFound, NameTaken
 from agent_runtime.graphs import UnknownGraph
+from agent_runtime.keys import MasterKeyMissing
+from agent_runtime.models.connections import ConnectionInvalid, ConnectionNotFound, ModelUnavailable
 from agent_runtime.runs.limits import LimitAboveCeiling
 from agent_runtime.runs.service import AdmissionPaused, Overloaded
 from agent_runtime.runs.store import NotWaitingForApproval, RunNotFound, RunTerminal
@@ -78,6 +80,23 @@ def install(app: FastAPI) -> None:
     @app.exception_handler(ImportRejected)
     async def _import_rejected(_: Request, exc: ImportRejected) -> JSONResponse:
         return problem(422, "import-rejected", "This file can't be imported", str(exc))
+
+    # ---------------------------------------------------------- models (L3b)
+    @app.exception_handler(ModelUnavailable)
+    async def _model_unavailable(_: Request, exc: ModelUnavailable) -> JSONResponse:
+        return problem(409, "model-unavailable", "This agent's model isn't available", str(exc))
+
+    @app.exception_handler(ConnectionNotFound)
+    async def _connection_not_found(_: Request, exc: ConnectionNotFound) -> JSONResponse:
+        return problem(404, "connection-not-found", "Model connection not found", str(exc))
+
+    @app.exception_handler(ConnectionInvalid)
+    async def _connection_invalid(_: Request, exc: ConnectionInvalid) -> JSONResponse:
+        return problem(422, "connection-invalid", "This model connection can't be saved", str(exc))
+
+    @app.exception_handler(MasterKeyMissing)
+    async def _master_key_missing(_: Request, exc: MasterKeyMissing) -> JSONResponse:
+        return problem(503, "master-key-missing", "Keys can't be saved or opened", str(exc))
 
     @app.exception_handler(DuplicateSend)
     async def _duplicate_send(_: Request, exc: DuplicateSend) -> JSONResponse:

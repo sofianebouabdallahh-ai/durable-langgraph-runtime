@@ -36,7 +36,7 @@ from agent_runtime.agents.schema import AgentDefinition
 from agent_runtime.agents.store import snapshot_bundle
 from agent_runtime.agents.studio_store import AgentStore, NameTaken, StoredAgent, Version
 from agent_runtime.config import AgentSettings
-from agent_runtime.db import Pool
+from agent_runtime.db import Conn, Pool
 from agent_runtime.sessions.service import SessionService
 from agent_runtime.sessions.store import Session
 
@@ -103,12 +103,14 @@ class Draft:
     version: Version
     issues: list[PlainIssue]
     tested: bool
+    untested_models: list[str] = field(default_factory=list)  # connections not ready (R17.3)
 
     @property
     def blockers(self) -> list[str]:
         out: list[str] = []
         if self.issues:
             out.append("Fix the highlighted fields")
+        out += [f"Test the model “{m}” (Settings → Models)" for m in self.untested_models]
         if not self.tested:
             out.append("Try it in the test chat (one complete reply)")
         return out
@@ -215,10 +217,11 @@ class StudioService:
             draft = None
             if draft_version is not None:
                 issues = self._check(draft_version.document, draft_version.number)[1]
+                model_issues, untested = await self._models_of(conn, draft_version.document)
                 tested = bool(draft_version.bundle_hash) and await store.tested(
                     agent_id, str(draft_version.bundle_hash)
                 )
-                draft = Draft(draft_version, issues, tested)
+                draft = Draft(draft_version, issues + model_issues, tested, untested)
         return AgentState(agent, draft, published, versions)
 
     async def save_draft(self, agent_id: uuid.UUID, document: AgentDocument) -> AgentState:
@@ -357,6 +360,33 @@ class StudioService:
         return await self.save_draft(agent.id, document)
 
     # --------------------------------------------------------------- checks
+
+    async def _models_of(
+        self, conn: Conn, raw: dict[str, Any]
+    ) -> tuple[list[PlainIssue], list[str]]:
+        """The models a document names: an issue for a connection that doesn't exist,
+        and the connections that haven't passed their test (publishing waits, R17.3)."""
+        from agent_runtime.models.connections import ConnectionStore
+
+        places = [("agent", raw.get("model", "chat"))]
+        places += [
+            (f"helpers.{h.get('name')}", h.get("model", "chat")) for h in raw.get("helpers") or []
+        ]
+        store = ConnectionStore(conn)
+        issues: list[PlainIssue] = []
+        untested: list[str] = []
+        for where, model in places:
+            if not isinstance(model, str) or ":" not in model:
+                continue  # a role: the default model
+            name = model.split(":", 1)[0]
+            connection = await store.by_name(name)
+            if connection is None:
+                message = (f"There's no model connection called “{name}”: add it in "
+                           "Settings → Models, or pick another")  # fmt: skip
+                issues.append(PlainIssue(where, "model", message))
+            elif connection.test_status != "ready" and connection.display_name not in untested:
+                untested.append(connection.display_name)
+        return issues, untested
 
     def _check(self, raw: dict[str, Any], version: int) -> tuple[Any, list[PlainIssue]]:
         try:

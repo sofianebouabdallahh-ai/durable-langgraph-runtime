@@ -54,7 +54,8 @@ from agent_runtime.db import Conn, Pool
 from agent_runtime.fencing import Fence, FencedError, check_fence
 from agent_runtime.graphs import GraphRegistry, GraphSpec
 from agent_runtime.graphs.assistant import AgentInput, granted_tools, subagent_graph
-from agent_runtime.models.provider import configured_provider
+from agent_runtime.models.connections import ModelRouter
+from agent_runtime.models.provider import ModelProvider, configured_provider
 from agent_runtime.models.retry import CircuitOpen, ModelCaller, breaker_for
 from agent_runtime.models.scripted import ScriptTurn
 from agent_runtime.runs.events import EventType
@@ -93,6 +94,7 @@ from agent_runtime.tools.hooks import (
     Summary,
     TurnEndInput,
     default_hooks,
+    redact,
     run_observers,
 )
 from agent_runtime.tools.invocations import BudgetExceeded, LoopDetected
@@ -253,6 +255,10 @@ class RunExecutor:
         self._tools = tools or default_tools()
         # Agents are built from the snapshot each run pinned (R15.4), not looked up by name.
         self._agents = agents or AgentResolver(pool, graphs, self._tools)
+        # Which connection and model each model string of the run uses (phase L3b).
+        self._models = ModelRouter(pool, settings)
+        self._model_providers: dict[str, ModelProvider] = {}
+        self._breaker_name: str | None = None
         self._hooks = hooks or default_hooks()
         self._policy = policy or RiskClassPolicy()
         self._enqueue = enqueue  # send a run that became queued (children, fanned-in parent)
@@ -331,8 +337,12 @@ class RunExecutor:
             )
             spec = await self._spec_of(run)
             spec.input_model.model_validate(run.input)
+            # The run's models, as bound when it was created; keys opened in memory.
+            self._model_providers = await self._models.providers(run.model_bindings or {})
+            if spec.agent is not None and spec.agent.frontmatter.model in self._model_providers:
+                self._breaker_name = self._model_providers[spec.agent.frontmatter.model].name
         except Exception as exc:
-            return await self._fail(fence, FailureReason.ERROR, None, detail=repr(exc))
+            return await self._fail(fence, FailureReason.ERROR, None, detail=redact(repr(exc)))
         outbox = Outbox(run.id, fence, committed_steps=run.steps, bus=self._bus)
         self._test_chat = False
         if run.session_id is not None:
@@ -578,8 +588,9 @@ class RunExecutor:
     def _chat_model(
         self, role: str, temperature: float, script: list[ScriptTurn]
     ) -> Callable[[int], BaseChatModel]:
-        """The configured provider's model for this agent's role (R3.1)."""
-        provider = configured_provider(self._settings)
+        """The model bound to this model string for the run (its connection), or the
+        setup's provider (R3.1, L3b)."""
+        provider = self._model_providers.get(role) or configured_provider(self._settings)
 
         def model(offset: int) -> BaseChatModel:
             return provider.chat(role, temperature=temperature, script=script, offset=offset)
@@ -591,7 +602,8 @@ class RunExecutor:
         return ModelCaller(
             attempts=s.model_retry_attempts, base_s=s.model_retry_base_s,
             cap_s=s.model_retry_cap_s,
-            breaker=breaker_for(configured_provider(s).name, failures=s.breaker_failures,
+            breaker=breaker_for(self._breaker_name or configured_provider(s).name,
+                                failures=s.breaker_failures,
                                 window_s=s.breaker_window_s, open_s=s.breaker_open_s),
         )  # fmt: skip
 
