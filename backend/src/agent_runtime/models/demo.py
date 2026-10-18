@@ -177,7 +177,18 @@ RULES: tuple[Rule, ...] = (
 
 def demo_script(text: str, agent: AgentDefinition | None) -> tuple[Script, SubScripts]:
     """The script for one turn: the first rule that matches and that `agent` can run,
-    else a short help text."""
+    else a short help text. An agent with skills first loads its first one, so the demo
+    shows skills at work too."""
+    script, subs = _rule_script(text, agent)
+    if agent is not None and agent.frontmatter.skills:
+        load = {
+            "tool_calls": [{"name": "load_skill", "args": {"name": agent.frontmatter.skills[0]}}]
+        }
+        script = [load, *script]
+    return script, subs
+
+
+def _rule_script(text: str, agent: AgentDefinition | None) -> tuple[Script, SubScripts]:
     available: set[str] = set()
     if agent is not None:
         available = {*granted_tools(agent), *(s.frontmatter.name for s in agent.subagents)}
