@@ -935,12 +935,28 @@ export interface components {
              */
             chat_model: string | null;
             /**
+             * Dashboard Url
+             * @description The Grafana dashboard
+             */
+            dashboard_url?: string | null;
+            /**
              * Demo Model
              * @description The offline demo model (MODEL_PROVIDER=scripted)
              */
             demo_model: boolean;
             /** Model Provider */
             model_provider: string;
+            /**
+             * Trace Ui Url
+             * @description Trace viewer: a run's trace is at {trace_ui_url}/trace/{trace_id}
+             */
+            trace_ui_url?: string | null;
+            /**
+             * Tracing
+             * @description Traces are exported (--observability)
+             * @default false
+             */
+            tracing: boolean;
             /** Version */
             version: string | null;
         };
@@ -1759,6 +1775,11 @@ export interface components {
              * @description Sub-agent invocations of this run (CR-005 R16.10)
              */
             subagents?: components["schemas"]["SubagentView"][];
+            /**
+             * Trace Id
+             * @description The OpenTelemetry trace this run belongs to (R7.1)
+             */
+            trace_id?: string | null;
         };
         /** SavedView */
         SavedView: {
