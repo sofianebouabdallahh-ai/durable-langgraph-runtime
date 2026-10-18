@@ -2642,6 +2642,49 @@
         "title": "SubagentView",
         "type": "object"
       },
+      "TelemetryUpdate": {
+        "properties": {
+          "sharing": {
+            "title": "Sharing",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sharing"
+        ],
+        "title": "TelemetryUpdate",
+        "type": "object"
+      },
+      "TelemetryView": {
+        "properties": {
+          "fields": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "What each count is: never content, names or keys",
+            "title": "Fields",
+            "type": "object"
+          },
+          "report": {
+            "additionalProperties": true,
+            "description": "Exactly what would be attached",
+            "title": "Report",
+            "type": "object"
+          },
+          "sharing": {
+            "description": "Usage counts are attached to feedback you send (off by default)",
+            "title": "Sharing",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sharing",
+          "fields",
+          "report"
+        ],
+        "title": "TelemetryView",
+        "type": "object"
+      },
       "TestRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3828,6 +3871,56 @@
         ]
       }
     },
+    "/runs/{run_id}/report": {
+      "get": {
+        "description": "README, the timeline (structural fields only unless `include_chat`), the agent's definition when it's one you made, and the chat only if `include_chat`. Nothing is uploaded anywhere: the person downloads it.",
+        "operationId": "run_report_runs__run_id__report_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_chat",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Chat",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/zip": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "A zip to attach to a bug report (phase L5)",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
     "/runs/{run_id}/result": {
       "get": {
         "operationId": "get_result_runs__run_id__result_get",
@@ -4303,6 +4396,45 @@
           }
         },
         "summary": "Cancel the active turn (R12.7)",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/sessions/{session_id}/export": {
+      "get": {
+        "operationId": "export_session_sessions__session_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/markdown": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "The chat as Markdown (to keep, or to attach to a report)",
         "tags": [
           "sessions"
         ]
@@ -5631,6 +5763,66 @@
         "summary": "Import an agent.md or a zipped folder (the file is the body)",
         "tags": [
           "studio"
+        ]
+      }
+    },
+    "/telemetry": {
+      "get": {
+        "operationId": "get_telemetry_telemetry_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelemetryView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Usage counts and the switch",
+        "tags": [
+          "telemetry"
+        ]
+      },
+      "put": {
+        "operationId": "set_telemetry_telemetry_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelemetryUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelemetryView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Turn sharing usage counts on or off",
+        "tags": [
+          "telemetry"
         ]
       }
     }

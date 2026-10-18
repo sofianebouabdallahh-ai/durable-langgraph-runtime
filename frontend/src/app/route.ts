@@ -5,7 +5,7 @@
  *   #/            home (start a chat)       #/s/<id>        a chat
  *   #/agents      the agents                #/agents/<name> one agent
  *   #/studio/<id> edit one of your agents (the Agent Studio)
- *   #/settings/models  your models and keys
+ *   #/settings/models  your models and keys    #/settings/privacy  usage counts (opt-in)
  *   #/skills      the skill library
  */
 import { useCallback, useSyncExternalStore } from "react";
@@ -17,6 +17,7 @@ export type Route =
   | { page: "agent"; name: string }
   | { page: "studio"; agentId: string }
   | { page: "models" }
+  | { page: "privacy" }
   | { page: "skills" };
 
 export function parse(hash: string): Route {
@@ -25,6 +26,7 @@ export function parse(hash: string): Route {
   if (kind === "agents") return id ? { page: "agent", name: decodeURIComponent(id) } : { page: "agents" };
   if (kind === "studio" && id) return { page: "studio", agentId: decodeURIComponent(id) };
   if (kind === "settings" && id === "models") return { page: "models" };
+  if (kind === "settings" && id === "privacy") return { page: "privacy" };
   if (kind === "skills") return { page: "skills" };
   return { page: "home" };
 }
@@ -43,6 +45,8 @@ export function href(route: Route): string {
       return `#/studio/${encodeURIComponent(route.agentId)}`;
     case "models":
       return "#/settings/models";
+    case "privacy":
+      return "#/settings/privacy";
     case "skills":
       return "#/skills";
   }

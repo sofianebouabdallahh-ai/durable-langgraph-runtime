@@ -1,9 +1,9 @@
 /** The chat for one session (R12.11): the container that wires data to the cards. */
 import { useQuery } from "@tanstack/react-query";
-import { Info, Loader2, WifiOff } from "lucide-react";
+import { Download, Info, Loader2, WifiOff } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
-import { api, ApiError, unwrap } from "../api/client";
+import { api, API_BASE, ApiError, unwrap } from "../api/client";
 import { sendMessage } from "../api/send";
 import type { ConnectionState } from "../stream/connection";
 import type { TurnStatus } from "../stream/events";
@@ -97,6 +97,15 @@ export function ChatView({
             {label}
           </span>
         )}
+        <a
+          href={`${API_BASE}/sessions/${encodeURIComponent(sessionId)}/export`}
+          download
+          className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-stone-600 hover:bg-stone-100 hover:text-stone-900 dark:text-stone-400 dark:hover:bg-stone-800 dark:hover:text-stone-100"
+          data-testid="download-chat"
+          title="Download this chat (Markdown)"
+        >
+          <Download aria-hidden className="size-3.5" /> Download
+        </a>
       </header>
       <ConnectionBanner state={connection} />
       <MessageList

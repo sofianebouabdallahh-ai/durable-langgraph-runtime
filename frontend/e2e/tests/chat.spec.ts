@@ -10,7 +10,7 @@ test("a question, a tool card, an answer", async ({ page, request }) => {
   await expect(page.getByTestId("assistant-message").last()).toContainText("84");
   await waitTurnOver(request, sid);
   await expectScreenMatchesTranscript(page, request, sid);
-  await expect(page.getByRole("button", { name: "Send" })).toBeVisible(); // composer free again
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible(); // composer free again
   // The chat is named after its first message.
   await expect(page.getByTestId("session-list")).toContainText("What is 12 * (3 + 4)?");
 });

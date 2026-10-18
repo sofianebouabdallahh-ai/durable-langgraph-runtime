@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ExternalLink } from "lucide-react";
 
 import { api, unwrap } from "../api/client";
+import { ReportReply } from "../feedback/ReportReply";
 import { useAbout } from "../sessions/ModelStatus";
 import { traceLink } from "./trace";
 import { Spinner } from "../ui/primitives";
@@ -59,6 +60,7 @@ export function WhatHappened({ runId, active }: { runId: string; active: boolean
             Open the trace <ExternalLink aria-hidden className="size-3" />
           </a>
         )}
+        {!active && <ReportReply runId={r.id} agent={r.graph} />}
         <span className="ml-auto font-mono" title={r.trace_id ? `trace ${r.trace_id}` : undefined}>
           run {r.id.slice(0, 8)}
           {r.trace_id && <span className="ml-2">trace {r.trace_id.slice(0, 8)}</span>}

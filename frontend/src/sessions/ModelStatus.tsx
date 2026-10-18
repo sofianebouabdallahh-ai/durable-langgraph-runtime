@@ -15,7 +15,7 @@ export function ModelStatus() {
   const custom = chosen.data?.connection ? `${chosen.data.connection.display_name} · ${chosen.data.model ?? ""}` : null;
   const demo = about.data.demo_model && !custom;
   return (
-    <div className="border-t border-stone-200 p-3 dark:border-stone-800">
+    <div className="px-3 pt-1 pb-3">
       <div
         className="flex items-center gap-2.5 rounded-xl px-2 py-1.5"
         data-testid="model-status"
@@ -46,6 +46,11 @@ export function ModelStatus() {
           </span>
           Dashboard
         </a>
+      )}
+      {about.data.version && (
+        <div className="mt-1 px-2 text-[11px] text-stone-600 dark:text-stone-400" data-testid="nuria-version">
+          Nuria {about.data.version}
+        </div>
       )}
     </div>
   );
