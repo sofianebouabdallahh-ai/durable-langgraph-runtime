@@ -239,3 +239,17 @@ jobs:
           name: k8s-diagnostics
           path: k8s-diagnostics
           retention-days: 7
+
+  upgrade:
+    name: update from the previous release keeps everything; restore brings it back
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the tags: the previous release is the newest v* (else phase-*) tag
+      - name: Install the previous release with data, ./setup.sh --update to this commit, then --restore
+        run: infra/ci/upgrade.sh

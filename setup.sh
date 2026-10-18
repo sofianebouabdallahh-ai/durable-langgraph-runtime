@@ -9,7 +9,9 @@
 #   ./setup.sh --chat               chat in this terminal
 #   ./setup.sh --observability      also traces (Jaeger), metrics and a Grafana dashboard
 #   ./setup.sh --kubernetes         on a local Kubernetes cluster (kind) instead of Compose
-#   ./setup.sh --stop | --update | --doctor | --reset | --help
+#   ./setup.sh --update [--to v0.2.0]   back up, then move to the newest (or that) release
+#   ./setup.sh --restore backups/….sql.gz   put a backup back (replaces today's data)
+#   ./setup.sh --stop | --doctor | --reset | --help
 #
 # Safe to run again: it never overwrites a secret or a setting you didn't ask to change.
 # Written for bash 3.2 (macOS's default) and Linux; Windows: setup.ps1.
@@ -26,12 +28,14 @@ else B=""; G=""; Y=""; R=""; N=""; fi
 say()  { printf '%s\n' "${B}==>${N} $*"; }
 ok()   { printf '%s\n' "  ${G}✓${N} $*"; }
 warn() { printf '%s\n' "  ${Y}!${N} $*"; }
-die()  { printf '%s\n' "  ${R}✗ $1${N}" >&2; [ $# -gt 1 ] && printf '    %s\n' "${@:2}" >&2; exit 1; }
+ROLLBACK=""  # set during an update: how to go back, printed with any failure
+die()  { printf '%s\n' "  ${R}✗ $1${N}" >&2; [ $# -gt 1 ] && printf '    %s\n' "${@:2}" >&2
+         [ -n "$ROLLBACK" ] && printf '    %s\n' "To go back to the version you had:" "$ROLLBACK" >&2; exit 1; }
 
-usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
 # ------------------------------------------------------------------ options
-ACTION=start; MODEL=""; INTERACTIVE=1; BUILD=0; OBSERVABILITY=""
+ACTION=start; MODEL=""; INTERACTIVE=1; BUILD=0; OBSERVABILITY=""; TO=""; RESTORE=""; PREVIOUS=""; BACKUP=""
 API_KEY="${SETUP_API_KEY:-}"; BASE_URL=""; MODEL_NAME=""; WANT_PORT=""; OPEN_BROWSER=1
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -47,6 +51,9 @@ while [ $# -gt 0 ]; do
     --reset) ACTION=reset ;;
     --doctor) ACTION=doctor ;;
     --update) ACTION=update ;;
+    --to) TO="${2:?--to needs a release, e.g. v0.2.0}"; shift ;;
+    --restore) ACTION=restore; RESTORE="${2:?--restore needs a backup file (backups/…)}"; shift ;;
+    --finish-update) ACTION=finish-update; PREVIOUS="${2:?}"; BACKUP="${3:-}"; shift 2 ;;  # internal
     --chat) ACTION=chat ;;
     --observability) OBSERVABILITY=on ;;
     --no-observability) OBSERVABILITY=off ;;
@@ -110,6 +117,30 @@ make_env() {
   done
   [ "$changed" -gt 0 ] && ok "generated $changed local secret(s) (only on this machine, in .env)"
   [ -n "$(env_get COMPOSE_PROFILES)" ] || env_set COMPOSE_PROFILES app
+  # The release this checkout is: Compose pulls exactly these images (L5).
+  [ "$(env_get NURIA_VERSION)" = "$(cat VERSION)" ] || env_set NURIA_VERSION "$(cat VERSION)"
+}
+
+has_data() {  # does the database hold Nuria's schema yet? (a fresh install doesn't)
+  [ "$(compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT to_regclass('"'"'public.runs'"'"') IS NOT NULL"' 2>/dev/null | tr -d '[:space:]')" = t ]
+}
+
+is_backup() {  # a gzipped pg_dump of Nuria's schema? (grep -c reads it all: no SIGPIPE
+               # under pipefail, which `grep -q` would cause by stopping at the first match)
+  [ "$(gzip -dc "$1" 2>/dev/null | grep -c 'CREATE TABLE public.runs ')" -ge 1 ]
+}
+
+backup_db() {  # a checked pg_dump to backups/; sets BACKUP. Fails if the dump is empty.
+  mkdir -p backups
+  compose up -d --wait postgres >/dev/null 2>&1 || return 1
+  if ! has_data; then BACKUP=""; ok "nothing to back up yet (a fresh install)"; return 0; fi
+  BACKUP="backups/nuria-$(cat VERSION)-$(date +%Y%m%d-%H%M%S).sql.gz"
+  if ! compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" --clean --if-exists "$POSTGRES_DB"' | gzip > "$BACKUP" \
+     || ! is_backup "$BACKUP"; then
+    rm -f "$BACKUP"; return 1
+  fi
+  chmod 600 "$BACKUP"  # it holds your conversations and (encrypted) keys
+  ok "database backed up to $BACKUP ($(du -h "$BACKUP" | cut -f1))"
 }
 
 pick_port() {  # pick_port SERVICE CONTAINER_PORT ENV_KEY DEFAULT [WANTED] → a host port, saved in .env
@@ -299,13 +330,54 @@ case "$ACTION" in
     ok "wrote $out.tar.gz (secrets redacted). Attach it to a GitHub issue."
     ;;
   update)
+    # Back up first, then move the code to the new release, then its images, migrate
+    # (expand/contract: an update never breaks data), restart and check (L5).
+    check_docker
+    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "--update needs the git checkout: it moves to the new release."
+    git diff --quiet && git diff --cached --quiet \
+      || die "this checkout has local changes; an update would mix them in." "Commit or stash them (git stash), then run --update again."
+    make_env
+    previous=$(cat VERSION)
+    say "Backing up the database first…"
+    backup_db || die "the backup failed, so nothing was changed." "Diagnostics: ./setup.sh --doctor"
+    say "Getting the new release…"
+    git fetch --tags --quiet 2>/dev/null || warn "couldn't reach GitHub; updating to what's already here"
+    if [ -n "$TO" ]; then
+      git -c advice.detachedHead=false checkout --quiet "$TO" 2>/dev/null || die "there's no release $TO." "Releases: git tag -l 'v*'"
+    elif git describe --exact-match --tags HEAD 2>/dev/null | grep -q '^v'; then
+      latest=$(git tag -l 'v*' --sort=-v:refname | head -1)
+      git -c advice.detachedHead=false checkout --quiet "$latest"
+    else
+      git pull --ff-only --quiet || warn "couldn't fast-forward this branch; staying on it"
+    fi
+    # The rest is the NEW version's job: its own setup.sh starts its own stack.
+    flags=(); [ "$INTERACTIVE" -eq 1 ] || flags+=(--non-interactive); [ "$BUILD" -eq 1 ] && flags+=(--build)
+    exec ./setup.sh ${flags[@]+"${flags[@]}"} --finish-update "$previous" "$BACKUP"
+    ;;
+  finish-update)
+    ROLLBACK="  ./setup.sh --update --to v$PREVIOUS${BACKUP:+   then: ./setup.sh --restore $BACKUP}"
     check_docker; make_env; choose_ports; configure_observability
-    if [ -d .git ] && git diff --quiet 2>/dev/null; then git pull --ff-only || warn "couldn't fast-forward; staying on this version"; fi
-    mkdir -p backups
-    backup="backups/agent_runtime-$(date +%Y%m%d-%H%M%S).sql.gz"
-    compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip > "$backup" \
-      && ok "database backed up to $backup" || warn "no backup taken (is the stack running?)"
-    start_stack; smoke; ok "updated"
+    now=$(cat VERSION)
+    [ "$now" = "$PREVIOUS" ] && ok "already at $now (restarting on it)" || ok "$PREVIOUS → $now"
+    start_stack; smoke
+    ROLLBACK=""
+    ok "updated to $now${BACKUP:+ (backup: $BACKUP)}"
+    ;;
+  restore)
+    check_docker; make_env
+    [ -f "$RESTORE" ] || die "no backup file $RESTORE." "Backups: ls backups/"
+    is_backup "$RESTORE" || die "$RESTORE isn't a Nuria backup (a gzipped pg_dump)."
+    if [ "$INTERACTIVE" -eq 1 ]; then
+      ask "This REPLACES today's conversations, agents and settings with the backup's. Type 'restore' to confirm" ""
+      [ "$REPLY" = restore ] || die "cancelled; nothing was changed."
+    fi
+    say "Restoring $RESTORE…"
+    compose stop api worker ui >/dev/null 2>&1 || true
+    compose up -d --wait postgres >/dev/null
+    gzip -dc "$RESTORE" | compose exec -T postgres sh -c 'psql -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null \
+      || die "the restore failed (above)." "Your backup file is unchanged; diagnostics: ./setup.sh --doctor"
+    ok "data restored"
+    start_stack; smoke; ok "restored from $RESTORE"
     ;;
   reset)
     check_docker
