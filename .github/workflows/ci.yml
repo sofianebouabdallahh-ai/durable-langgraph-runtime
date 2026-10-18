@@ -195,3 +195,47 @@ jobs:
           name: diagnostics
           path: diagnostics-*.tar.gz
           retention-days: 7
+
+  kubernetes:
+    name: kubernetes (kind) · chart · smoke · podkill · upgrade · security
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: The pinned tools (kind, helm, kubectl), checksums verified
+        run: infra/kind/tools.sh
+      - name: Lint and validate both charts (helm lint, kubeconform)
+        run: |
+          curl -fsSL -o /tmp/kc.tgz https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz
+          echo "9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883  /tmp/kc.tgz" | sha256sum -c -
+          tar -xzf /tmp/kc.tgz -C /tmp kubeconform
+          make k8s-lint
+          for values in values.yaml values-kind.yaml values-cloud.example.yaml; do
+            .tools/bin/helm template nuria infra/helm/agent-runtime -f infra/helm/agent-runtime/$values \
+              | /tmp/kubeconform -strict -summary -kubernetes-version 1.37.0 -ignore-missing-schemas
+          done
+          .tools/bin/helm template nuria-data infra/helm/nuria-data | /tmp/kubeconform -strict -summary -kubernetes-version 1.37.0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - name: First run on Kubernetes, as a tester does it (cluster, images, charts, smoke turn)
+        run: ./setup.sh --non-interactive --model scripted --kubernetes
+      - name: Demos (each prints PASS/FAIL)
+        working-directory: backend
+        run: uv run --locked python -m tests.e2e.k8s_e2e security && uv run --locked python -m tests.e2e.k8s_e2e podkill && uv run --locked python -m tests.e2e.k8s_e2e upgrade
+      - name: Diagnostics (events, pods, logs, describe)
+        if: failure()
+        run: |
+          mkdir -p k8s-diagnostics
+          K=".tools/bin/kubectl --kubeconfig .tools/kubeconfig --context kind-nuria"
+          $K get events -A --sort-by=.lastTimestamp > k8s-diagnostics/events.txt 2>&1 || true
+          $K get all,pdb,hpa,scaledobject,networkpolicy -A -o wide > k8s-diagnostics/objects.txt 2>&1 || true
+          $K -n nuria describe pods > k8s-diagnostics/describe-pods.txt 2>&1 || true
+          for p in $($K -n nuria get pods -o name); do $K -n nuria logs "$p" --all-containers --prefix --tail 500 >> k8s-diagnostics/logs.txt 2>&1 || true; done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: k8s-diagnostics
+          path: k8s-diagnostics
+          retention-days: 7

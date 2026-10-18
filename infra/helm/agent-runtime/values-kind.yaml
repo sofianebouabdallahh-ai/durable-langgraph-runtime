@@ -1,0 +1,16 @@
+# The local cluster (kind, R10.2): images built and `kind load`ed on this machine
+# (never pulled), tracing and the dashboard on, smaller requests for a laptop.
+image:
+  runtime: { repository: nuria/runtime, tag: dev }
+  ui: { repository: nuria/ui, tag: dev }
+  pullPolicy: Never
+
+config:
+  SCRIPTED_STREAMING: "true" # the offline demo model streams word by word
+  SCRIPTED_STREAM_DELAY_S: "0.03"
+
+monitoring:
+  enabled: true
+  traceUiUrl: http://jaeger.localhost:8090
+  dashboardUrl: http://grafana.localhost:8090/d/nuria
+  host: { grafana: grafana.localhost, jaeger: jaeger.localhost }

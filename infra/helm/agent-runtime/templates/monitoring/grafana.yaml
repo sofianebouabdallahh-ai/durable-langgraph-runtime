@@ -1,0 +1,83 @@
+{{- if .Values.monitoring.enabled }}
+{{- $name := include "nuria.fullname" . }}
+# Grafana: the same dashboards as Compose (infra/observability/grafana/dashboards*,
+# loaded into the ConfigMap `dashboardsConfigMap` by infra/kind/cluster.sh), with
+# anonymous viewers. Its admin password is GRAFANA_ADMIN_PASSWORD in the Secret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-grafana-provisioning
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - { name: Prometheus, uid: prometheus, type: prometheus, access: proxy,
+          url: "http://{{ $name }}-prometheus:9090", isDefault: true, jsonData: { timeInterval: 5s } }
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - { name: nuria, folder: Nuria, type: file, allowUiUpdates: false,
+          options: { path: /var/lib/grafana/dashboards } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-grafana
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {{- include "nuria.selector" (dict "root" . "name" "grafana") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "nuria.selector" (dict "root" . "name" "grafana") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "nuria.podSecurity" . | nindent 8 }}
+        runAsUser: 472
+        fsGroup: 472
+      containers:
+        - name: grafana
+          image: {{ .Values.monitoring.grafana.image }}
+          securityContext: {{- include "nuria.containerSecurity" . | nindent 12 }}
+          env:
+            - { name: GF_AUTH_ANONYMOUS_ENABLED, value: "true" }
+            - { name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Viewer }
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: GRAFANA_ADMIN_PASSWORD, optional: true } }
+            - { name: GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH, value: /var/lib/grafana/dashboards/nuria.json }
+            - { name: GF_ANALYTICS_REPORTING_ENABLED, value: "false" }
+            - { name: GF_ANALYTICS_CHECK_FOR_UPDATES, value: "false" }
+            - { name: GF_NEWS_NEWS_FEED_ENABLED, value: "false" }
+            - { name: GF_PATHS_DATA, value: /var/lib/grafana/data }
+          ports:
+            - { name: http, containerPort: 3000 }
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+          resources: {{- toYaml .Values.monitoring.grafana.resources | nindent 12 }}
+          volumeMounts:
+            - { name: provisioning, mountPath: /etc/grafana/provisioning/datasources/datasources.yaml, subPath: datasources.yaml }
+            - { name: provisioning, mountPath: /etc/grafana/provisioning/dashboards/dashboards.yaml, subPath: dashboards.yaml }
+            - { name: dashboards, mountPath: /var/lib/grafana/dashboards }
+            - { name: data, mountPath: /var/lib/grafana/data }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: provisioning
+          configMap: { name: {{ $name }}-grafana-provisioning }
+        - name: dashboards
+          configMap: { name: {{ .Values.monitoring.grafana.dashboardsConfigMap }}, optional: true }
+        - { name: data, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-grafana
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "nuria.selector" (dict "root" . "name" "grafana") | nindent 4 }}
+  ports:
+    - { name: http, port: 3000 }
+{{- end }}

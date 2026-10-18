@@ -1,0 +1,27 @@
+# Postgres (source of truth) and Redis (work stream, pub/sub; rebuildable from Postgres).
+# Credentials come from the Secret `secretName` (created from .env by
+# infra/kind/cluster.sh secrets; never in values, never committed).
+secretName: nuria-secrets
+
+# Where the data stores run. Locally, on the control plane: its volumes are local to
+# a node, so a drain of a worker node (the demo, an upgrade of the node) never takes
+# them down. Their PDBs (maxUnavailable: 0) make a drain of their own node wait.
+nodeSelector: { ingress-ready: "true" }
+tolerations:
+  - { key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule }
+
+postgres:
+  image: pgvector/pgvector:0.8.0-pg16@sha256:a132765ec351c65111b5b675928a3a0515a466a40f97277329db8b8209ad8bc9 # Postgres 16 + pgvector (R4.5), as in Compose
+  database: agent_runtime
+  user: agent # the migrator (schema owner); its password is POSTGRES_PASSWORD in the Secret
+  storage: 2Gi
+  resources:
+    requests: { cpu: 100m, memory: 192Mi }
+    limits: { memory: 512Mi }
+
+redis:
+  image: redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+  storage: 512Mi
+  resources:
+    requests: { cpu: 50m, memory: 32Mi }
+    limits: { memory: 128Mi }

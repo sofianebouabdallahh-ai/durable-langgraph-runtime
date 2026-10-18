@@ -1,0 +1,172 @@
+{{- if .Values.monitoring.enabled }}
+{{- $name := include "nuria.fullname" . }}
+# Metrics (R7.2): Prometheus finds every pod annotated prometheus.io/scrape in this
+# namespace (API replicas, worker pods: however many KEDA runs) and kube-state-metrics
+# (pod restarts, the autoscalers). Both read the Kubernetes API with a Role limited
+# to this namespace: nothing cluster-wide.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}-monitoring
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}-monitoring
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [pods, endpoints, services, configmaps, secrets, persistentvolumeclaims, replicationcontrollers, resourcequotas, limitranges, serviceaccounts]
+    verbs: [list, watch, get]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, replicasets, daemonsets]
+    verbs: [list, watch]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [list, watch]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [list, watch]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [list, watch]
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [list, watch]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses, networkpolicies]
+    verbs: [list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-monitoring
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ $name }}-monitoring }
+subjects:
+  - { kind: ServiceAccount, name: {{ $name }}-monitoring, namespace: {{ .Release.Namespace }} }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-prometheus
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+data:
+  prometheus.yml: |
+    global: { scrape_interval: 5s, evaluation_interval: 15s }
+    scrape_configs:
+      # job = the pod's component (api, worker), as in Compose: one dashboard for both.
+      - job_name: pods
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces: { names: [{{ .Release.Namespace }}] }
+        relabel_configs:
+          - { source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape], action: keep, regex: "true" }
+          - { source_labels: [__meta_kubernetes_pod_phase], action: keep, regex: Running }
+          - source_labels: [__meta_kubernetes_pod_ip, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            regex: (.+);(.+)
+            target_label: __address__
+            replacement: $1:$2
+          - { source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name], target_label: job }
+          - { source_labels: [__meta_kubernetes_pod_name], target_label: pod }
+          - { source_labels: [__meta_kubernetes_pod_node_name], target_label: node }
+      - job_name: kube-state-metrics
+        static_configs: [{ targets: ["{{ $name }}-kube-state-metrics:8080"] }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}-prometheus
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ $name }}-prometheus
+  replicas: 1
+  selector:
+    matchLabels: {{- include "nuria.selector" (dict "root" . "name" "prometheus") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "nuria.selector" (dict "root" . "name" "prometheus") | nindent 8 }}
+      annotations:
+        checksum/config: {{ printf "%s" .Release.Namespace | sha256sum }}
+    spec:
+      serviceAccountName: {{ $name }}-monitoring # its token: the pod list (Role above)
+      securityContext:
+        {{- include "nuria.podSecurity" . | nindent 8 }}
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+        - name: prometheus
+          image: {{ .Values.monitoring.prometheus.image }}
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time={{ .Values.monitoring.prometheus.retention }}
+          securityContext: {{- include "nuria.containerSecurity" . | nindent 12 }}
+          ports:
+            - { name: http, containerPort: 9090 }
+          readinessProbe:
+            httpGet: { path: /-/ready, port: http }
+          resources: {{- toYaml .Values.monitoring.prometheus.resources | nindent 12 }}
+          volumeMounts:
+            - { name: config, mountPath: /etc/prometheus }
+            - { name: data, mountPath: /prometheus }
+      volumes:
+        - name: config
+          configMap: { name: {{ $name }}-prometheus }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: {{ .Values.monitoring.prometheus.storage }} } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-prometheus
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "nuria.selector" (dict "root" . "name" "prometheus") | nindent 4 }}
+  ports:
+    - { name: http, port: 9090 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-kube-state-metrics
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {{- include "nuria.selector" (dict "root" . "name" "kube-state-metrics") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "nuria.selector" (dict "root" . "name" "kube-state-metrics") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $name }}-monitoring
+      securityContext:
+        {{- include "nuria.podSecurity" . | nindent 8 }}
+        runAsUser: 65534
+      containers:
+        - name: kube-state-metrics
+          image: {{ .Values.monitoring.kubeStateMetrics.image }}
+          args:
+            - --namespaces={{ .Release.Namespace }}
+            - --resources=pods,deployments,statefulsets,horizontalpodautoscalers,jobs,poddisruptionbudgets
+          securityContext: {{- include "nuria.containerSecurity" . | nindent 12 }}
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8081 }
+          resources: {{- toYaml .Values.monitoring.kubeStateMetrics.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-kube-state-metrics
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "nuria.selector" (dict "root" . "name" "kube-state-metrics") | nindent 4 }}
+  ports:
+    - { name: http, port: 8080 }
+{{- end }}

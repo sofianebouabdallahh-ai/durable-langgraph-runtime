@@ -1,4 +1,8 @@
-# The UI and the API behind one origin.
+# The UI and the API behind one origin. A template: at start, nginx's entrypoint fills
+# in ${NGINX_LOCAL_RESOLVERS} (the nameservers of /etc/resolv.conf: Docker's embedded
+# DNS in Compose, the cluster DNS in Kubernetes) and ${API_UPSTREAM} (`api:8000` in
+# Compose; in Kubernetes the API's headless Service, by its full name: nginx's
+# resolver doesn't apply search domains).
 #
 # The API runs as several replicas (`api` resolves to each). nginx re-resolves the
 # name every 2 s (`resolve`, nginx >= 1.27.3), so it follows replicas that restart
@@ -10,7 +14,7 @@
 # every request tries the addresses in turn until one answers; a dead one costs at
 # most the 1 s connect timeout, and only until the next re-resolve drops it.
 
-resolver 127.0.0.11 valid=2s ipv6=off;  # Docker's embedded DNS: local, cheap to ask
+resolver ${NGINX_LOCAL_RESOLVERS} valid=2s ipv6=off;  # local, cheap to ask
 
 # Which replica answered, and how (diagnostics: ./setup.sh --doctor collects it).
 log_format upstreams '$remote_addr [$time_local] "$request" $status $body_bytes_sent '
@@ -19,7 +23,7 @@ log_format upstreams '$remote_addr [$time_local] "$request" $status $body_bytes_
 
 upstream api {
     zone api 64k;
-    server api:8000 resolve max_fails=0;
+    server ${API_UPSTREAM} resolve max_fails=0;
     keepalive 16;
 }
 

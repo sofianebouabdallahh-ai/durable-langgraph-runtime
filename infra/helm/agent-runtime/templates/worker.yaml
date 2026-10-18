@@ -1,0 +1,113 @@
+{{- $sel := dict "root" . "name" "worker" }}
+# The workers (R10.3): one process per pod; its pod name is its lease owner (R2.2).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nuria.fullname" . }}-worker
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.worker.keda.enabled }}
+  replicas: {{ .Values.worker.replicas }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "nuria.selector" $sel | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 1, maxSurge: 1 }
+  template:
+    metadata:
+      labels:
+        {{- include "nuria.selector" $sel | nindent 8 }}
+        {{- include "nuria.podLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+    spec:
+      serviceAccountName: {{ include "nuria.fullname" . }}
+      automountServiceAccountToken: false
+      securityContext: {{- include "nuria.podSecurity" . | nindent 8 }}
+      # SIGTERM → finish the current step, release the run to another worker (R10.7).
+      terminationGracePeriodSeconds: {{ .Values.worker.terminationGracePeriodSeconds }}
+      {{- include "nuria.spread" $sel | nindent 6 }}
+      containers:
+        - name: worker
+          image: {{ include "nuria.runtimeImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["worker", "--workers", "1", "--concurrency", "{{ .Values.worker.concurrency }}"]
+          securityContext: {{- include "nuria.containerSecurity" . | nindent 12 }}
+          envFrom:
+            - configMapRef: { name: {{ include "nuria.fullname" . }}-config }
+          env:
+            - { name: POSTGRES_USER, value: {{ .Values.config.WORKER_POSTGRES_USER | quote }} }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: WORKER_POSTGRES_PASSWORD } }
+            - name: WORKER_POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: WORKER_POSTGRES_PASSWORD } }
+            - name: NURIA_SECRET_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: NURIA_SECRET_KEY } }
+            - name: OPENAI_API_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: OPENAI_API_KEY, optional: true } }
+            {{- include "nuria.downwardEnv" . | nindent 12 }}
+            - name: WORKER_ID # the lease owner: the pod's name (R2.2)
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - { name: WORKER_HEALTH_PORT, value: "8081" }
+            {{- include "nuria.monitoringEnv" . | nindent 12 }}
+          ports:
+            - { name: health, containerPort: 8081 }
+          # Liveness (R10.5): the read loop ticked within WORKER_LIVENESS_S (30 s).
+          # A wedged loop is restarted; its runs are reclaimed by the others.
+          livenessProbe:
+            httpGet: { path: /healthz, port: health }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Readiness: up and not draining. Nothing routes to a worker; it tells
+          # rollouts and `kubectl get` the truth.
+          readinessProbe:
+            httpGet: { path: /readyz, port: health }
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources: {{- toYaml .Values.worker.resources | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "nuria.fullname" . }}-worker
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.worker.pdb.maxUnavailable }}
+  selector:
+    matchLabels: {{- include "nuria.selector" $sel | nindent 6 }}
+{{- if .Values.worker.keda.enabled }}
+---
+# Workers scale on the work stream's backlog (R10.8): messages the consumer group
+# hasn't delivered yet. CPU would mislead: a worker waiting on a model is idle.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "nuria.fullname" . }}-worker
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef: { name: {{ include "nuria.fullname" . }}-worker }
+  minReplicaCount: {{ .Values.worker.keda.minReplicas }}
+  maxReplicaCount: {{ .Values.worker.keda.maxReplicas }}
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown: # one pod at a time: each drains and hands its runs off
+          stabilizationWindowSeconds: {{ .Values.worker.keda.scaleDownStabilizationSeconds }}
+          policies: [{ type: Pods, value: 1, periodSeconds: 30 }]
+  triggers:
+    - type: redis-streams
+      metadata:
+        address: redis.{{ .Release.Namespace }}.svc.cluster.local:6379
+        stream: runs:work
+        consumerGroup: workers
+        lagCount: {{ .Values.worker.keda.lagCount | quote }}
+{{- end }}

@@ -36,10 +36,10 @@ UI_RUN = $(DOCKER) run --rm -v $(CURDIR)/frontend:/app -v agent-runtime-ui-node-
 	-e npm_config_store_dir=/pnpm/store -w /app $(1) $(UI_NODE_IMAGE) sh -c 'corepack enable && $(2)'
 
 .DEFAULT_GOAL := help
-.PHONY: help env hooks up down nuke ps logs setup image app-stop doctor demo-compose llm-up llm-down migrate migration api worker run-toy demo-crash demo-zombie demo-release demo-replicas demo-tools demo-approval demo-fanout demo-subagents demo-chat demo-chat-crash demo-chat-live chat demo-e2e ui-install ui-check ui-dev ui-api ui-pnpm ui-e2e lint fmt typecheck agents-validate test test-unit test-integration test-live coverage check
+.PHONY: k8s-up k8s-build k8s-load k8s-secrets k8s-deploy k8s-all k8s-status k8s-down k8s-demo-podkill k8s-demo-drain k8s-demo-scale k8s-demo-upgrade k8s-demo-security k8s-lint help env hooks up down nuke ps logs setup image app-stop doctor demo-compose llm-up llm-down migrate migration api worker run-toy demo-crash demo-zombie demo-release demo-replicas demo-tools demo-approval demo-fanout demo-subagents demo-chat demo-chat-crash demo-chat-live chat demo-e2e ui-install ui-check ui-dev ui-api ui-pnpm ui-e2e lint fmt typecheck agents-validate test test-unit test-integration test-live coverage check
 
 help: ## List targets
-	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 ui-install: ## Install the UI's locked dependencies (in a Node container)
 	$(call UI_RUN,,pnpm install --frozen-lockfile)
@@ -195,6 +195,43 @@ typecheck: ## mypy --strict
 
 agents-validate: ## Validate every agent definition in backend/agents (no services needed)
 	$(BACKEND) runtime agents validate
+
+# ------------------------------------------------------- local Kubernetes (kind, L4b)
+# The cluster, the images, the Secret, the charts: infra/kind/cluster.sh (tools pinned
+# in infra/kind/tools.sh, kept in .tools/). Nuria at http://localhost:$(or $(K8S_PORT),8090).
+K8S := infra/kind/cluster.sh
+K8S_E2E := cd backend && uv run --frozen python -m tests.e2e.k8s_e2e
+
+k8s-up: env ## Kubernetes: the kind cluster and its add-ons (Traefik, metrics-server, KEDA)
+	$(K8S) up
+k8s-build: ## Kubernetes: build the images (TAG=dev)
+	$(K8S) build
+k8s-load: ## Kubernetes: load the images into the cluster's nodes
+	$(K8S) load
+k8s-secrets: env ## Kubernetes: the Secret, from .env (secret keys only)
+	$(K8S) secrets
+k8s-deploy: env ## Kubernetes: Postgres + Redis, then Nuria (Helm)
+	$(K8S) deploy
+k8s-all: env ## Kubernetes: everything above, then a smoke chat turn
+	$(K8S) all
+k8s-status: ## Kubernetes: nodes, pods, autoscalers
+	$(K8S) status
+k8s-down: ## Kubernetes: delete the cluster and everything in it
+	$(K8S) down
+k8s-demo-podkill: ## Kubernetes demo: force-delete the worker pod mid-turn (PASS/FAIL)
+	$(K8S_E2E) podkill
+k8s-demo-drain: ## Kubernetes demo: drain the node of the busy worker (PASS/FAIL)
+	$(K8S_E2E) drain
+k8s-demo-scale: ## Kubernetes demo: a backlog; KEDA scales workers out and back (PASS/FAIL)
+	$(K8S_E2E) scale
+k8s-demo-upgrade: ## Kubernetes demo: helm upgrade mid-turn, then rollback (PASS/FAIL)
+	$(K8S_E2E) upgrade
+k8s-demo-security: ## Kubernetes demo: restricted pods; Postgres closed to others (PASS/FAIL)
+	$(K8S_E2E) security
+k8s-lint: ## Kubernetes: helm lint and render both charts (kubeconform in CI)
+	.tools/bin/helm lint infra/helm/nuria-data
+	.tools/bin/helm lint infra/helm/agent-runtime -f infra/helm/agent-runtime/values-kind.yaml
+	.tools/bin/helm template nuria infra/helm/agent-runtime -f infra/helm/agent-runtime/values-kind.yaml >/dev/null
 
 # -------------------------------------------------------------- backend: tests
 test-unit: ## Unit tests (no services, no .env: proves they need neither)

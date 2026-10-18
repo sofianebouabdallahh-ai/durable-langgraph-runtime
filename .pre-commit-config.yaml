@@ -19,6 +19,9 @@ repos:
       - id: check-merge-conflict
       - id: check-yaml
         args: ["--allow-multiple-documents"] # Kubernetes manifests (phase 12)
+        # Helm templates are Go templates, not YAML: `make k8s-lint` (helm lint) and
+        # kubeconform in CI validate what they render.
+        exclude: ^infra/helm/[^/]+/templates/
       - id: check-toml
       - id: end-of-file-fixer
       - id: trailing-whitespace

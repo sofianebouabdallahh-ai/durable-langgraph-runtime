@@ -1,0 +1,45 @@
+{{- if .Values.ingress.enabled }}
+# The one way in (R10.3): everything goes to the UI, which serves the app and
+# proxies /api (unbuffered: streams pass straight through). Traefik keeps a stream
+# open as long as the client does; the UI's nginx allows 1 h (`proxy_read_timeout`).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "nuria.fullname" . }}
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- with .Values.ingress.tls }}
+  tls: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - {{- with .Values.ingress.host }}
+      host: {{ . }}
+      {{- end }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: {{ include "nuria.fullname" . }}-ui, port: { name: http } } }
+    {{- if .Values.monitoring.enabled }}
+    {{- with .Values.monitoring.host.grafana }}
+    - host: {{ . }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: {{ include "nuria.fullname" $ }}-grafana, port: { number: 3000 } } }
+    {{- end }}
+    {{- with .Values.monitoring.host.jaeger }}
+    - host: {{ . }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: {{ include "nuria.fullname" $ }}-jaeger, port: { number: 16686 } } }
+    {{- end }}
+    {{- end }}
+{{- end }}

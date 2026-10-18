@@ -1,0 +1,25 @@
+# A starting point for a managed cluster (the hosted beta deploys in P16). Copy it,
+# fill it in, and keep secrets in the Secret, never here.
+image:
+  runtime: { repository: ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/runtime, tag: "v0.1.0" }
+  ui: { repository: ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/ui, tag: "v0.1.0" }
+  pullPolicy: IfNotPresent
+
+config:
+  POSTGRES_HOST: my-server.postgres.database.azure.com # managed Postgres (not nuria-data)
+  REDIS_URL: rediss://my-cache.redis.cache.windows.net:6380/0
+  MODEL_PROVIDER: openai
+
+ingress:
+  className: nginx # or your controller
+  host: nuria.example.com
+  tls: [{ hosts: [nuria.example.com], secretName: nuria-tls }] # e.g. from cert-manager
+
+networkPolicy:
+  ingressNamespace: ingress-nginx
+
+api:
+  hpa: { enabled: true, minReplicas: 3, maxReplicas: 10, cpuUtilization: 70 }
+
+worker:
+  keda: { enabled: true, minReplicas: 2, maxReplicas: 20, lagCount: "4", scaleDownStabilizationSeconds: 300 }

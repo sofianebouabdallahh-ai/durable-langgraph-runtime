@@ -21,9 +21,15 @@ FROM ${NGINX_IMAGE}
 USER root
 RUN apk upgrade --no-cache
 USER 101
-# Runs as nginx (UID 101); listens on 8080; temp files and the pid in /tmp (a tmpfs
-# in Compose), so the root filesystem can be read-only.
-COPY nginx/default.conf /etc/nginx/conf.d/default.conf
+# Runs as nginx (UID 101); listens on 8080; temp files, the pid and the rendered
+# config in /tmp (a tmpfs in Compose, an emptyDir in Kubernetes), so the root
+# filesystem can be read-only. The config is a template (resolver, API address).
+ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1 \
+    NGINX_ENVSUBST_OUTPUT_DIR=/tmp \
+    NGINX_ENVSUBST_FILTER="^(NGINX_LOCAL_RESOLVERS|API_UPSTREAM)$" \
+    API_UPSTREAM=api:8000
+COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
+COPY nginx/include-rendered.conf /etc/nginx/conf.d/default.conf
 COPY nginx/security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY nginx/api-proxy.conf /etc/nginx/snippets/api-proxy.conf
 COPY --from=build /app/dist /usr/share/nginx/html
