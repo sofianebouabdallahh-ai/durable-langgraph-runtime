@@ -1,5 +1,7 @@
 # Phase L3c plan — Agent Studio: skills & "describe your agent"
 
+> **Status: delivered** (M2 waits for the tester sessions, SC2). Results: [progress/phase-L3c.md](../progress/phase-L3c.md). The plan's separate `skill_lock` lookup became part of the bundle binding (`skills/binding.py`).
+
 **Goal:** in Nuria, a person:
 - **describes** the assistant they want and gets a filled-in form to edit;
 - **improves** their instructions with one button;
