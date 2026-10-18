@@ -76,18 +76,19 @@ export function ToolCard({
 
 export function HelperCards({ helpers }: { helpers: Helper[] }) {
   const working = helpers.filter((h) => h.status === "running").length;
+  const count = (n: number) => `${String(n)} helper${n === 1 ? "" : "s"}`;
   return (
-    <div aria-label="Helpers">
+    <div aria-label="Helpers" className="@container">
       <div className="mb-2 flex items-center gap-2 text-xs font-medium text-stone-500">
         <Users aria-hidden className="size-3.5" />
-        {working > 0 ? `${String(working)} helper${working === 1 ? "" : "s"} working in parallel` : `${String(helpers.length)} helpers finished`}
+        {working > 0 ? `${count(working)} working${working > 1 ? " in parallel" : ""}` : `${count(helpers.length)} finished`}
       </div>
-      <div className="grid gap-2.5 sm:grid-cols-2">
+      <div className="grid gap-2.5 @lg:grid-cols-2">
         {helpers.map((h) => (
           <div key={h.handle} className="rounded-xl border border-stone-200 bg-white p-3.5 text-sm shadow-soft dark:border-stone-800 dark:bg-stone-900" data-testid="helper-card">
             <div className="flex items-center gap-2.5">
-              <Avatar name={h.agent} size="sm" />
-              <span className="font-medium">Helper: {h.agent}</span>
+              <Avatar name={agentLabel(h.agent)} size="sm" />
+              <span className="font-medium">Helper: {agentLabel(h.agent)}</span>
               <span className="ml-auto">
                 <Pill tone={h.status === "running" ? "sun" : h.status === "completed" ? "green" : "rose"}>{helperStatusLabel(h.status)}</Pill>
               </span>

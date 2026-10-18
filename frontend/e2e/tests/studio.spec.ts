@@ -60,7 +60,7 @@ test("build an agent with a helper, test it, publish it, chat with it", async ({
   const chat = page.getByTestId("test-chat");
   await chat.getByRole("textbox", { name: "Message" }).fill("Plan a weekend in Lisbon");
   await chat.getByRole("textbox", { name: "Message" }).press("Enter");
-  await expect(chat.getByTestId("helper-card")).toContainText("place-finder", { timeout: 30_000 });
+  await expect(chat.getByTestId("helper-card")).toContainText("Helper: Place finder", { timeout: 30_000 });
   await expect(chat.getByTestId("assistant-message").last()).toContainText("Place finder", { timeout: 30_000 });
   await expect(chat.getByText("Tested", { exact: true })).toBeVisible({ timeout: 15_000 });
 

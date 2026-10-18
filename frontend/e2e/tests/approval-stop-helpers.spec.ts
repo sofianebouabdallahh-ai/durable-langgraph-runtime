@@ -49,8 +49,8 @@ test("two helpers work in parallel, with live progress, then the combined answer
   const sid = await startChat(page, "Research Redis Streams and compute 12 * 4");
   const cards = page.getByTestId("helper-card");
   await expect(cards).toHaveCount(2);
-  await expect(page.getByText("Helper: researcher")).toBeVisible();
-  await expect(page.getByText("Helper: data-analyst")).toBeVisible();
+  await expect(page.getByText("Helper: Researcher")).toBeVisible();
+  await expect(page.getByText("Helper: Data analyst")).toBeVisible();
   await expect(page.getByTestId("assistant-message").last()).toContainText("48");
   await expect(cards.filter({ hasText: "Done" })).toHaveCount(2);
   await waitTurnOver(request, sid);
