@@ -52,7 +52,7 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 | **L2** | Chat UI (Nuria) → M1 | ✅ Done ([plan](plans/phase-L2.md), [summary](progress/phase-L2.md)) | ~18–24 h |
 | **L3a** | Agent Studio: agents & helpers | ✅ Done ([plan](plans/phase-L3a.md), [summary](progress/phase-L3a.md)) | ~22–28 h |
 | **L3b** | Agent Studio: your own model | ✅ Done ([plan](plans/phase-L3b.md), [summary](progress/phase-L3b.md)) | ~14–18 h |
-| **L3c** | **Agent Studio: skills & "describe your agent" → M2** | ⏳ Next | ~16–20 h |
+| **L3c** | **Agent Studio: skills & "describe your agent" → M2** | ⏳ Next ([plan](plans/phase-L3c.md)) | ~16–20 h |
 | L4 | Dashboards & local Kubernetes | — | ~16–22 h |
 | L5 | Release v0.1 & feedback loop → M3 | — | ~10–14 h |
 | P7–P12 | Hosted beta → M4 | After the feedback | ~160–200 h |
