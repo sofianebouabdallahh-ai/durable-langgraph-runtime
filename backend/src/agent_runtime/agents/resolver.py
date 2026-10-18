@@ -8,7 +8,9 @@
 A run stores the bundle hash when it is created, and every worker builds the agent
 from that snapshot. So:
 - publishing a new version never changes a running turn; the next turn uses it (AC47);
-- a built-in file edited during a rolling upgrade can't change a queued turn (R15.4).
+- a built-in file edited during a rolling upgrade can't change a queued turn (R15.4);
+- skills are in the bundle too, as exact versions: a draft takes the library's current
+  ones, a published version the ones it locked (CR-006 R17.4).
 
 Patterns: Registry (two sources behind one lookup); content-addressed snapshots;
 memoised factory (one compiled spec per hash per process: specs are immutable).
@@ -18,7 +20,7 @@ from __future__ import annotations
 
 import uuid
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from agent_runtime.agents.document import AgentDocument, to_raw
@@ -30,6 +32,7 @@ from agent_runtime.catalog import default_catalog
 from agent_runtime.config import get_agent_settings
 from agent_runtime.db import Conn, Pool
 from agent_runtime.graphs import GraphRegistry, GraphSpec
+from agent_runtime.skills.binding import MissingSkills, SkillSet, bind
 from agent_runtime.tools.spec import ToolRegistry
 
 Source = Literal["builtin", "user"]
@@ -47,6 +50,7 @@ class Resolved:
     version: int
     source: Source
     agent_id: uuid.UUID | None = None  # user agents
+    skills: SkillSet = field(default_factory=dict)
 
 
 class AgentResolver:
@@ -102,9 +106,10 @@ class AgentResolver:
                 raise AgentUnavailable(f"agent {name!r} has nothing to test")
             return await self._from_version(conn, draft, "user")
         if (builtin := self.builtin(name)) is not None:
-            digest = await snapshot_bundle(conn, builtin)
-            self._remember(digest, builtin)
-            return Resolved(builtin, digest, builtin.frontmatter.version, "builtin")
+            skills = await self._bind(conn, builtin, None)
+            digest = await snapshot_bundle(conn, builtin, skills)
+            self._remember(digest, builtin, skills)
+            return Resolved(builtin, digest, builtin.frontmatter.version, "builtin", None, skills)
         stored = await AgentStore(conn).by_name(name)
         if stored is None or stored.archived_at is not None:
             raise AgentUnavailable(f"unknown agent {name!r}")
@@ -127,14 +132,25 @@ class AgentResolver:
         )
         if definition is None:  # e.g. a ceiling lowered since it was published
             raise AgentUnavailable("; ".join(str(i) for i in issues))
-        digest = await snapshot_bundle(conn, definition)
-        self._remember(digest, definition)
-        return Resolved(definition, digest, version.number, source, version.agent_id)
+        lock = version.skill_lock if version.state != "draft" else None
+        skills = await self._bind(conn, definition, lock)
+        digest = await snapshot_bundle(conn, definition, skills)
+        self._remember(digest, definition, skills)
+        return Resolved(definition, digest, version.number, source, version.agent_id, skills)
+
+    @staticmethod
+    async def _bind(
+        conn: Conn, definition: AgentDefinition, lock: dict[str, str] | None
+    ) -> SkillSet:
+        try:
+            return await bind(conn, definition, lock)
+        except MissingSkills as exc:
+            raise AgentUnavailable(str(exc)) from exc
 
     # ----------------------------------------------------------------- specs
 
     def spec_of(self, resolved: Resolved) -> GraphSpec:
-        return self._remember(resolved.bundle_hash, resolved.definition)
+        return self._remember(resolved.bundle_hash, resolved.definition, resolved.skills)
 
     async def spec(self, bundle_hash: str) -> GraphSpec:
         """The compiled agent a run pinned (from its snapshot; any worker, any time)."""
@@ -142,15 +158,17 @@ class AgentResolver:
             self._specs.move_to_end(bundle_hash)
             return cached
         async with self._pool.connection() as conn:
-            definition = await load_bundle(conn, bundle_hash)
-        return self._remember(bundle_hash, definition)
+            bundle = await load_bundle(conn, bundle_hash)
+        return self._remember(bundle_hash, bundle.definition, bundle.skills)
 
-    def _remember(self, digest: str, definition: AgentDefinition) -> GraphSpec:
+    def _remember(
+        self, digest: str, definition: AgentDefinition, skills: SkillSet | None = None
+    ) -> GraphSpec:
         from agent_runtime.graphs.assistant import agent_spec
 
         spec = self._specs.get(digest)
         if spec is None:
-            spec = agent_spec(definition, self._tools)
+            spec = agent_spec(definition, self._tools, skills or {})
             self._specs[digest] = spec
             while len(self._specs) > CACHE_SIZE:
                 self._specs.popitem(last=False)

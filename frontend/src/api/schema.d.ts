@@ -960,6 +960,8 @@ export interface components {
             model: string;
             /** Name */
             name: string;
+            /** Skills */
+            skills?: string[];
             /**
              * Temperature
              * @default 0.2
@@ -1343,6 +1345,8 @@ export interface components {
             model: string;
             /** Name */
             name: string;
+            /** Skills */
+            skills?: string[];
             /**
              * Temperature
              * @default 0.2

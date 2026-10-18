@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -33,12 +34,14 @@ from agent_runtime.agents.document import (
 from agent_runtime.agents.loader import Issue, validate_definition
 from agent_runtime.agents.resolver import AgentResolver
 from agent_runtime.agents.schema import AgentDefinition
-from agent_runtime.agents.store import snapshot_bundle
+from agent_runtime.agents.store import bundle_digest, snapshot_bundle
 from agent_runtime.agents.studio_store import AgentStore, NameTaken, StoredAgent, Version
 from agent_runtime.config import AgentSettings
 from agent_runtime.db import Conn, Pool
 from agent_runtime.sessions.service import SessionService
 from agent_runtime.sessions.store import Session
+from agent_runtime.skills.binding import MissingSkills, bind, lock_of
+from agent_runtime.skills.store import SkillStore
 
 # ------------------------------------------------------------------ the catalog
 
@@ -216,12 +219,16 @@ class StudioService:
             published = next((v for v in versions if v.state == "published"), None)
             draft = None
             if draft_version is not None:
-                issues = self._check(draft_version.document, draft_version.number)[1]
+                definition, issues = self._check(draft_version.document, draft_version.number)
                 model_issues, untested = await self._models_of(conn, draft_version.document)
-                tested = bool(draft_version.bundle_hash) and await store.tested(
-                    agent_id, str(draft_version.bundle_hash)
-                )
-                draft = Draft(draft_version, issues + model_issues, tested, untested)
+                skill_issues = await self._skills_of(conn, draft_version.document)
+                # "Tested" means: this exact draft with the library's skills as they are
+                # now. A skill edited since the test makes it untested (the hash moves).
+                tested = False
+                if definition is not None and not skill_issues:
+                    current = bundle_digest(definition, await bind(conn, definition, None))
+                    tested = await store.tested(agent_id, current)
+                draft = Draft(draft_version, issues + model_issues + skill_issues, tested, untested)
         return AgentState(agent, draft, published, versions)
 
     async def save_draft(self, agent_id: uuid.UUID, document: AgentDocument) -> AgentState:
@@ -233,7 +240,13 @@ class StudioService:
             document = document.model_copy(update={"name": agent.name})  # the id is fixed
             draft = await store.open_draft(agent_id, document.model_dump(mode="json"))
             definition, _ = self._check(document.model_dump(mode="json"), draft.number)
-            bundle = await snapshot_bundle(conn, definition) if definition else None
+            bundle = None
+            if definition is not None:
+                # A missing skill is an issue on the form until it exists again.
+                with contextlib.suppress(MissingSkills):
+                    bundle = await snapshot_bundle(
+                        conn, definition, await bind(conn, definition, None)
+                    )
             await store.save_draft(agent_id, document.model_dump(mode="json"), bundle)
         return await self.get(agent_id)
 
@@ -273,8 +286,17 @@ class StudioService:
             raise PublishBlocked(["There are no changes to publish"])
         if state.draft.blockers:
             raise PublishBlocked(state.draft.blockers)
+        version = state.draft.version
         async with self._pool.connection() as conn, conn.transaction():
-            await AgentStore(conn).publish(agent_id, (changelog or "").strip()[:500] or None)
+            store = AgentStore(conn)
+            definition, _ = self._check(version.document, version.number)
+            assert definition is not None  # no blockers: it validated
+            skills = await bind(conn, definition, None)
+            digest = await snapshot_bundle(conn, definition, skills)
+            if not await store.tested(agent_id, digest):  # a skill changed since get()
+                raise PublishBlocked(["A skill changed since the test: test it again"])
+            note = (changelog or "").strip()[:500] or None
+            await store.publish(agent_id, note, digest, lock_of(skills))
         return await self.get(agent_id)
 
     async def archive(self, agent_id: uuid.UUID) -> AgentState:
@@ -387,6 +409,25 @@ class StudioService:
             elif connection.test_status != "ready" and connection.display_name not in untested:
                 untested.append(connection.display_name)
         return issues, untested
+
+    async def _skills_of(self, conn: Conn, raw: dict[str, Any]) -> list[PlainIssue]:
+        """An issue for each skill the document names that isn't in the library."""
+        places = [("agent", raw.get("skills") or [])]
+        places += [(f"helpers.{h.get('name')}", h.get("skills") or [])
+                   for h in raw.get("helpers") or []]  # fmt: skip
+        wanted = {n for _, names in places for n in names if isinstance(n, str)}
+        found = await SkillStore(conn).by_names(wanted) if wanted else {}
+        return [
+            PlainIssue(
+                where,
+                "skills",
+                f"There's no skill called “{name}” in your library: "
+                "add it on the Skills page, or remove it here",
+            )
+            for where, names in places
+            for name in names
+            if isinstance(name, str) and name not in found
+        ]
 
     def _check(self, raw: dict[str, Any], version: int) -> tuple[Any, list[PlainIssue]]:
         try:

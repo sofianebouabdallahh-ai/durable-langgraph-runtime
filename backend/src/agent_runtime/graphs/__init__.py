@@ -10,7 +10,7 @@ fenced checkpointer. Plain graphs use `GraphSpec.of_state_graph`; agent graphs
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -43,6 +43,8 @@ class GraphSpec:
     to_graph_input: Callable[[BaseModel], dict[str, Any]] = _dump
     to_output: Callable[[dict[str, Any]], dict[str, Any]] = _json_state
     agent: AgentDefinition | None = field(default=None)  # agent graphs: grants, hooks, limits
+    # The skill versions the agent and its helpers use, by owner ("" = the main agent).
+    skills: Mapping[str, tuple[Any, ...]] = field(default_factory=dict)
 
     @classmethod
     def of_state_graph(

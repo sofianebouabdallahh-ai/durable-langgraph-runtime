@@ -17,6 +17,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 NAME_PATTERN = r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$"  # kebab-case
+SKILL_NAME_PATTERN = r"^[a-z0-9]+(-[a-z0-9]+)*$"  # the Agent Skills standard's rule
 
 
 class _Strict(BaseModel):
@@ -82,6 +83,9 @@ class _AgentFields(_Strict):
     max_turns: Annotated[int, Field(gt=0)]
     limits: Limits = Limits()
     tools: list[ToolGrant] = []
+    # Skills from the library (CR-006 R17.4), by name: listed in the prompt by name and
+    # description, loaded on demand. Each agent and helper sees only its own.
+    skills: list[Annotated[str, Field(pattern=SKILL_NAME_PATTERN, max_length=64)]] = []
     output_schema: str | None = None
 
     @field_validator("tools", mode="before")
@@ -94,6 +98,8 @@ class _AgentFields(_Strict):
         names = [t.name for t in self.tools]
         if duplicates := sorted({n for n in names if names.count(n) > 1}):
             raise ValueError(f"tools listed more than once: {', '.join(duplicates)}")
+        if repeated := sorted({s for s in self.skills if self.skills.count(s) > 1}):
+            raise ValueError(f"skills listed more than once: {', '.join(repeated)}")
         return self
 
 

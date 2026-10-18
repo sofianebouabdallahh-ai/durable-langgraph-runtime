@@ -24,6 +24,7 @@ from agent_runtime.catalog import default_catalog
 from agent_runtime.config import get_agent_settings
 from agent_runtime.graphs import GraphSpec
 from agent_runtime.models.scripted import ScriptedChatModel, ScriptTurn
+from agent_runtime.skills.binding import SkillSet
 from agent_runtime.subagents.tools import MAIN_TOOLS, SUB_TOOLS
 from agent_runtime.tools.builtin import default_tools
 from agent_runtime.tools.middleware import RunContext, RuntimeMiddleware
@@ -107,7 +108,9 @@ def subagent_graph(
     return graph
 
 
-def agent_spec(agent: AgentDefinition, tools: ToolRegistry) -> GraphSpec:
+def agent_spec(
+    agent: AgentDefinition, tools: ToolRegistry, skills: SkillSet | None = None
+) -> GraphSpec:
     granted = [_bindable(tools.get(name)) for name in granted_tools(agent)]
 
     def compile_graph(checkpointer: BaseCheckpointSaver[Any] | None) -> Pregel[Any, Any]:
@@ -139,6 +142,7 @@ def agent_spec(agent: AgentDefinition, tools: ToolRegistry) -> GraphSpec:
         to_graph_input=to_input,
         to_output=to_output,
         agent=agent,
+        skills=skills or {},
     )
 
 

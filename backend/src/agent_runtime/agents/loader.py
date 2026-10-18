@@ -316,12 +316,12 @@ def canonical_content(defn: AgentDefinition | SubAgentDefinition) -> dict[str, A
     Sub-agents of a main agent are snapshotted separately, so they are left out
     of the main agent's content: editing a sub-agent doesn't change the main hash.
     """
-    return {
-        "kind": defn.kind,
-        "id": defn.id,
-        "frontmatter": defn.frontmatter.model_dump(mode="json"),
-        "prompt": defn.prompt,
-    }
+    frontmatter = defn.frontmatter.model_dump(mode="json")
+    if not frontmatter.get("skills"):
+        # Added in L3c: left out while empty, so every earlier definition keeps its hash
+        # (published versions, test results and running turns stay matched).
+        frontmatter.pop("skills", None)
+    return {"kind": defn.kind, "id": defn.id, "frontmatter": frontmatter, "prompt": defn.prompt}
 
 
 def content_hash(content: Mapping[str, Any]) -> str:

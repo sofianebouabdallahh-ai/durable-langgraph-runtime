@@ -28,6 +28,7 @@ from agent_runtime.agents.schema import AgentDefinition, SubAgentDefinition
 
 MAX_INSTRUCTIONS = 20_000  # characters, per agent or helper (G3: bounded input)
 MAX_HELPERS = 10  # the orchestrator's limit on sub-agents per run (CR-005)
+MAX_SKILLS = 20  # per agent or helper: each adds a line to its prompt
 
 
 class _Doc(BaseModel):
@@ -49,6 +50,7 @@ class HelperDocument(_Doc):
     max_turns: int = 6
     limits: dict[str, Any] = Field(default_factory=dict)
     tools: list[ToolChoice] = Field(default_factory=list)
+    skills: Annotated[list[str], Field(max_length=MAX_SKILLS)] = Field(default_factory=list)
     hooks: dict[str, list[str]] = Field(default_factory=dict)
 
 
@@ -62,6 +64,7 @@ class AgentDocument(_Doc):
     max_turns: int = 20
     limits: dict[str, Any] = Field(default_factory=dict)
     tools: list[ToolChoice] = Field(default_factory=list)
+    skills: Annotated[list[str], Field(max_length=MAX_SKILLS)] = Field(default_factory=list)
     hooks: dict[str, list[str]] = Field(default_factory=dict)
     helpers: Annotated[list[HelperDocument], Field(max_length=MAX_HELPERS)] = Field(
         default_factory=list
@@ -82,6 +85,8 @@ def _metadata(doc: AgentDocument | HelperDocument, version: int) -> dict[str, An
     }
     if doc.display_name:
         out["display_name"] = doc.display_name
+    if doc.skills:
+        out["skills"] = list(doc.skills)
     return out
 
 
@@ -119,6 +124,7 @@ def _fields(defn: AgentDefinition | SubAgentDefinition) -> dict[str, Any]:
         "max_turns": fm.max_turns,
         "limits": fm.limits.model_dump(exclude_none=True),
         "tools": [t.model_dump(exclude_none=True) for t in fm.tools],
+        "skills": list(fm.skills),
         "hooks": {k: v for k, v in fm.hooks.model_dump().items() if v},
     }
 
@@ -144,6 +150,8 @@ def _agent_md(defn: AgentDefinition | SubAgentDefinition) -> str:
         fm.pop("limits", None)
     if not fm.get("tools"):
         fm.pop("tools", None)
+    if not fm.get("skills"):
+        fm.pop("skills", None)
     head = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
     return f"---\n{head}\n---\n{defn.prompt}\n"
 

@@ -232,6 +232,14 @@
             "title": "Name",
             "type": "string"
           },
+          "skills": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Skills",
+            "type": "array"
+          },
           "temperature": {
             "default": 0.2,
             "title": "Temperature",
@@ -1160,6 +1168,14 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "skills": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Skills",
+            "type": "array"
           },
           "temperature": {
             "default": 0.2,
