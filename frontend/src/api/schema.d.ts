@@ -1140,6 +1140,8 @@ export interface components {
             limits?: {
                 [key: string]: unknown;
             };
+            /** Max Session Turns */
+            max_session_turns?: number | null;
             /**
              * Max Turns
              * @default 20

@@ -21,7 +21,8 @@ import hashlib
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, Protocol
+from functools import cache
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from langchain_core.language_models import BaseChatModel
 from pydantic import SecretStr
@@ -29,6 +30,8 @@ from pydantic import SecretStr
 from agent_runtime.models.scripted import ScriptedChatModel, ScriptTurn
 
 if TYPE_CHECKING:
+    from langchain_openai import ChatOpenAI
+
     from agent_runtime.config import Settings
 
 ProviderName = Literal["scripted", "openai", "ollama"]
@@ -71,6 +74,53 @@ class ScriptedProvider:
         return [_hashed(t) for t in texts]
 
 
+_REASONING_KEYS = ("reasoning_content", "reasoning")  # DeepSeek-style; Ollama, vLLM, others
+
+
+def _reasoning_of(message: Any) -> str | None:
+    """A provider's reasoning text, from a choice's message or a streamed delta."""
+    found = message if isinstance(message, dict) else getattr(message, "model_extra", None) or {}
+    for key in _REASONING_KEYS:
+        value = found.get(key) if isinstance(found, dict) else None
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+@cache
+def _reasoning_chat_openai() -> type[ChatOpenAI]:
+    """ChatOpenAI that keeps a provider's reasoning (`reasoning_content` / `reasoning`):
+    langchain-openai leaves these non-standard fields out. It lands in the message's
+    `additional_kwargs["reasoning"]`, where the transcript records it (L6: a chat's
+    download shows how the agent thought, not only what it did)."""
+    from langchain_openai import ChatOpenAI
+
+    class ReasoningChatOpenAI(ChatOpenAI):
+        def _create_chat_result(self, response: Any, generation_info: Any = None) -> Any:
+            result = super()._create_chat_result(response, generation_info)
+            raw = response if isinstance(response, dict) else response.model_dump()
+            choices = raw.get("choices") or []
+            for generation, choice in zip(result.generations, choices, strict=False):
+                text = _reasoning_of(choice.get("message") or {})
+                if text:
+                    generation.message.additional_kwargs["reasoning"] = text
+            return result
+
+        def _convert_chunk_to_generation_chunk(
+            self, chunk: dict[str, Any], default_chunk_class: type, base_generation_info: Any
+        ) -> Any:
+            generation = super()._convert_chunk_to_generation_chunk(
+                chunk, default_chunk_class, base_generation_info
+            )
+            choices = chunk.get("choices") or []
+            text = _reasoning_of((choices[0].get("delta") or {}) if choices else {})
+            if generation is not None and text:
+                generation.message.additional_kwargs["reasoning"] = text  # chunks concatenate
+            return generation
+
+    return ReasoningChatOpenAI
+
+
 @dataclass
 class OpenAICompatibleProvider:
     """OpenAI, or anything speaking its API (Ollama's `/v1`)."""
@@ -88,11 +138,9 @@ class OpenAICompatibleProvider:
     def chat(
         self, role: str, *, temperature: float, script: list[ScriptTurn], offset: int
     ) -> BaseChatModel:
-        from langchain_openai import ChatOpenAI
-
         key = (role, temperature)
         if key not in self._cache:  # the client holds a connection pool: reuse it
-            self._cache[key] = ChatOpenAI(
+            self._cache[key] = _reasoning_chat_openai()(
                 model=self.model_for(role), base_url=self.base_url, api_key=self.api_key,
                 temperature=temperature, max_completion_tokens=MAX_OUTPUT_TOKENS,
                 timeout=self.timeout_s, max_retries=0, streaming=True, stream_usage=True,

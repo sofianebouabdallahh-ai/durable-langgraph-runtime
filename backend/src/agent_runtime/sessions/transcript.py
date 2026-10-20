@@ -92,6 +92,10 @@ def _transcript_of(messages: list[BaseMessage], run_id: uuid.UUID) -> list[NewMe
             continue
         if isinstance(m, AIMessage):
             text = _text(m.content)
+            # How the model thought (when its provider says: reasoning models do), kept
+            # with the reply or, before tool calls, with the first call it led to (L6).
+            reasoning = m.additional_kwargs.get("reasoning")
+            reasoning = reasoning if isinstance(reasoning, str) and reasoning.strip() else None
             if text:
                 usage: dict[str, Any] = dict(m.usage_metadata or {})
                 content: dict[str, Any] = {
@@ -100,12 +104,17 @@ def _transcript_of(messages: list[BaseMessage], run_id: uuid.UUID) -> list[NewMe
                 }  # fmt: skip
                 if m.additional_kwargs.get("budget_limited"):  # R14.2: "stopped early"
                     content["budget_limited"] = True
+                if reasoning:
+                    content["reasoning"] = reasoning
                 out.append(NewMessage(make_id(run_id, "messages", i, "assistant"), "assistant",
                                       content))  # fmt: skip
             for j, tc in enumerate(m.tool_calls):
+                call: dict[str, Any] = {"tool_call_id": tc["id"], "tool": tc["name"],
+                                        "args": tc["args"]}  # fmt: skip
+                if reasoning and not text and j == 0:
+                    call["reasoning"] = reasoning
                 out.append(NewMessage(make_id(run_id, "messages", f"{i}.{j}", "tool_call"),
-                                      "tool_call", {"tool_call_id": tc["id"], "tool": tc["name"],
-                                                    "args": tc["args"]}))  # fmt: skip
+                                      "tool_call", call))  # fmt: skip
         elif isinstance(m, ToolMessage):
             out.append(NewMessage(make_id(run_id, "messages", i, "tool_result"), "tool_result",
                                   _result(m)))  # fmt: skip

@@ -435,11 +435,12 @@ export function LimitsSection({ doc, issues, dispatch, catalog, readOnly }: Prop
           if (preset) dispatch({ kind: "preset", preset });
         }}
       />
-      {value === "custom" && (
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <p className="mt-4 text-sm font-medium">Limits for one message</p>
+      <p className="text-xs text-stone-500">Pick a preset above, or set the numbers yourself (that makes it Custom).</p>
+      <div className="mt-2 grid gap-3 sm:grid-cols-3">
           {(
             [
-              ["max_turns", "Steps per message", doc.max_turns, catalog.ceilings.max_turns, 1],
+              ["max_turns", "Max turns (steps per message)", doc.max_turns, catalog.ceilings.max_turns, 1],
               ["max_tool_calls", "Tool uses per message", Number(limits.max_tool_calls ?? 0), catalog.ceilings.max_tool_calls, 1],
               ["timeout_s", "Time limit (minutes)", Math.round(Number(limits.timeout_s ?? 60) / 60), Math.floor((catalog.ceilings.timeout_s ?? 600) / 60), 60],
             ] as const
@@ -453,6 +454,7 @@ export function LimitsSection({ doc, issues, dispatch, catalog, readOnly }: Prop
                 value={val}
                 disabled={readOnly}
                 onChange={(e) => {
+                  setCustom(true);
                   dispatch({ kind: "limit", field, value: Math.max(1, Number(e.target.value)) * unit });
                 }}
                 className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 dark:border-stone-700 dark:bg-stone-950"
@@ -460,9 +462,24 @@ export function LimitsSection({ doc, issues, dispatch, catalog, readOnly }: Prop
               <span className="mt-1 block text-xs text-stone-500">Up to {String(max)}</span>
             </label>
           ))}
-        </div>
-      )}
-      <Issues issues={issuesFor(issues, "agent", ["max_turns", "limits"])} />
+      </div>
+      <label className="mt-4 block max-w-xs text-sm">
+        <span className="mb-1 block font-medium">Messages per chat (optional)</span>
+        <input
+          type="number"
+          min={1}
+          value={doc.max_session_turns ?? ""}
+          placeholder="No limit"
+          disabled={readOnly}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            dispatch({ kind: "session-turns", value: e.target.value === "" || n < 1 ? null : Math.floor(n) });
+          }}
+          className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 dark:border-stone-700 dark:bg-stone-950"
+        />
+        <span className="mt-1 block text-xs text-stone-500">After this many messages, a chat with it asks for a new one.</span>
+      </label>
+      <Issues issues={issuesFor(issues, "agent", ["max_turns", "limits", "max_session_turns"])} />
     </Section>
   );
 }

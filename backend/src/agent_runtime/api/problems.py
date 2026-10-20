@@ -26,7 +26,7 @@ from agent_runtime.models.connections import ConnectionInvalid, ConnectionNotFou
 from agent_runtime.runs.limits import LimitAboveCeiling
 from agent_runtime.runs.service import AdmissionPaused, Overloaded
 from agent_runtime.runs.store import NotWaitingForApproval, RunNotFound, RunTerminal
-from agent_runtime.sessions.service import DuplicateSend, NotAnAgent
+from agent_runtime.sessions.service import ChatLimitReached, DuplicateSend, NotAnAgent
 from agent_runtime.sessions.store import NoActiveTurn, SessionArchived, SessionNotFound, TurnActive
 from agent_runtime.skills.service import BuiltInSkill, SkillBlocked, SkillExists, SkillInvalid
 from agent_runtime.skills.spec import SkillRejected
@@ -129,6 +129,10 @@ def install(app: FastAPI) -> None:
     @app.exception_handler(ToolSettingsInvalid)
     async def _tool_settings_invalid(_: Request, exc: ToolSettingsInvalid) -> JSONResponse:
         return problem(422, "tool-settings-invalid", "These tool settings can't be saved", str(exc))
+
+    @app.exception_handler(ChatLimitReached)
+    async def _chat_limit(_: Request, exc: ChatLimitReached) -> JSONResponse:
+        return problem(409, "chat-limit", "This chat is full", str(exc), limit=exc.limit)
 
     @app.exception_handler(MasterKeyMissing)
     async def _master_key_missing(_: Request, exc: MasterKeyMissing) -> JSONResponse:

@@ -248,6 +248,18 @@
             "title": "Limits",
             "type": "object"
           },
+          "max_session_turns": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Session Turns"
+          },
           "max_turns": {
             "default": 20,
             "title": "Max Turns",

@@ -71,6 +71,8 @@ class AgentDocument(_Doc):
     tools: list[ToolChoice] = Field(default_factory=list)
     skills: Annotated[list[str], Field(max_length=MAX_SKILLS)] = Field(default_factory=list)
     hooks: dict[str, list[str]] = Field(default_factory=dict)
+    # The most messages one chat with it may have (none: no limit beyond the server's).
+    max_session_turns: Annotated[int, Field(gt=0)] | None = None
     helpers: Annotated[list[HelperDocument], Field(max_length=MAX_HELPERS)] = Field(
         default_factory=list
     )
@@ -92,6 +94,8 @@ def _metadata(doc: AgentDocument | HelperDocument, version: int) -> dict[str, An
         out["display_name"] = doc.display_name
     if doc.skills:
         out["skills"] = list(doc.skills)
+    if isinstance(doc, AgentDocument) and doc.max_session_turns:
+        out["max_session_turns"] = doc.max_session_turns
     return out
 
 
@@ -140,7 +144,9 @@ def from_definition(defn: AgentDefinition, *, name: str | None = None) -> AgentD
     if name is not None:
         fields["name"] = name
     helpers = [HelperDocument.model_validate(_fields(s)) for s in defn.subagents]
-    return AgentDocument.model_validate({**fields, "helpers": helpers})
+    return AgentDocument.model_validate(
+        {**fields, "helpers": helpers, "max_session_turns": defn.frontmatter.max_session_turns}
+    )
 
 
 # ------------------------------------------------------------------ files

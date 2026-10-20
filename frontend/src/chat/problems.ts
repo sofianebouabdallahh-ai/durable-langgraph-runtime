@@ -12,6 +12,7 @@ export function problemText(e: unknown): string {
     if (e.is("turn-active")) return "Nuria is still answering. Wait, or stop it first.";
     if (e.status === 429) return "Too many messages at once. Wait a moment and try again.";
     if (e.is("session-archived")) return "This chat is archived. Start a new one.";
+    if (e.is("chat-limit")) return e.message; // "…reached its limit of N messages: start a new chat."
     return e.message;
   }
   return "Couldn't reach the server. Check that Nuria is running (./setup.sh).";

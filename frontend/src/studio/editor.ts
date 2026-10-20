@@ -20,6 +20,7 @@ export type Edit =
   | { kind: "tool-cap"; name: string; cap: number | null }
   | { kind: "preset"; preset: { max_turns: number; limits: Limits } }
   | { kind: "limit"; field: "max_turns" | "max_tool_calls" | "timeout_s"; value: number }
+  | { kind: "session-turns"; value: number | null }
   | { kind: "protection"; hook: string; point: string; on: boolean; helpers: boolean }
   | { kind: "add-helper"; helper: HelperDocument }
   | { kind: "helper"; index: number; helper: HelperDocument }
@@ -41,6 +42,8 @@ export function edit(doc: AgentDocument, e: Edit): AgentDocument {
       };
     case "preset":
       return { ...doc, max_turns: e.preset.max_turns, limits: { ...(doc.limits ?? {}), ...e.preset.limits } };
+    case "session-turns":
+      return { ...doc, max_session_turns: e.value };
     case "limit":
       return e.field === "max_turns"
         ? { ...doc, max_turns: e.value }
@@ -100,7 +103,7 @@ export function issuesFor(issues: readonly Issue[], where: string, fields: reado
   return issues.filter((i) => i.where === where && fields.some((f) => (i.field ?? "") === f || (i.field ?? "").startsWith(`${f}.`)));
 }
 
-const SECTION_FIELDS = ["name", "display_name", "description", "instructions", "tools", "max_turns", "limits", "hooks", "temperature", "model", "skills"]; // "model": the Model section
+const SECTION_FIELDS = ["name", "display_name", "description", "instructions", "tools", "max_turns", "limits", "hooks", "temperature", "model", "skills", "max_session_turns"]; // "model": the Model section
 
 /** Issues no section claims: shown at the top so nothing is ever hidden. */
 export function unplaced(issues: readonly Issue[], helperNames: readonly string[]): Issue[] {

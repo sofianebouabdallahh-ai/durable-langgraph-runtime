@@ -19,6 +19,8 @@ work with no real model and no key:
   results on `/web/<page>`, small HTML pages (one plants instructions, for the R14.15
   gate); `/tavily/search` and `/brave/res/v1/web/search` answer like those APIs;
 - **code** (L6b): offered `run_python`, it runs `print(6 * 7)` once and says what it printed;
+- **reasoning:** every answer starts with "Thinking: <model> decides to …" as
+  `reasoning_content`, like a reasoning model (the chat download shows it);
 - **a log:** GET /calls lists what it served (model, which key, tools), so a test
   proves that two helpers used two connections (AC44). DELETE /calls clears it.
 """
@@ -275,6 +277,11 @@ def _read_title(messages: list[dict[str, Any]]) -> str | None:
     return None
 
 
+def _thought(model: str, reply: dict[str, Any]) -> str:
+    what = f"call {reply['tool']}" if "tool" in reply else "answer"
+    return f"{model} decides to {what}."
+
+
 def _listed(system: str) -> dict[str, list[str]]:
     """The ids listed under the prompt's "## Your helpers" and "## Your skills"."""
     out: dict[str, list[str]] = {"Your helpers": [], "Your skills": []}
@@ -340,9 +347,12 @@ def _stream(model: str, reply: dict[str, Any]) -> AsyncIterator[str]:
             }
             return f"data: {json.dumps(data)}\n\n"
 
+        # Like a reasoning model: its thinking first, in two pieces (streamed reasoning).
+        yield chunk({"role": "assistant", "reasoning_content": "Thinking: "})
+        yield chunk({"reasoning_content": _thought(model, reply)})
         if "text" in reply:
             words = reply["text"].split(" ")
-            yield chunk({"role": "assistant", "content": ""})
+            yield chunk({"content": ""})
             for i, word in enumerate(words):
                 yield chunk({"content": word + (" " if i < len(words) - 1 else "")})
                 await asyncio.sleep(0.01)
@@ -373,7 +383,11 @@ def _stream(model: str, reply: dict[str, Any]) -> AsyncIterator[str]:
 
 
 def _complete(model: str, reply: dict[str, Any]) -> JSONResponse:
-    message: dict[str, Any] = {"role": "assistant", "content": reply.get("text")}
+    message: dict[str, Any] = {
+        "role": "assistant",
+        "content": reply.get("text"),
+        "reasoning_content": "Thinking: " + _thought(model, reply),
+    }
     finish = "stop"
     if "tool" in reply:
         message["tool_calls"] = [
