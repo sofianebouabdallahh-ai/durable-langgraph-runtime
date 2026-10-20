@@ -24,7 +24,7 @@ import { useQuery } from "@tanstack/react-query";
 const EXAMPLE = "It plans family trips: finds things to do, keeps to a budget, and has a helper that finds kid-friendly restaurants.";
 
 export function GetStarted({ go }: { go: (route: Route) => void }) {
-  const state = useOnboarding();
+  const state = useOnboarding(true);
   const refresh = useOnboardingRefresh();
   const [open, setOpen] = useState<StepKey | "none" | null>(null); // null: the next step
   if (!state.data) return <Spinner className="m-10" label="Loading the guide…" />;

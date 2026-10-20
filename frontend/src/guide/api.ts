@@ -6,8 +6,14 @@ import { api, type Schemas, unwrap } from "../api/client";
 export type Onboarding = Schemas["OnboardingView"];
 export type StepKey = Onboarding["steps"][number]["key"];
 
-export function useOnboarding() {
-  return useQuery({ queryKey: ["onboarding"], queryFn: () => unwrap(api.GET("/onboarding")) });
+/** `watch`: on the guide's own page, look again every few seconds until it's finished, so
+ * a step done in another tab (or a chat that just ended) ticks without a reload. */
+export function useOnboarding(watch = false) {
+  return useQuery({
+    queryKey: ["onboarding"],
+    queryFn: () => unwrap(api.GET("/onboarding")),
+    refetchInterval: (query) => (watch && query.state.data?.finished !== true ? 4000 : false),
+  });
 }
 
 export function useOnboardingRefresh() {
