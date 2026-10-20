@@ -171,7 +171,13 @@ function Set-Model {
         if (-not ($tags.models | Where-Object { $_.name -eq $name })) { Install-OllamaModel $name }
       } catch {
         Set-EnvValue "CONTAINER_OLLAMA_BASE_URL" "http://ollama:11434/v1"; Set-EnvValue "COMPOSE_PROFILES" "app,llm"
-        Warn "no Ollama found: using Ollama in Docker (CPU only; slower). For speed: https://ollama.com/download"
+        Warn "no Ollama app found: using Ollama in Docker (CPU only; slower). For speed: https://ollama.com/download"
+        # Docker's memory is shared with the whole stack: a 7B model needs about 5 GB of it.
+        $mem = [int64](docker info --format '{{.MemTotal}}' 2>$null)
+        if (-not $ModelName -and $mem -lt 12000000000) {
+          $name = "qwen2.5:3b"; Set-EnvValue "MODEL_CHAT" $name
+          Warn "Docker has $([math]::Floor($mem / 1e9)) GB of memory: using the smaller $name (more: Docker Desktop, Settings, Resources)."
+        }
         $script:OllamaPull = $name
       }
       Set-EnvValue "MODEL_CHAT" $name; Set-EnvValue "MODEL_RESEARCHER" $name

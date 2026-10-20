@@ -210,11 +210,19 @@ configure_model() {
         env_set COMPOSE_PROFILES app
         ok "using the Ollama found at 127.0.0.1:11434 (the native app uses the GPU; Ollama in Docker on macOS doesn't)"
         curl -fsS http://127.0.0.1:11434/api/tags | grep -q "\"$name\"" || pull_native "$name"
+      elif native_ollama_offered; then
+        configure_model; return  # installed and running now: take the native path
       else
         env_set CONTAINER_OLLAMA_BASE_URL http://ollama:11434/v1
         env_set COMPOSE_PROFILES app,llm
-        warn "no Ollama found on this machine: using Ollama in Docker (CPU-only on macOS; slower)."
+        warn "no Ollama app found: using Ollama in Docker (CPU only on macOS; slower)."
         warn "For speed on macOS/Windows install the app instead: https://ollama.com/download"
+        # Docker's memory is shared with the whole stack: a 7B model needs about 5 GB of it.
+        local mem; mem=$("$DOCKER" info --format '{{.MemTotal}}' 2>/dev/null || echo 0)
+        if [ -z "$MODEL_NAME" ] && [ "${mem:-0}" -lt 12000000000 ]; then
+          name=qwen2.5:3b
+          warn "Docker has $((mem / 1000000000)) GB of memory: using the smaller $name (more memory: Docker Desktop → Settings → Resources)."
+        fi
         OLLAMA_PULL=$name
       fi
       env_set MODEL_CHAT "$name"; env_set MODEL_RESEARCHER "$name" ;;
@@ -236,6 +244,19 @@ configure_model() {
       ok "model: $MODEL_NAME at $BASE_URL" ;;
     *) die "unknown model '$MODEL'" "Use: scripted | ollama | openai | foundry | compatible" ;;
   esac
+}
+
+# No Ollama app: on macOS and Windows (where Docker has no GPU and little memory) offer to
+# install it first. True when it's running afterwards.
+native_ollama_offered() {
+  [ "$INTERACTIVE" -eq 1 ] || return 1
+  case "$(uname -s)" in Darwin|MINGW*|MSYS*|CYGWIN*) ;; *) return 1 ;; esac
+  say "Ollama works best as its app (it uses your GPU and memory directly)."
+  echo "    Install it from https://ollama.com/download and open it, then press Enter."
+  ask "Press Enter when it's running (or type 'docker' to run Ollama in Docker instead)" ""
+  [ "$REPLY" = docker ] && return 1
+  curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1 \
+    || { warn "still no Ollama app at 127.0.0.1:11434: using Ollama in Docker"; return 1; }
 }
 
 # The recommended model isn't in the Ollama found on this machine: download it (asked
