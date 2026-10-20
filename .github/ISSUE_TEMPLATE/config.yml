@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Setup and troubleshooting guides
+    url: https://github.com/sofianebouabdallahh-ai/durable-langgraph-runtime/tree/main/docs/setup
+    about: Most setup problems (ports, Docker, memory, models) are answered here.
+  - name: Updating and backups
+    url: https://github.com/sofianebouabdallahh-ai/durable-langgraph-runtime/blob/main/docs/setup/updating.md
+    about: How to update, and how to get your data back from a backup.

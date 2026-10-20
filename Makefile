@@ -96,7 +96,7 @@ setup: ## The tester path: checks, .env, model, start everything in Docker, smok
 	./setup.sh
 
 image: ## Build the runtime image (API, workers, CLI) locally
-	$(DOCKER) build -t ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/runtime:latest backend
+	$(DOCKER) build -t ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/runtime:latest -t ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/runtime:$(shell cat VERSION) backend
 
 app-stop: ## Stop the containerised stack (data kept)
 	./setup.sh --stop

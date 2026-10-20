@@ -1,0 +1,23 @@
+name: Something broke
+description: An error, a crash, setup that didn't finish, a reply that never came.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can we see it too? (the steps)
+  - type: input
+    id: version
+    attributes:
+      label: Nuria's version (bottom of the sidebar)
+      placeholder: "0.1.0"
+  - type: markdown
+    attributes:
+      value: |
+        **Please attach the diagnostics:** run `./setup.sh --doctor` (Windows: `.\setup.ps1 -Doctor`) and drag the file it writes here. Every password and key in it is removed.

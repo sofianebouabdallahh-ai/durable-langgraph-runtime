@@ -1,11 +1,12 @@
 /** The sidebar: Nuria, navigation, and the chats by recency. */
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Bot, Boxes, MessageSquare, Plus, Search } from "lucide-react";
+import { BookOpen, Bot, Boxes, MessageSquare, MessageSquareHeart, Plus, Search, Shield } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { api, unwrap, type SessionView } from "../api/client";
 import { href, type Route } from "../app/route";
 import { Logo } from "../ui/Logo";
+import { FeedbackDialog } from "../feedback/FeedbackDialog";
 import { ModelStatus } from "./ModelStatus";
 
 const DAY = 86_400_000;
@@ -21,6 +22,7 @@ function groupOf(iso: string, now: number): string {
 
 export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: () => void }) {
   const [query, setQuery] = useState("");
+  const [feedback, setFeedback] = useState(false);
   const [now] = useState(() => Date.now()); // "Today", "Yesterday": relative to when the page opened
   const sessions = useQuery({
     queryKey: ["sessions"],
@@ -111,6 +113,25 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: () =>
           <p className="px-3 py-6 text-center text-sm text-stone-600">Your chats will appear here.</p>
         )}
       </div>
+      <div className="flex items-center gap-1 border-t border-stone-200 px-3 pt-2 dark:border-stone-800">
+        <button
+          type="button"
+          onClick={() => { setFeedback(true); }}
+          className="flex h-8 flex-1 items-center gap-2 rounded-lg px-2 text-xs text-stone-600 hover:bg-stone-100 hover:text-stone-900 dark:text-stone-400 dark:hover:bg-stone-800 dark:hover:text-stone-100"
+          data-testid="send-feedback"
+        >
+          <MessageSquareHeart aria-hidden className="size-3.5" /> Send feedback
+        </button>
+        <a
+          href={href({ page: "privacy" })}
+          onClick={onNavigate}
+          aria-current={route.page === "privacy" ? "page" : undefined}
+          className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs text-stone-600 hover:bg-stone-100 hover:text-stone-900 dark:text-stone-400 dark:hover:bg-stone-800 dark:hover:text-stone-100"
+        >
+          <Shield aria-hidden className="size-3.5" /> Privacy
+        </a>
+      </div>
+      <FeedbackDialog open={feedback} onClose={() => { setFeedback(false); }} />
       <ModelStatus />
     </nav>
   );

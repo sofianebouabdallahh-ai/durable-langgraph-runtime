@@ -34,7 +34,7 @@ test("stop a reply: the partial reply stays, and the chat goes on", async ({ pag
   await expect(page.getByTestId("draft")).toBeVisible();
   const stopped = Date.now();
   await page.getByRole("button", { name: "Stop the reply" }).click();
-  await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible({ timeout: 5_000 });
   expect(Date.now() - stopped).toBeLessThan(2_000 + 1_000); // SC6: < 2 s (+ the poll's slack)
   await expect(page.getByText("Stopped.")).toBeVisible();
   await expect(page.getByText("(stopped before the end)")).toBeVisible();

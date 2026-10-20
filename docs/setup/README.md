@@ -11,6 +11,7 @@ Everything runs in Docker on your computer: the app, the database, the queue, tw
 Then:
 - **Pick a model** ([models.md](models.md)): the offline demo model, a free local model (Ollama), OpenAI, Azure AI Foundry, or any OpenAI-compatible service.
 - **Watch it work** ([observability.md](observability.md)): traces, metrics and a Grafana dashboard.
+- **Testing for us?** Start with [testers.md](testers.md): what to try, and how to send feedback in two clicks.
 - **If something goes wrong:** [troubleshooting.md](troubleshooting.md).
 
 ## The short version
@@ -43,7 +44,8 @@ The API and its interactive docs are behind the same address: http://localhost:3
 | `./setup.sh --observability` | Also traces, metrics and a dashboard: see [observability.md](observability.md) (`--no-observability`: off) |
 | `./setup.sh --kubernetes` | Run it on a local Kubernetes cluster instead: see [kubernetes.md](../kubernetes.md) |
 | `./setup.sh --stop` | Stop everything; your data is kept |
-| `./setup.sh --update` | Back up the database, get the latest version, migrate, restart |
+| `./setup.sh --update` | Back up, then move to the newest release, migrate, restart, check: see [updating.md](updating.md) |
+| `./setup.sh --restore backups/…` | Put a backup back (replaces today's data) |
 | `./setup.sh --doctor` | Make a diagnostics file (passwords and keys removed) to attach to a GitHub issue |
 | `./setup.sh --reset` | Delete everything: conversations, agents, downloaded models (asks first) |
 

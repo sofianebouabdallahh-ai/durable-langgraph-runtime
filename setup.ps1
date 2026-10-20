@@ -17,7 +17,9 @@
   .\setup.ps1 -NonInteractive -Model scripted
   .\setup.ps1 -Observability     (also traces, metrics and a Grafana dashboard; -NoObservability: off)
   .\setup.ps1 -Kubernetes        (on a local Kubernetes cluster with kind; needs Git Bash or WSL for infra/kind/cluster.sh)
-  .\setup.ps1 -Chat | -Stop | -Update | -Doctor | -Reset
+  .\setup.ps1 -Update [-To v0.2.0]    (back up, then move to the newest or that release)
+  .\setup.ps1 -Restore backups\nuria-….sql.gz   (put a backup back; replaces today's data)
+  .\setup.ps1 -Chat | -Stop | -Doctor | -Reset
 #>
 [CmdletBinding()]
 param(
@@ -30,7 +32,8 @@ param(
   [switch]$NonInteractive,
   [switch]$Build,
   [switch]$Observability, [switch]$NoObservability, [switch]$Kubernetes,
-  [switch]$Chat, [switch]$Stop, [switch]$Update, [switch]$Doctor, [switch]$Reset
+  [switch]$Chat, [switch]$Stop, [switch]$Update, [switch]$Doctor, [switch]$Reset,
+  [string]$To = "", [string]$Restore = ""
 )
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
@@ -120,6 +123,9 @@ function Initialize-EnvFile {
   }
   if ($changed -gt 0) { Ok "generated $changed local secret(s) (only on this machine, in .env)" }
   if (-not (Get-EnvValue "COMPOSE_PROFILES")) { Set-EnvValue "COMPOSE_PROFILES" "app" }
+  # The release this checkout is: Compose pulls exactly these images (L5).
+  $version = (Get-Content VERSION -Raw).Trim()
+  if ((Get-EnvValue "NURIA_VERSION") -ne $version) { Set-EnvValue "NURIA_VERSION" $version }
   try { Protect-EnvFile } catch { Warn "couldn't restrict .env permissions: $_" }
 }
 function Select-Ports {
@@ -205,6 +211,22 @@ function Set-Observability {  # -Observability / -NoObservability; remembered in
   Ok "observability: traces $jaeger, dashboard $grafana, metrics $prometheus"
 }
 
+# A checked pg_dump, made and compressed inside the Postgres container and copied out
+# (PowerShell's redirection would re-encode it). $null for a fresh install.
+function Backup-Database {
+  New-Item -ItemType Directory -Force backups | Out-Null
+  Invoke-Compose up -d --wait postgres | Out-Null
+  $has = Invoke-Compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT to_regclass(''public.runs'') IS NOT NULL"'
+  if ("$has".Trim() -ne "t") { Ok "nothing to back up yet (a fresh install)"; return $null }
+  $name = "nuria-$((Get-Content VERSION -Raw).Trim())-$(Get-Date -Format yyyyMMdd-HHmmss).sql.gz"
+  Invoke-Compose exec -T postgres sh -c "pg_dump -U `"`$POSTGRES_USER`" --clean --if-exists `"`$POSTGRES_DB`" | gzip > /tmp/$name && gzip -dc /tmp/$name | grep -q 'CREATE TABLE public.runs'"
+  if ($LASTEXITCODE -ne 0) { Die "the backup failed, so nothing was changed." @("Diagnostics: .\setup.ps1 -Doctor") }
+  Invoke-Compose cp "postgres:/tmp/$name" "backups/$name"
+  Invoke-Compose exec -T postgres rm -f "/tmp/$name" | Out-Null
+  Ok "database backed up to backups/$name"
+  return "backups/$name"
+}
+
 function Start-Stack {
   if ($Build) { Say "Building the images (first time: a few minutes)..."; Invoke-Compose build }
   else {
@@ -252,14 +274,35 @@ if ($Kubernetes) {
   exit 0
 }
 
+if ($Restore) {
+  Test-Docker; Initialize-EnvFile; Select-Ports
+  if (-not (Test-Path $Restore)) { Die "no backup file $Restore." @("Backups: dir backups") }
+  if ($Interactive -and (Read-Answer "This REPLACES today's conversations, agents and settings with the backup's. Type 'restore' to confirm") -ne "restore") { Die "cancelled; nothing was changed." }
+  Invoke-Compose stop api worker ui | Out-Null
+  Invoke-Compose up -d --wait postgres | Out-Null
+  Invoke-Compose cp $Restore "postgres:/tmp/restore.sql.gz"
+  Invoke-Compose exec -T postgres sh -c 'gzip -dc /tmp/restore.sql.gz | psql -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" > /dev/null && rm -f /tmp/restore.sql.gz'
+  if ($LASTEXITCODE -ne 0) { Die "the restore failed (above)." @("Your backup file is unchanged.") }
+  Ok "data restored"; Start-Stack; Test-Smoke; Ok "restored from $Restore"; exit 0
+}
+
 Say "Checking this machine..."; Test-Docker
 Initialize-EnvFile; Select-Ports
 if ($Update) {
-  if ((Test-Path .git) -and -not (git status --porcelain)) { git pull --ff-only }
-  New-Item -ItemType Directory -Force backups | Out-Null
-  $backup = "backups/agent_runtime-$(Get-Date -Format yyyyMMdd-HHmmss).sql"
-  & docker compose --file $ComposeFile --env-file $EnvFile @(Get-ProfileArgs) exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > $backup
-  if ($LASTEXITCODE -eq 0) { Ok "database backed up to $backup" } else { Warn "no backup taken (is the stack running?)" }
+  if (-not (Test-Path .git)) { Die "-Update needs the git checkout: it moves to the new release." }
+  if (git status --porcelain) { Die "this checkout has local changes; an update would mix them in." @("Commit or stash them (git stash), then run -Update again.") }
+  $previous = (Get-Content VERSION -Raw).Trim()
+  Say "Backing up the database first..."
+  $backup = Backup-Database
+  git fetch --tags --quiet
+  if ($To) { git -c advice.detachedHead=false checkout --quiet $To; if ($LASTEXITCODE -ne 0) { Die "there's no release $To." } }
+  elseif ((git describe --exact-match --tags HEAD 2>$null) -like "v*") {
+    git -c advice.detachedHead=false checkout --quiet (git tag -l "v*" --sort=-v:refname | Select-Object -First 1)
+  } else { git pull --ff-only --quiet }
+  Initialize-EnvFile; Select-Ports
+  $now = (Get-Content VERSION -Raw).Trim()
+  Ok "$previous -> $now"
+  Write-Host "    If anything fails: .\setup.ps1 -Update -To v$previous$(if ($backup) { "   then: .\setup.ps1 -Restore $backup" })"
 } else { Set-Model }
 Set-Observability
 Start-Stack; Test-Smoke

@@ -6,13 +6,13 @@
 
 Under the hood, a runtime that runs LangGraph agents across a pool of workers and makes them survive what distributed systems throw at them: crashed workers, paused "zombie" workers, restarts, human approvals that take hours, node drains and rolling upgrades. It survives all of these without losing or duplicating work.
 
-> **Status: the local release is under way: one-command setup (L1), the chat UI (L2) and the Agent Studio (L3a) are done.** Clone, run `./setup.sh`, and chat in your browser; kill a worker or an API replica mid-reply and watch nothing get lost. The runtime core (phases 0–6) is complete. Every message is in a durable transcript written with each checkpoint, tokens stream live from any API replica, and a crash mid-turn duplicates nothing. The agent calls tools through one guarded pipeline (budgets with a wrap-up turn, loop detection, retries and a circuit breaker, approvals), delegates to sub-agents that resume after a crash, and fans out child runs across workers. See the [roadmap](docs/roadmap.md) and [phase summaries](docs/progress/).
+> **Status: v0.1.0, the first release for testers.** Clone, run `./setup.sh`, and chat in your browser; kill a worker or an API replica mid-reply and watch nothing get lost. Build your own agents with helpers and skills, bring your own model, watch it all work in traces and dashboards (`--observability`), or run it on a local Kubernetes cluster (`--kubernetes`). Updates keep your data (`./setup.sh --update`, with a backup first). **Testing for us?** See the [tester guide](docs/setup/testers.md); feedback is two clicks from the app. [Roadmap](docs/roadmap.md) · [phase summaries](docs/progress/) · [changelog](CHANGELOG.md).
 
 ## Try it (only Docker needed)
 
 ```bash
-git clone https://github.com/sofianebouabdallahh-ai/durable-langgraph-runtime.git
-cd durable-langgraph-runtime
+git clone --branch v0.1.0 https://github.com/sofianebouabdallahh-ai/durable-langgraph-runtime.git nuria
+cd nuria
 ./setup.sh            # Windows: .\setup.ps1
 ```
 
@@ -80,12 +80,7 @@ Run `make hooks` once after cloning: the pre-commit hooks block secrets from bei
 
 ## Security posture
 
-Read this before running the project. It's a learning project, not a hardened product.
-
-- **Today, nothing executes agent tools.** The tool and sandbox layers arrive in phases 4 and 7.
-- **Planned:** tools that execute model-generated input (`run_python`) will run in a per-run sandbox container with no network, no secrets, a read-only filesystem and resource limits ([CR-002](docs/requirements/CR-002-run-sandboxes.md)). Trusted in-process tools (search over fixtures, retrieval, saving findings) run with the worker's privileges.
-- **Containers aren't a perfect isolation boundary.** Run only against trusted documents and the bundled fixture data.
-- **Never use production credentials.** The local Postgres password in `.env.example` is a placeholder for development only.
+Everything runs on your computer, reachable from this machine only (`127.0.0.1`); containers run as non-root on read-only filesystems. Model keys are stored encrypted; nothing is sent anywhere without your click, except your messages to the model you chose. Tools that reach the outside world wait for your approval, every reply has budgets, and text from tools is treated as data, never instructions. Skills with scripts are kept but never run (no sandbox yet: [CR-002](docs/requirements/CR-002-run-sandboxes.md)). **Details, and how to delete everything:** [docs/security.md](docs/security.md).
 
 ## License
 

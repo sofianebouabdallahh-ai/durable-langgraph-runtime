@@ -393,6 +393,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A zip to attach to a bug report (phase L5)
+         * @description README, the timeline (structural fields only unless `include_chat`), the agent's definition when it's one you made, and the chat only if `include_chat`. Nothing is uploaded anywhere: the person downloads it.
+         */
+        get: operations["run_report_runs__run_id__report_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}/result": {
         parameters: {
             query?: never;
@@ -514,6 +534,23 @@ export interface paths {
         put?: never;
         /** Cancel the active turn (R12.7) */
         post: operations["cancel_turn_sessions__session_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{session_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The chat as Markdown (to keep, or to attach to a report) */
+        get: operations["export_session_sessions__session_id__export_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -914,6 +951,24 @@ export interface paths {
         put?: never;
         /** Import an agent.md or a zipped folder (the file is the body) */
         post: operations["import_agent_studio_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/telemetry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Usage counts and the switch */
+        get: operations["get_telemetry_telemetry_get"];
+        /** Turn sharing usage counts on or off */
+        put: operations["set_telemetry_telemetry_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2051,6 +2106,33 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** TelemetryUpdate */
+        TelemetryUpdate: {
+            /** Sharing */
+            sharing: boolean;
+        };
+        /** TelemetryView */
+        TelemetryView: {
+            /**
+             * Fields
+             * @description What each count is: never content, names or keys
+             */
+            fields: {
+                [key: string]: string;
+            };
+            /**
+             * Report
+             * @description Exactly what would be attached
+             */
+            report: {
+                [key: string]: unknown;
+            };
+            /**
+             * Sharing
+             * @description Usage counts are attached to feedback you send (off by default)
+             */
+            sharing: boolean;
+        };
         /** TestRequest */
         TestRequest: {
             /** Model */
@@ -2850,6 +2932,39 @@ export interface operations {
             };
         };
     };
+    run_report_runs__run_id__report_get: {
+        parameters: {
+            query?: {
+                include_chat?: boolean;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_result_runs__run_id__result_get: {
         parameters: {
             query?: never;
@@ -3140,6 +3255,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_session_sessions__session_id__export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/markdown": unknown;
                 };
             };
             /** @description Validation Error */
@@ -4056,6 +4202,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StudioAgentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_telemetry_telemetry_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelemetryView"];
+                };
+            };
+        };
+    };
+    set_telemetry_telemetry_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TelemetryUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelemetryView"];
                 };
             };
             /** @description Validation Error */

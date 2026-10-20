@@ -19,7 +19,9 @@
 name: agent-runtime
 
 x-runtime: &runtime
-  image: ${RUNTIME_IMAGE:-ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/runtime:latest}
+  # The release this checkout is (VERSION, written to .env by setup): an update lands on
+  # exactly one version. `latest` only for an .env from before L5.
+  image: ${RUNTIME_IMAGE:-ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/runtime:${NURIA_VERSION:-latest}}
   build: ../../backend
   profiles: ["app"]
   env_file: ../../.env
@@ -113,7 +115,7 @@ services:
     restart: "no"
 
   ui:
-    image: ${UI_IMAGE:-ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/ui:latest}
+    image: ${UI_IMAGE:-ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/ui:${NURIA_VERSION:-latest}}
     build: ../../frontend
     profiles: ["app"]
     ports:
