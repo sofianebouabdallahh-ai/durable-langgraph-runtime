@@ -271,6 +271,16 @@ def _fetcher(args: argparse.Namespace) -> int:
     return 0
 
 
+def _sandboxd(args: argparse.Namespace) -> int:
+    """sandboxd (sandbox/sandboxd.py): starts the per-run sandboxes; holds the Docker socket."""
+    import uvicorn
+
+    from agent_runtime.sandbox.sandboxd import create_app
+
+    uvicorn.run(create_app(), host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
 def _openapi(args: argparse.Namespace) -> int:
     """The published contract, for the UI's generated client and its drift check."""
     from pydantic import SecretStr
@@ -556,6 +566,11 @@ def build_parser() -> argparse.ArgumentParser:
     fetcher.add_argument("--host", default="127.0.0.1")
     fetcher.add_argument("--port", type=int, default=8090)
     fetcher.set_defaults(handler=_fetcher)
+
+    sandboxd = commands.add_parser("sandboxd", help="the service that runs code in sandboxes")
+    sandboxd.add_argument("--host", default="127.0.0.1")
+    sandboxd.add_argument("--port", type=int, default=8070)
+    sandboxd.set_defaults(handler=_sandboxd)
 
     openapi = commands.add_parser("openapi", help="print the API's OpenAPI spec (JSON)")
     openapi.add_argument("--out", help="write it to this file instead")

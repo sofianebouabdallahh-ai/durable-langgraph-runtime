@@ -5,7 +5,7 @@
  * may read pages from. A test search shows it works.
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Globe, KeyRound, ListChecks, XCircle } from "lucide-react";
+import { CheckCircle2, Globe, KeyRound, ListChecks, SquareTerminal, XCircle } from "lucide-react";
 import { useState } from "react";
 
 import { api, type Schemas, unwrap } from "../api/client";
@@ -47,6 +47,23 @@ export function ToolsPage() {
           <>
             <SearchSettings current={settings.data} />
             <SitesSettings current={settings.data} />
+            <Section
+              title="Run code and the terminal"
+              description="Code runs in a locked box for each conversation turn: no internet, no access to your files or keys, limited time and memory."
+              icon={<SquareTerminal aria-hidden className="size-4" />}
+              testId="sandbox-settings"
+            >
+              <p className="text-sm">
+                {settings.data.sandbox ? (
+                  <>
+                    <CheckCircle2 aria-hidden className="mr-1 inline size-4 text-emerald-600" />
+                    On. Agents with Run code, Use a terminal or Work with files can use them.
+                  </>
+                ) : (
+                  <>Off on this installation. Turn it on with <code>./setup.sh --sandbox</code>.</>
+                )}
+              </p>
+            </Section>
           </>
         ) : (
           <Spinner label="Loading…" />

@@ -82,6 +82,7 @@ from agent_runtime.runs.store import (
     RunRepository,
     RunTerminal,
 )
+from agent_runtime.sandbox import tools as sandbox_tools
 from agent_runtime.sessions.store import SessionRepository
 from agent_runtime.sessions.transcript import TranscriptWriter
 from agent_runtime.sessions.turns import turn_input
@@ -342,6 +343,10 @@ class RunExecutor:
             span.span.set_attribute("run.status", str(ended.status))
             if ended.reason:
                 span.span.set_attribute("run.reason", ended.reason)
+        if ended.status is not RunStatus.RUNNING:
+            # Its sandbox goes with this execution (R13.2): a resume or a reclaim gets a
+            # fresh one; sandboxd sweeps any a crash left behind.
+            await sandbox_tools.release(str(run.id))
         if ended.status.is_terminal and ended.finished_at is not None:
             metrics.run_ended(run.kind, str(ended.status),
                               (ended.finished_at - ended.created_at).total_seconds())  # fmt: skip

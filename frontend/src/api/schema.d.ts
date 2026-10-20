@@ -2340,6 +2340,12 @@ export interface components {
             /** Key Fingerprint */
             key_fingerprint: string | null;
             /**
+             * Sandbox
+             * @description Run code, the terminal and files are on
+             * @default false
+             */
+            sandbox: boolean;
+            /**
              * Search Provider
              * @enum {string}
              */

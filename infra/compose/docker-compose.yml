@@ -7,6 +7,9 @@
 #                         2 API replicas, 2 workers. What `./setup.sh` starts for testers.
 #                         With them: SearXNG (web search, no key) and the page reader
 #                         (`fetcher`), the web tools' only way out (L6a).
+#   profile `sandbox`:    sandboxd, which runs code and shell commands in a locked-down
+#                         container per run (L6b). On by default; `./setup.sh --no-sandbox`
+#                         turns it off.
 #   profile `llm`:        Ollama in Docker (CPU-only on macOS: prefer the native app).
 #   profile `test`:       a fake OpenAI-compatible model (browser tests, CI).
 #   profile `observability`: traces (OpenTelemetry Collector → Jaeger), metrics
@@ -45,6 +48,7 @@ x-runtime: &runtime
     # The web tools (L6a): search in the stack, pages through the reader.
     SEARXNG_URL: http://searxng:8080
     FETCHER_URL: http://fetcher:8090
+    SANDBOXD_URL: ${SANDBOXD_URL-http://sandboxd:8070} # set but empty: the code tools are off
     DASHBOARD_URL: ${DASHBOARD_URL:-}
   extra_hosts:
     - "host.docker.internal:host-gateway" # a model server on the host (Linux; macOS/Windows have it)
@@ -148,6 +152,27 @@ services:
       LOG_FORMAT: ${LOG_FORMAT:-json}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=3).status == 200 else 1)"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  # Code and shell (L6b): the only service that can start containers (it holds the Docker
+  # socket, so it runs as root, alone). Each run gets one locked-down sandbox: no network,
+  # read-only root, small tmpfs workspace, CPU/memory/process limits (CR-002 §13).
+  sandboxd:
+    <<: *runtime
+    profiles: ["sandbox"]
+    command: ["sandboxd", "--host", "0.0.0.0", "--port", "8070"]
+    user: "0"
+    env_file: [] # no database, no model keys
+    environment:
+      SANDBOXD_TOKEN: ${SANDBOXD_TOKEN:?set in .env (setup generates it)}
+      SANDBOX_IMAGE: ${SANDBOX_IMAGE:-nuria-sandbox:${NURIA_VERSION:-latest}}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8070/healthz', timeout=3).status == 200 else 1)"]
       interval: 3s
       timeout: 5s
       retries: 20

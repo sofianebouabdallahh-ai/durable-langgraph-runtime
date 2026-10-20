@@ -101,7 +101,8 @@ def _research(text: str) -> tuple[Script, SubScripts]:
                                                  "results are in my card."}}]},
         ],
         "data-analyst": [
-            {"tool_calls": [{"name": "calculator", "args": {"expression": expression}}]},
+            {"tool_calls": [{"name": "run_python",
+                             "args": {"code": f"print({_python(expression)})"}}]},
             {"tool_calls": [{"name": "return_result",
                              "args": {"summary": f"{expression} = "
                                                  f"{_number(safe_eval(expression))}"}}]},
@@ -149,6 +150,19 @@ def _calculate(text: str) -> tuple[Script, SubScripts]:
     ], {}  # fmt: skip
 
 
+def _python(expression: str) -> str:
+    """The expression as Python (the demo's arithmetic: x and \u00d7 multiply, ^ is a power)."""
+    return expression.replace("\u00d7", "*").replace("x", "*").replace("^", "**")
+
+
+def _code(text: str) -> tuple[Script, SubScripts]:
+    expression = _expression(text) or "0"
+    return [
+        {"tool_calls": [{"name": "run_python", "args": {"code": f"print({_python(expression)})"}}]},
+        {"content": f"{expression} = **{_number(safe_eval(expression))}** (run in the sandbox)"},
+    ], {}  # fmt: skip
+
+
 def _note(text: str) -> tuple[Script, SubScripts]:
     return [
         {"tool_calls": [{"name": "save_note", "args": {"text": text[:2000]}}]},
@@ -168,6 +182,7 @@ RULES: tuple[Rule, ...] = (
     Rule("research", ("spawn_subagent", "wait_subagents", "researcher", "data-analyst"),
          _words("research", "investigate"), _research),
     Rule("notify", ("notify",), _words("notify", "tell", "message", "email"), _notify),
+    Rule("code", ("run_python",), lambda t: _expression(t) is not None, _code),
     Rule("calculate", ("calculator",), lambda t: _expression(t) is not None, _calculate),
     Rule("note", ("save_note",), _words("remember", "note", "save", "keep"), _note),
     Rule("search", ("web_search",),

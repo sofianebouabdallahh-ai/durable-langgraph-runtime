@@ -35,6 +35,7 @@ class ToolSettingsView(BaseModel):
     key_fingerprint: str | None
     web_allowlist: list[str] = Field(description="When set, pages are read only from these sites")
     updated_at: datetime | None
+    sandbox: bool = Field(default=False, description="Run code, the terminal and files are on")
 
     @classmethod
     def of(cls, c: ToolConfig) -> ToolSettingsView:
@@ -80,20 +81,29 @@ class SearchTestView(BaseModel):
     results: list[SearchTestHit]
 
 
+def _view(request: Request, config: ToolConfig) -> ToolSettingsView:
+    view = ToolSettingsView.of(config)
+    view.sandbox = bool(request.app.state.settings.sandboxd_url)
+    return view
+
+
 @tools_router.get("/settings", response_model=ToolSettingsView, summary="Tool settings")
-async def get_settings(service: ServiceDep) -> ToolSettingsView:
-    return ToolSettingsView.of(await service.current())
+async def get_settings(request: Request, service: ServiceDep) -> ToolSettingsView:
+    return _view(request, await service.current())
 
 
 @tools_router.put("/settings", response_model=ToolSettingsView, summary="Change tool settings")
-async def put_settings(body: ToolSettingsUpdate, service: ServiceDep) -> ToolSettingsView:
-    return ToolSettingsView.of(
+async def put_settings(
+    body: ToolSettingsUpdate, request: Request, service: ServiceDep
+) -> ToolSettingsView:
+    return _view(
+        request,
         await service.update(
             search_provider=body.search_provider,
             api_key=body.api_key,
             searxng_url=body.searxng_url,
             web_allowlist=body.web_allowlist,
-        )
+        ),
     )
 
 

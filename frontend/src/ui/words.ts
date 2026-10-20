@@ -13,6 +13,9 @@ const TOOLS: Record<string, string> = {
   notify: "Notification",
   web_search: "Web search",
   read_webpage: "Read a page",
+  run_python: "Ran code",
+  run_shell: "Terminal",
+  workspace_files: "Files",
   load_skill: "Used a skill",
   read_skill_file: "Read a skill's file",
 };
@@ -44,6 +47,12 @@ export function toolPurpose(tool: string): string {
       return "Searches the web";
     case "read_webpage":
       return "Reads web pages and PDFs";
+    case "run_python":
+      return "Runs Python in a sandbox (no internet)";
+    case "run_shell":
+      return "Runs commands in the sandbox";
+    case "workspace_files":
+      return "Keeps files in the sandbox";
     default:
       return "";
   }

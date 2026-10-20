@@ -18,6 +18,7 @@ work with no real model and no key:
 - **a fake web** (L6a): `/searxng/search?q=…&format=json` answers like SearXNG with
   results on `/web/<page>`, small HTML pages (one plants instructions, for the R14.15
   gate); `/tavily/search` and `/brave/res/v1/web/search` answer like those APIs;
+- **code** (L6b): offered `run_python`, it runs `print(6 * 7)` once and says what it printed;
 - **a log:** GET /calls lists what it served (model, which key, tools), so a test
   proves that two helpers used two connections (AC44). DELETE /calls clears it.
 """
@@ -176,6 +177,15 @@ def _decide(model: str, messages: list[dict[str, Any]], tools: list[str], n: int
             return {"tool": "read_webpage", "args": {"url": found}, "id": f"call_{n}"}
     title = _read_title(messages)
     used += f" Read: {title}." if title else ""
+    # Code (L6b): run a tiny program once, then say what it printed.
+    if can and "run_python" in tools and not _called(messages, "run_python"):
+        return {"tool": "run_python", "args": {"code": "print(6 * 7)"}, "id": f"call_{n}"}
+    printed = next(
+        (re.search(r'"stdout": "([^"]*)"', c) for c in _results_of(messages, "run_python")), None
+    )
+    used += (
+        f" Code printed: {printed.group(1).strip().replace(chr(92) + 'n', '')}." if printed else ""
+    )
     if last.get("role") == "tool":
         answered = _tool_name(messages, last.get("tool_call_id"))
         if can and answered == "spawn_subagent" and "wait_subagents" in tools:

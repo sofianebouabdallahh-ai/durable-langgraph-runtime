@@ -8,6 +8,7 @@
 #   ./setup.sh --non-interactive --model scripted     no questions (CI, scripts)
 #   ./setup.sh --chat               chat in this terminal
 #   ./setup.sh --observability      also traces (Jaeger), metrics and a Grafana dashboard
+#   ./setup.sh --no-sandbox         without the code tools (Run code, terminal, files)
 #   ./setup.sh --kubernetes         on a local Kubernetes cluster (kind) instead of Compose
 #   ./setup.sh --update [--to v0.2.0]   back up, then move to the newest (or that) release
 #   ./setup.sh --restore backups/….sql.gz   put a backup back (replaces today's data)
@@ -35,7 +36,7 @@ die()  { printf '%s\n' "  ${R}✗ $1${N}" >&2; [ $# -gt 1 ] && printf '    %s\n'
 usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
 # ------------------------------------------------------------------ options
-ACTION=start; MODEL=""; INTERACTIVE=1; BUILD=0; OBSERVABILITY=""; TO=""; RESTORE=""; PREVIOUS=""; BACKUP=""
+ACTION=start; MODEL=""; INTERACTIVE=1; BUILD=0; OBSERVABILITY=""; SANDBOX=""; TO=""; RESTORE=""; PREVIOUS=""; BACKUP=""
 API_KEY="${SETUP_API_KEY:-}"; BASE_URL=""; MODEL_NAME=""; WANT_PORT=""; OPEN_BROWSER=1
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -56,6 +57,8 @@ while [ $# -gt 0 ]; do
     --finish-update) ACTION=finish-update; PREVIOUS="${2:?}"; BACKUP="${3:-}"; shift 2 ;;  # internal
     --chat) ACTION=chat ;;
     --observability) OBSERVABILITY=on ;;
+    --sandbox) SANDBOX=on ;;
+    --no-sandbox) SANDBOX=off ;;
     --no-observability) OBSERVABILITY=off ;;
     --kubernetes) ACTION=kubernetes ;;
     -h|--help) usage ;;
@@ -112,7 +115,7 @@ make_env() {
     env_set "$key" "$(random_secret)"; changed=$((changed + 1))
   done
   # Secrets added by later versions: an existing .env gets them too (never overwritten).
-  for key in NURIA_SECRET_KEY SEARXNG_SECRET; do
+  for key in NURIA_SECRET_KEY SEARXNG_SECRET SANDBOXD_TOKEN; do
     [ -n "$(env_get "$key")" ] || { env_set "$key" "$(random_secret)"; changed=$((changed + 1)); }
   done
   [ "$changed" -gt 0 ] && ok "generated $changed local secret(s) (only on this machine, in .env)"
@@ -299,7 +302,31 @@ configure_observability() {  # --observability / --no-observability; remembered 
   ok "observability: traces $JAEGER_PORT, dashboard $GRAFANA_PORT, metrics $PROMETHEUS_PORT"
 }
 
+configure_sandbox() {  # --sandbox / --no-sandbox; on by default; remembered in .env
+  local profiles
+  profiles=$(env_get COMPOSE_PROFILES | tr ',' '\n' | { grep -v '^sandbox$' || true; } | paste -sd, -)
+  if [ "$SANDBOX" = off ] || { [ -z "$SANDBOX" ] && [ "$(env_get SANDBOX_ENABLED)" = false ]; }; then
+    env_set COMPOSE_PROFILES "${profiles:-app}"; env_set SANDBOXD_URL ""; env_set SANDBOX_ENABLED false
+    ok "code tools off (Run code, the terminal and workspace files aren't offered)"
+    return
+  fi
+  env_set COMPOSE_PROFILES "${profiles:-app},sandbox"; env_set SANDBOX_ENABLED true
+  env_set SANDBOXD_URL http://sandboxd:8070
+}
+
+sandbox_image() {  # the image sandboxd starts for each run (built here; small, no network)
+  has_profile sandbox || return 0
+  local image="nuria-sandbox:$(cat VERSION)"
+  if [ "$BUILD" -eq 1 ] || ! "$DOCKER" image inspect "$image" >/dev/null 2>&1; then
+    say "Building the sandbox image (code runs there, one per conversation turn)…"
+    "$DOCKER" build -q -t "$image" sandbox >/dev/null || die "couldn't build the sandbox image." \
+      "Run ./setup.sh --no-sandbox to start without the code tools."
+  fi
+  env_set SANDBOX_IMAGE "$image"
+}
+
 start_stack() {
+  sandbox_image
   if [ "$BUILD" -eq 1 ]; then
     say "Building the images (first time: a few minutes)…"; compose build
   elif ! compose pull --quiet --ignore-buildable 2>/dev/null; then
@@ -329,7 +356,7 @@ smoke() {
 case "$ACTION" in
   start)
     say "Checking this machine…"; check_docker
-    make_env; choose_ports; configure_model; configure_observability
+    make_env; choose_ports; configure_model; configure_observability; configure_sandbox
     start_stack; smoke
     echo
     say "${G}Nuria is ready.${N}"
@@ -396,7 +423,7 @@ case "$ACTION" in
     ;;
   finish-update)
     ROLLBACK="  ./setup.sh --update --to v$PREVIOUS${BACKUP:+   then: ./setup.sh --restore $BACKUP}"
-    check_docker; make_env; choose_ports; configure_observability
+    check_docker; make_env; choose_ports; configure_observability; configure_sandbox
     now=$(cat VERSION)
     [ "$now" = "$PREVIOUS" ] && ok "already at $now (restarting on it)" || ok "$PREVIOUS → $now"
     start_stack; smoke

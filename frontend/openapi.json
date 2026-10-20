@@ -3108,6 +3108,12 @@
             ],
             "title": "Key Fingerprint"
           },
+          "sandbox": {
+            "default": false,
+            "description": "Run code, the terminal and files are on",
+            "title": "Sandbox",
+            "type": "boolean"
+          },
           "search_provider": {
             "enum": [
               "searxng",
