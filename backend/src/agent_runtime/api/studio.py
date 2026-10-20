@@ -44,6 +44,7 @@ def _studio(request: Request) -> StudioService:
 
 
 StudioDep = Annotated[StudioService, Depends(_studio)]
+GuideFlag = Annotated[bool, Query(description="Built in Getting started: the guide's agent")]
 
 
 # ------------------------------------------------------------------- schemas
@@ -214,13 +215,24 @@ async def list_agents(service: StudioDep) -> list[StudioAgentView]:
 
 @studio.post("/agents", status_code=status.HTTP_201_CREATED, response_model=StudioAgentView,
              summary="A new agent (blank, or a copy) with a draft")  # fmt: skip
-async def create_agent(body: CreateAgentRequest, service: StudioDep) -> StudioAgentView:
+async def create_agent(
+    body: CreateAgentRequest, request: Request, service: StudioDep, guide: GuideFlag = False
+) -> StudioAgentView:
     try:
-        return StudioAgentView.of(
-            await service.create(body.display_name, body.description, body.copy_of)
-        )
+        state = await service.create(body.display_name, body.description, body.copy_of)
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    if guide:
+        await _guide(request, state.agent.id)
+    return StudioAgentView.of(state)
+
+
+async def _guide(request: Request, agent_id: uuid.UUID) -> None:
+    """Make this the agent the Getting started guide is about (L3d)."""
+    from agent_runtime import onboarding
+
+    async with request.app.state.pool.connection() as conn, conn.transaction():
+        await onboarding.update(conn, agent_id=agent_id)
 
 
 @studio.post("/describe", status_code=status.HTTP_202_ACCEPTED, response_model=AssistStarted,
@@ -254,8 +266,13 @@ async def assist(run_id: uuid.UUID, service: StudioDep) -> AssistView:
 
 @studio.post("/agents/from-proposal", status_code=status.HTTP_201_CREATED,
              response_model=StudioAgentView, summary="A new agent from a proposal")  # fmt: skip
-async def from_proposal(body: DraftProposal, service: StudioDep) -> StudioAgentView:
-    return StudioAgentView.of(await service.create_from_proposal(body))
+async def from_proposal(
+    body: DraftProposal, request: Request, service: StudioDep, guide: GuideFlag = False
+) -> StudioAgentView:
+    state = await service.create_from_proposal(body)
+    if guide:
+        await _guide(request, state.agent.id)
+    return StudioAgentView.of(state)
 
 
 @studio.get("/agents/{agent_id}", response_model=StudioAgentView, summary="One agent")

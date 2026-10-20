@@ -29,6 +29,7 @@ from agent_runtime.admin import AdminRepository, AdminState
 from agent_runtime.agents.studio import StudioService
 from agent_runtime.api import problems
 from agent_runtime.api.models import models_router
+from agent_runtime.api.onboarding import onboarding_router
 from agent_runtime.api.problems import ApiDraining, ResultNotReady
 from agent_runtime.api.schemas import (
     AboutView,
@@ -441,6 +442,7 @@ def create_app(
     app.include_router(studio_router)
     app.include_router(models_router)
     app.include_router(skills_router)
+    app.include_router(onboarding_router)
     app.include_router(telemetry_router)
     app.include_router(graphs_router)
     app.include_router(health)
