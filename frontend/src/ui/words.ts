@@ -11,6 +11,8 @@ const TOOLS: Record<string, string> = {
   retrieve: "Documents",
   save_note: "Saved a note",
   notify: "Notification",
+  web_search: "Web search",
+  read_webpage: "Read a page",
   load_skill: "Used a skill",
   read_skill_file: "Read a skill's file",
 };
@@ -38,6 +40,10 @@ export function toolPurpose(tool: string): string {
       return "Keeps notes you want to remember";
     case "notify":
       return "Sends messages to people, only with your approval";
+    case "web_search":
+      return "Searches the web";
+    case "read_webpage":
+      return "Reads web pages and PDFs";
     default:
       return "";
   }
