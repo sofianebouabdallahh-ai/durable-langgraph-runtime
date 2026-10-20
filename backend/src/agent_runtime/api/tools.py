@@ -35,7 +35,7 @@ class ToolSettingsView(BaseModel):
     key_fingerprint: str | None
     web_allowlist: list[str] = Field(description="When set, pages are read only from these sites")
     updated_at: datetime | None
-    sandbox: bool = Field(default=False, description="Run code, the terminal and files are on")
+    sandbox: bool = Field(default=False, description="Run Python, the terminal and files are on")
 
     @classmethod
     def of(cls, c: ToolConfig) -> ToolSettingsView:

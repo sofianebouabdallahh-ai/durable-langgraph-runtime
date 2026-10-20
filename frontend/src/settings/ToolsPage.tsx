@@ -48,7 +48,7 @@ export function ToolsPage() {
             <SearchSettings current={settings.data} />
             <SitesSettings current={settings.data} />
             <Section
-              title="Run code and the terminal"
+              title="Run Python and the terminal"
               description="Code runs in a locked box for each conversation turn: no internet, no access to your files or keys, limited time and memory."
               icon={<SquareTerminal aria-hidden className="size-4" />}
               testId="sandbox-settings"
@@ -57,7 +57,7 @@ export function ToolsPage() {
                 {settings.data.sandbox ? (
                   <>
                     <CheckCircle2 aria-hidden className="mr-1 inline size-4 text-emerald-600" />
-                    On. Agents with Run code, Use a terminal or Work with files can use them.
+                    On. Agents with Run Python, Use a terminal or Work with files can use them.
                   </>
                 ) : (
                   <>Off on this installation. Turn it on with <code>./setup.sh --sandbox</code>.</>

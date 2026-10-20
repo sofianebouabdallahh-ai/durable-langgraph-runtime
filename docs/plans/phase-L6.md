@@ -6,7 +6,7 @@
 |---|---|
 | **Web search** | Searches the web |
 | **Read a web page** | Reads a page |
-| **Run code** (Python) | Runs code |
+| **Run Python** | Runs code |
 | **Shell** (bash) | Runs commands |
 | **Files** | Keeps files while they work |
 | **Notifications** | Unchanged for now (decided: not in this phase) |
@@ -57,7 +57,7 @@ People building agents (L3) expect the tools agents have everywhere else.
 |---|---|---|---|
 | **Search the web** | `web_search(query, k)` | read | Titles, URLs, snippets; cite the URLs |
 | **Read web pages** | `read_webpage(url)` | read | Readable text, capped; untrusted data |
-| **Run code** | `run_python(code)` | execute (sandbox) | stdout, stderr, files created; 30 s default |
+| **Run Python** | `run_python(code)` | execute (sandbox) | stdout, stderr, files created; 30 s default |
 | **Use a terminal** | `run_shell(command)` | execute (sandbox) | bash in the same sandbox; no network |
 | **Work with files** | `read_file`, `write_file`, `list_files` | execute (sandbox) | In the run's `/workspace`; gone when the run ends (return what matters) |
 | **Notes** | `save_note` | write_internal | Kept |

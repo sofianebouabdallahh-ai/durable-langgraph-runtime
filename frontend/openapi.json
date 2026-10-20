@@ -3122,7 +3122,7 @@
           },
           "sandbox": {
             "default": false,
-            "description": "Run code, the terminal and files are on",
+            "description": "Run Python, the terminal and files are on",
             "title": "Sandbox",
             "type": "boolean"
           },

@@ -58,7 +58,10 @@ from agent_runtime.skills.store import SkillStore
 TOOLS: dict[str, tuple[str, str]] = {
     "web_search": ("Search the web", "Finds pages on the web, so it can cite them"),
     "read_webpage": ("Read web pages", "Reads a page or a PDF as text"),
-    "run_python": ("Run code", "Runs Python in a sandbox: no internet, no access to your files"),
+    "run_python": (
+        "Run Python",
+        "Runs Python (with numpy and pandas) in a sandbox: no internet, no access to your files",
+    ),
     "run_shell": ("Use a terminal", "Runs commands in the same sandbox"),
     "workspace_files": ("Work with files", "Keeps files in the sandbox while it works"),
     "save_note": ("Notes", "Keeps notes you ask it to remember"),

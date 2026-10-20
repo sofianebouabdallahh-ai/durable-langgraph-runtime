@@ -2343,7 +2343,7 @@ export interface components {
             key_fingerprint: string | null;
             /**
              * Sandbox
-             * @description Run code, the terminal and files are on
+             * @description Run Python, the terminal and files are on
              * @default false
              */
             sandbox: boolean;

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# The sandbox (phase L6b, CR-002 §13): where Run code, the terminal and the workspace
+# The sandbox (phase L6b, CR-002 §13): where Run Python, the terminal and the workspace
 # files run, one container per run, started by sandboxd.
 #
 #   Python 3.12 with a few common data libraries, bash and coreutils; no compilers, no
