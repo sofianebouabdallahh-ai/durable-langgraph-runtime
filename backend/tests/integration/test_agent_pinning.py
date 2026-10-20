@@ -24,25 +24,25 @@ from agent_runtime.tools.builtin import default_tools
 pytestmark = pytest.mark.integration
 AGENTS = Path(__file__).resolve().parents[2] / "agents"
 CALC: list[dict[str, Any]] = [
-    {"tool_calls": [{"name": "calculator", "args": {"expression": "6*7"}}]},
+    {"tool_calls": [{"name": "run_python", "args": {"code": "print(6*7)"}}]},
     {"content": "42"},
 ]
 
 
 def edited_registry(tmp_path: Path) -> GraphRegistry:
-    """The built-in agents as they'd be after a deploy that removed chat's calculator."""
+    """The built-in agents as they'd be after a deploy that took Run Python from chat."""
     root = tmp_path / "agents"
     shutil.copytree(AGENTS, root)
     path = root / "chat" / "agent.md"
-    path.write_text(path.read_text().replace("  - calculator\n", ""))
+    path.write_text(path.read_text().replace("  - run_python\n", ""))
     settings = get_agent_settings()
     agents = load_agents(root, default_catalog(), Ceilings.from_settings(settings))
-    assert "calculator" not in [t.name for t in agents.get("chat").frontmatter.tools]
+    assert "run_python" not in [t.name for t in agents.get("chat").frontmatter.tools]
     return GraphRegistry([agent_spec(a, default_tools()) for a in agents])
 
 
 async def test_a_queued_turn_runs_the_definition_it_was_created_with(
-    pool: Pool, test_settings: Settings, checkpoint_tables: None, tmp_path: Path
+    pool: Pool, test_settings: Settings, checkpoint_tables: None, tmp_path: Path, sandbox: Settings
 ) -> None:
     graphs = default_registry()
     sessions = SessionService(pool, test_settings, graphs, RunService(pool, test_settings, graphs))
@@ -55,14 +55,14 @@ async def test_a_queued_turn_runs_the_definition_it_was_created_with(
     assert original is not None
     assert pinned == original  # rebuilt from the snapshot: identical, helpers in order
 
-    # A new deploy: chat lost its calculator. The queued turn still has it.
+    # A new deploy: chat lost Run Python. The queued turn still has it.
     after_deploy = edited_registry(tmp_path)
     done = await RunExecutor(pool, test_settings, after_deploy).execute(turn.run.id)
     assert done.status is S.COMPLETED
     async with pool.connection() as conn:
         msgs = await SessionRepository(conn).messages(sid, limit=100)
     result = next(m for m in msgs if m.type == "tool_result")
-    assert result.content["result"] == {"value": 42.0}
+    assert result.content["result"]["stdout"] == "42\n"
 
     # The next turn is created by the new deploy: it pins the new definition.
     sessions_v2 = SessionService(pool, test_settings, after_deploy,

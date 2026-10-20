@@ -1,5 +1,6 @@
 """The `runtime` CLI as a real process, against the test database."""
 
+import asyncio
 import os
 import subprocess
 import sys
@@ -9,6 +10,7 @@ import pytest
 
 from agent_runtime.config import Settings
 from agent_runtime.db import Pool
+from tests.integration.local_sandbox import SANDBOX_TOKEN, LocalBackend
 
 pytestmark = pytest.mark.integration
 
@@ -123,17 +125,21 @@ def test_supervisor_starts_n_workers_and_forwards_sigterm(
             proc.kill()
 
 
-def test_chat_streams_a_turn_in_the_terminal(
-    test_settings: Settings, checkpoint_tables: None
+async def test_chat_streams_a_turn_in_the_terminal(
+    test_settings: Settings, checkpoint_tables: None, sandboxd: tuple[str, LocalBackend]
 ) -> None:  # checkpoint_tables: the schema (ours and LangGraph's), even when run alone
     """`runtime chat --message …`: a session, turns, tokens printed as they stream. On the
-    scripted provider with no script, the demo responder answers (models/demo.py)."""
-    out = runtime(test_settings, "chat", "--message", "hello there", "--message", "What is 6*7?",
-                  env={"SCRIPTED_STREAMING": "true"})  # fmt: skip
+    scripted provider with no script, the demo responder answers (models/demo.py); its
+    arithmetic runs in the (test) sandbox, served meanwhile: the CLI runs in a thread."""
+    out = await asyncio.to_thread(
+        runtime, test_settings, "chat", "--message", "hello there", "--message", "What is 6*7?",
+        env={"SCRIPTED_STREAMING": "true", "SANDBOXD_URL": sandboxd[0],
+             "SANDBOXD_TOKEN": SANDBOX_TOKEN},
+    )  # fmt: skip
     assert out.returncode == 0, out.stderr
     assert "with chat (provider: scripted)" in out.stdout
     assert "you> hello there" in out.stdout
     assert "chat> Hi! I'm running on the **demo model**" in out.stdout  # streamed, live
     assert "[completed · 1 model calls · 0 tools" in out.stdout
-    assert '⚙ calculator({"expression": "6*7"})' in out.stdout  # the second turn used a tool
+    assert '⚙ run_python({"code": "print(6*7)"})' in out.stdout  # the second turn ran code
     assert "6*7 = **42**" in out.stdout

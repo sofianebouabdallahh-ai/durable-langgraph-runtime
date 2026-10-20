@@ -75,10 +75,12 @@ async def test_usage_counts_are_off_by_default_and_hold_no_content(
 
 
 async def test_a_chat_exports_as_markdown_in_order(
-    client: httpx.AsyncClient, pool: Pool, test_settings: Settings
+    client: httpx.AsyncClient, pool: Pool, test_settings: Settings, sandbox: Settings
 ) -> None:
+    """The whole turn, in order (L6): what you wrote, the tool call with its arguments, its
+    result in full, the reply with its model; a fence in the text can't break a block."""
     sid = await a_chat(pool, test_settings, "What is 6*7?", [
-        {"tool_calls": [{"name": "calculator", "args": {"expression": "6*7"}}]},
+        {"tool_calls": [{"name": "run_python", "args": {"code": "print(6*7)"}}]},
         {"content": "It's 42. Here's a fence: ```"},
     ])  # fmt: skip
     resp = await client.get(f"/sessions/{sid}/export")
@@ -87,8 +89,11 @@ async def test_a_chat_exports_as_markdown_in_order(
     assert "attachment" in resp.headers["content-disposition"]
     md = resp.text
     assert md.startswith(f"# About {SECRET}")
-    order = [md.index(s) for s in ("What is 6*7?", "*Used calculator*", "*calculator returned*",
-                                   "It's 42.")]  # fmt: skip
+    assert "- **Agent:** chat" in md and "- **Models:** scripted" in md
+    order = [md.index(s) for s in ("## Turn 1", "### 🧑 You", "What is 6*7?",
+                                   "#### 🔧 Tool call: `run_python`", '"code": "print(6*7)"',
+                                   "#### 📥 Result of `run_python`", '"stdout": "42\\n"',
+                                   "### 🤖 Assistant · scripted", "It's 42.")]  # fmt: skip
     assert order == sorted(order)
     assert (await client.get(f"/sessions/{uuid.uuid4()}/export")).status_code == 404
 

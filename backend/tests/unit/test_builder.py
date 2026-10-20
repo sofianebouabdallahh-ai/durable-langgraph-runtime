@@ -13,6 +13,8 @@ from agent_runtime.agents.builder import (
     InstructionsProposal,
     demo_draft,
     demo_improve,
+    describe_message,
+    only_offered,
     propose_draft,
     propose_instructions,
 )
@@ -65,3 +67,17 @@ def test_the_demo_coach_adds_only_what_is_missing() -> None:
     assert "no changes needed" in demo_improve(clear, "X").what_changed
     short = demo_improve("You answer questions.", "X")
     assert short.instructions.count("\n- ") == 2  # the date and "never make up"
+
+
+def test_the_drafter_only_offers_tools_this_installation_has() -> None:
+    """Without a sandbox (setup --no-sandbox) no draft gets Run Python: the Studio
+    wouldn't show it, and the agent couldn't use it (L6)."""
+    text = "Work out the budget for a trip and a helper that compares prices"
+    everything = demo_draft(text, LIBRARY)
+    assert "run_python" in everything.tools and "run_python" in everything.helpers[0].tools
+    no_sandbox = ["web_search", "read_webpage", "save_note", "notify"]
+    assert "run_python" not in demo_draft(text, LIBRARY, no_sandbox).tools
+    trimmed = only_offered(everything, no_sandbox)
+    assert "run_python" not in trimmed.tools and "run_python" not in trimmed.helpers[0].tools
+    assert "run_python" not in describe_message(text, LIBRARY, no_sandbox)
+    assert "run_python" in describe_message(text, LIBRARY)

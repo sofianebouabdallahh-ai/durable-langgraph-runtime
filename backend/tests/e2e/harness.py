@@ -56,6 +56,7 @@ class Cluster:
         workers: int = 2,
         concurrency: int = 2,
         api_replicas: list[dict[str, str]] | None = None,
+        env: dict[str, str] | None = None,
     ) -> None:
         settings = get_settings()
         self._admin_url = settings.database_url(driver="postgresql")
@@ -74,6 +75,7 @@ class Cluster:
                 "WORK_STREAM": f"e2e:{self.db}",
                 "PYTHONUNBUFFERED": "1",
             }
+            | (env or {})  # e.g. a sandbox for Run Python
         )
         self._log_paths: dict[int, Path] = {}
         self.apis: list[subprocess.Popen[bytes]] = []

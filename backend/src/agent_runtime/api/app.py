@@ -432,7 +432,12 @@ def create_app(
         app.state.service = RunService(p, settings, graphs, relay, b)
         app.state.sessions = SessionService(p, settings, graphs, app.state.service, relay, b)
         app.state.studio = StudioService(
-            p, app.state.service.agents, app.state.sessions, settings, app.state.service
+            p,
+            app.state.service.agents,
+            app.state.sessions,
+            settings,
+            app.state.service,
+            sandbox=bool(settings.sandboxd_url),
         )
         app.state.connections = ConnectionService(p, settings)
         app.state.skills = SkillService(p)

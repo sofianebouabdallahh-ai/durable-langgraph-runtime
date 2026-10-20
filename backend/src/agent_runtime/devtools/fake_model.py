@@ -21,8 +21,9 @@ work with no real model and no key:
 - **code** (L6b): offered `run_python`, it runs `print(6 * 7)` once and says what it printed;
 - **reasoning:** every answer starts with "Thinking: <model> decides to …" as
   `reasoning_content`, like a reasoning model (the chat download shows it);
-- **a log:** GET /calls lists what it served (model, which key, tools), so a test
-  proves that two helpers used two connections (AC44). DELETE /calls clears it.
+- **a log:** GET /calls lists what it served (model, which key, tools, the system
+  prompt), so a test proves that two helpers used two connections (AC44), or that a
+  skill reached the model. DELETE /calls clears it.
 """
 
 from __future__ import annotations
@@ -112,6 +113,11 @@ def create_app(key: str | None = None, base_url: str = "http://fake-model:9999")
                 "key": hashlib.sha256(auth.encode()).hexdigest()[:8],
                 "tools": tools,
                 "last": body["messages"][-1].get("role"),
+                # what the agent was told (tests check what reached the model)
+                "system": next(
+                    (str(m.get("content")) for m in body["messages"] if m.get("role") == "system"),
+                    "",
+                ),
             }
         )
         if model == "fake-slow":

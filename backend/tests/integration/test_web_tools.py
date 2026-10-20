@@ -190,3 +190,38 @@ async def test_planted_instructions_in_a_page_arrive_as_data(
     async with httpx.AsyncClient() as client:
         served = (await client.get(f"{web}/calls")).json()
     assert all("notify" not in call["tools"] for call in served)
+
+
+async def test_an_always_used_skill_reaches_the_model_and_its_reasoning_the_download(
+    api: Server, web: str, pool: Pool, test_settings: Settings
+) -> None:
+    """L6: "Always use" puts the skill's instructions in the prompt, inside <data>; a
+    reasoning model's thinking is kept with the reply and in the Markdown download."""
+    c = Seen(api.client)
+    connection = await model(c, web)
+    created = (await c("POST", "/studio/agents", json={"display_name": "Packer"})).json()
+    doc = created["draft"]["document"] | {
+        "description": "Plans trips.", "instructions": "Help plan trips.",
+        "model": f"{connection['name']}:fake-a",
+        "skills": ["trip-planning"], "always_skills": ["trip-planning"],
+    }  # fmt: skip
+    saved = (await c("PUT", f"/studio/agents/{created['id']}/draft", json=doc)).json()
+    assert saved["draft"]["issues"] == [], saved["draft"]["issues"]
+    chat = (await c("POST", f"/studio/agents/{created['id']}/test-chat")).json()
+    async with httpx.AsyncClient() as client:
+        await client.delete(f"{web}/calls")
+    sent = (await c("POST", f"/sessions/{chat['id']}/messages", json={"content": "hello"})).json()
+    assert (await run(pool, test_settings, sent["run_id"])).status is S.COMPLETED
+
+    async with httpx.AsyncClient() as client:
+        (served, *_) = (await client.get(f"{web}/calls")).json()
+    assert "## Know-how you always use" in served["system"]
+    assert '<data source="skill:trip-planning">' in served["system"]
+    assert "load_skill" in served["tools"]  # its files stay readable
+
+    msgs = (await c("GET", f"/sessions/{chat['id']}/messages")).json()["messages"]
+    reply = next(m for m in msgs if m["type"] == "assistant")["content"]
+    assert reply["reasoning"].startswith("Thinking:")
+    md = (await c("GET", f"/sessions/{chat['id']}/export")).text
+    assert "> 💭 **Reasoning**" in md and "> Thinking:" in md
+    assert md.index("> 💭 **Reasoning**") < md.index(reply["text"].split("\n")[0])

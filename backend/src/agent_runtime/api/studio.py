@@ -34,7 +34,6 @@ from agent_runtime.agents.studio import (
 from agent_runtime.agents.studio_store import AgentNotFound, Version
 from agent_runtime.api.schemas import SessionView
 from agent_runtime.runs.store import RunNotFound
-from agent_runtime.sandbox.tools import SANDBOX_TOOLS
 
 studio = APIRouter(prefix="/studio", tags=["studio"])
 
@@ -196,7 +195,7 @@ async def catalog(request: Request) -> StudioCatalog:
                        asks_first=risks.get(n) == "external_side_effect",
                        helpers_allowed=risks.get(n) != "external_side_effect")
             for n, (label, desc) in TOOLS.items()
-            if n in risks and (n not in SANDBOX_TOOLS or s.sandboxd_url)
+            if n in service.offered_tools()
         ],
         protections=[
             ProtectionOption(hook=h, point=point, label=label, description=desc,
