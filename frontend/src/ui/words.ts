@@ -26,6 +26,25 @@ export function agentLabel(name: string | null | undefined): string {
   return name.replaceAll(/[-_]/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 }
 
+/** A tool's name where tools are listed (a draft, the Agents page): the Studio's words. */
+const TOOL_NAMES: Record<string, string> = {
+  calculator: "Calculator",
+  search: "Search",
+  retrieve: "Documents",
+  save_note: "Notes",
+  notify: "Notifications",
+  web_search: "Search the web",
+  read_webpage: "Read web pages",
+  run_python: "Run Python",
+  run_shell: "Use a terminal",
+  workspace_files: "Work with files",
+};
+
+export function toolName(tool: string): string {
+  return TOOL_NAMES[tool] ?? toolLabel(tool);
+}
+
+/** What a tool did, as a chat card's title. */
 export function toolLabel(tool: string): string {
   return TOOLS[tool] ?? tool.replaceAll("_", " ").replace(/^\w/, (c) => c.toUpperCase());
 }

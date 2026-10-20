@@ -42,7 +42,7 @@ export const STEPS: Record<StepKey, { title: string; why: string; here: string }
   },
   tool: {
     title: "Give it a tool",
-    why: "Tools are what it can use: search, a calculator, notes, notifications (which always ask you first).",
+    why: "Tools are what it can use: search the web, read pages, run Python, notes, notifications (which always ask you first).",
     here: "In Tools, switch on one it needs. It saves by itself.",
   },
   helper: {

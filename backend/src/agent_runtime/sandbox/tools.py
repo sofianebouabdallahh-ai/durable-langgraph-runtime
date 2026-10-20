@@ -90,10 +90,38 @@ def _path(path: str) -> str:
     return joined
 
 
+# Like a notebook: a last line that is an expression has its value shown. Models often
+# end with `total` instead of `print(total)`, and plain `python -c` drops the value.
+# Errors are reported from the code's own lines, not this wrapper's.
+RUN = """\
+import ast, sys, traceback
+try:
+    tree = ast.parse(sys.argv[1], "<code>")
+except SyntaxError as e:
+    traceback.print_exception(type(e), e, None)
+    sys.exit(1)
+last = tree.body.pop() if tree.body and isinstance(tree.body[-1], ast.Expr) else None
+env = {"__name__": "__main__"}
+try:
+    exec(compile(tree, "<code>", "exec"), env)
+    if last is not None:
+        value = eval(compile(ast.Expression(last.value), "<code>", "eval"), env)
+        if value is not None:
+            print(repr(value))
+except Exception as e:
+    tb = e.__traceback__
+    while tb is not None and tb.tb_frame.f_code.co_filename != "<code>":
+        tb = tb.tb_next
+    traceback.print_exception(type(e), e, tb)
+    sys.exit(1)
+"""
+
+
 async def run_python(args: CodeArgs, ctx: ToolContext) -> dict[str, Any]:
-    """Run Python code in a sandbox (no internet; numpy and pandas installed). Print
-    results; files you write stay in the workspace for this turn."""
-    return await _exec(ctx, ["python", "-c", args.code], args.timeout_s)
+    """Run Python code in a sandbox (no internet; numpy and pandas installed). The value
+    of a last line that is an expression is shown, as in a notebook; print anything else.
+    Files you write stay in the workspace for this turn."""
+    return await _exec(ctx, ["python", "-c", RUN, args.code], args.timeout_s)
 
 
 async def run_shell(args: ShellArgs, ctx: ToolContext) -> dict[str, Any]:

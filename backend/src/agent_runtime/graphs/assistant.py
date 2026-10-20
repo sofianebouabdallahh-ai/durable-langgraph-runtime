@@ -92,7 +92,18 @@ def skills_section(skills: Sequence[SkillVersion]) -> str:
     )
 
 
-def _bindable(spec: ToolSpec) -> BaseTool:
+def load_skill_description(skills: Sequence[SkillVersion]) -> str:
+    """load_skill's description, naming this agent's skills and when to use each. Small
+    models read tool descriptions more closely than the system prompt: with the list only
+    in the prompt, qwen2.5:7b never loaded a skill; with it here, it loads the right one."""
+    listed = "; ".join(f"{s.name} (use when: {s.description})" for s in skills)
+    return (
+        "Load know-how before you answer: call this first when one of your skills fits "
+        f"the request. Your skills: {listed}"
+    )
+
+
+def _bindable(spec: ToolSpec, description: str | None = None) -> BaseTool:
     """The schema the model sees. Execution never happens here: RuntimeMiddleware
     sends every call through the ToolPipeline instead."""
 
@@ -100,8 +111,26 @@ def _bindable(spec: ToolSpec) -> BaseTool:
         raise RuntimeError("tool calls must go through the ToolPipeline")
 
     return StructuredTool.from_function(
-        coroutine=never, name=spec.name, description=spec.description, args_schema=spec.args_model
+        coroutine=never,
+        name=spec.name,
+        description=description or spec.description,
+        args_schema=spec.args_model,
     )
+
+
+def _bound(
+    agent: AgentDefinition | SubAgentDefinition,
+    tools: ToolRegistry,
+    skills: Sequence[SkillVersion],
+) -> list[BaseTool]:
+    """The granted tools as the model sees them; load_skill names this agent's skills."""
+    return [
+        _bindable(
+            tools.get(name),
+            load_skill_description(skills) if name == "load_skill" and skills else None,
+        )
+        for name in granted_tools(agent)
+    ]
 
 
 def granted_tools(agent: AgentDefinition | SubAgentDefinition) -> list[str]:
@@ -125,7 +154,7 @@ def subagent_graph(
     """A sub-agent's graph: its own prompt, tools and skills only (R16.6, R16.7)."""
     graph: Pregel[Any, Any] = create_agent(
         ScriptedChatModel(),
-        tools=[_bindable(tools.get(n)) for n in granted_tools(sub)],
+        tools=_bound(sub, tools, skills),
         system_prompt=render_prompt(sub, skills),
         middleware=[RuntimeMiddleware()],
         context_schema=RunContext,
@@ -138,7 +167,7 @@ def subagent_graph(
 def agent_spec(
     agent: AgentDefinition, tools: ToolRegistry, skills: SkillSet | None = None
 ) -> GraphSpec:
-    granted = [_bindable(tools.get(name)) for name in granted_tools(agent)]
+    granted = _bound(agent, tools, (skills or {}).get(MAIN, ()))
 
     def compile_graph(checkpointer: BaseCheckpointSaver[Any] | None) -> Pregel[Any, Any]:
         graph: Pregel[Any, Any] = create_agent(

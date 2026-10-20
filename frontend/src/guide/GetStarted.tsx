@@ -282,7 +282,7 @@ function ModelStep({ state, onChange }: { state: Onboarding; onChange: () => voi
       {way === "demo" && (
         <div className="space-y-2 text-sm">
           <p>
-            The demo model works offline with a few simple rules (a calculator, notes, search, helpers), so you can see how everything fits. It doesn't
+            The demo model works offline with a few simple rules (sums, notes, search, helpers), so you can see how everything fits. It doesn't
             really understand you; add a real model later in Models.
           </p>
           <Button onClick={() => { void guide.update({ skip_model: true }).then(onChange); }}>Use the demo model for now</Button>

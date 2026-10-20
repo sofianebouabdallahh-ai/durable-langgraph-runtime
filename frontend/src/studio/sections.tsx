@@ -163,7 +163,7 @@ function ToolCards({
                   onChange={(on) => {
                     onToggle(t.name, on);
                   }}
-                  label={`Use ${t.label}`}
+                  label={t.label.startsWith("Use ") ? t.label : `Use ${t.label}`}
                   hideLabel
                 />
               </div>

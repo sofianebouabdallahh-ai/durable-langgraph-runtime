@@ -5,6 +5,7 @@ import { type ReactNode, useState } from "react";
 import type { Message } from "../api/messages";
 import { ToolIcon } from "../ui/icons";
 import { Avatar, Button, DataBlock, Pill } from "../ui/primitives";
+import { Markdown } from "../ui/Markdown";
 import { agentLabel, approvalReason, errorText, helperStatusLabel, toolLabel } from "../ui/words";
 import type { Helper } from "./transcript";
 
@@ -108,7 +109,11 @@ export function HelperCards({ helpers }: { helpers: Helper[] }) {
                 </div>
               </div>
             )}
-            {h.summary && <p className="mt-2.5 text-[13px] leading-relaxed text-stone-600 dark:text-stone-300">{h.summary}</p>}
+            {h.summary && (
+              <div className="mt-2.5 text-stone-600 dark:text-stone-300">
+                <Markdown text={h.summary} small />
+              </div>
+            )}
           </div>
         ))}
       </div>

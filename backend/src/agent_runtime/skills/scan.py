@@ -65,9 +65,16 @@ INJECTION = [
         r"all|your|system)\b[^.\n]{0,20}\b(instructions?|rules?|prompts?|guidelines?)",
         r"\byou are now\b",
         r"\b(developer|god|jailbreak|dan) mode\b",
-        r"\bdo not (tell|inform|show) the user\b",
-        r"\b(send|post|upload|forward|email|exfiltrate)\b[^.\n]{0,40}\b(to|at)\b[^.\n]{0,20}"
+        r"\b(do not|don't|never)\s+(tell|inform|show|mention|reveal)\b[^.\n]{0,30}"
+        r"\b(the user|anyone|them)\b",
+        # Sending something out: a sentence may name files (".env") on the way.
+        r"\b(send|post|upload|forward|email|exfiltrate)\b[^\n]{0,80}?\b(to|at)\b[^\n]{0,20}"
         r"(https?://|[\w.+-]+@[\w-]+\.)",
+        # Handing over credentials, wherever to (not advice: "never share your API key").
+        r"(?<!never )(?<!not )(?<!n't )"
+        r"\b(send|share|include|collect|copy|give|leak|paste|post|upload|forward|email)\b"
+        r"[^\n]{0,60}?\b(api[ _-]?keys?|access tokens?|passwords?|credentials|private keys?|"
+        r"ssh keys?|session cookies?)\b",
         r"^\s*(system|assistant|developer)\s*:",
         r"</?(system|data|instructions?)\b[^>]*>",
         r"\b(reveal|print|show|output)\b[^.\n]{0,30}\b(system prompt|api keys?|secrets?|"

@@ -53,11 +53,17 @@ const PROSE = [
   "prose-table:text-sm prose-th:font-semibold",
 ].join(" ");
 
-export function Markdown({ text }: { text: string }) {
+/** A line that is only a number and a full stop ("48.") is an empty list item to
+ * Markdown, so the answer would vanish: keep it as text. */
+export function keepBareNumbers(text: string): string {
+  return text.replace(/^(\s*\d+)([.)])(\s*)$/gm, "$1\\$2$3");
+}
+
+export function Markdown({ text, small = false }: { text: string; small?: boolean }) {
   return (
-    <div className={`${PROSE} text-[15px]`}>
+    <div className={`${PROSE} ${small ? "text-[13px]" : "text-[15px]"}`}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]} components={components} skipHtml>
-        {text}
+        {keepBareNumbers(text)}
       </ReactMarkdown>
     </div>
   );

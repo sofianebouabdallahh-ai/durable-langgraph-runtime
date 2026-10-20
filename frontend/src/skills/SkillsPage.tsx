@@ -401,7 +401,7 @@ function SkillDialog({
   const [problems, setProblems] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const text = instructions ?? detail.data?.instructions ?? "";
-  const tokens = Math.floor(text.length / 4) + 1;
+  const tokens = text.trim() ? Math.max(1, Math.round(text.length / 4)) : 0;
   const name = skill?.name ?? skillName(title);
   const existing = (skill?.files ?? []).filter((f) => !removed.includes(f.path));
 
@@ -470,7 +470,7 @@ function SkillDialog({
             rows={10}
             required
             value={text}
-            hint={tokens > WARN_TOKENS ? `About ${tokens.toLocaleString()} tokens: under ${WARN_TOKENS.toLocaleString()} works best.` : `About ${tokens.toLocaleString()} tokens.`}
+            hint={tokens > WARN_TOKENS ? `About ${tokens.toLocaleString()} tokens: under ${WARN_TOKENS.toLocaleString()} works best.` : tokens ? `About ${tokens.toLocaleString()} token${tokens === 1 ? "" : "s"}.` : "Its steps, rules or checklist, in Markdown."}
             placeholder={"# Packing\n\n- Check the weather first.\n- …"}
             onChange={(e) => {
               setInstructions(e.target.value);

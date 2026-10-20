@@ -139,6 +139,6 @@ def test_an_agent_with_skills_loads_its_first_skill_in_the_demo() -> None:
     )
     script, _ = demo_script("What is 2 + 2?", skilled)
     assert script[0] == {"tool_calls": [{"name": "load_skill", "args": {"name": "trip-planning"}}]}
-    assert script[1]["tool_calls"][0]["name"] == "calculator"  # then the usual rule
+    assert script[1]["tool_calls"][0]["name"] == "run_python"  # then the usual rule
     plain, _ = demo_script("What is 2 + 2?", CHAT)
     assert plain[0]["tool_calls"][0]["name"] == "calculator"
