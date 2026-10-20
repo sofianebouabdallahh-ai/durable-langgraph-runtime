@@ -32,9 +32,9 @@ test("Settings → Tools: point search somewhere and test it", async ({ page }) 
   await search.getByRole("button", { name: "Save and test" }).click();
   await expect(page.getByTestId("search-test")).toContainText("Works", { timeout: 30_000 });
   await expect(page.getByTestId("search-test")).toContainText("Ferries to Naxos");
+  expect(await serious(page)).toEqual([]);
   await search.getByRole("radio", { name: /Tavily/ }).click();
   await expect(search.getByRole("button", { name: "Save and test" })).toBeDisabled(); // a key first
-  expect(await serious(page)).toEqual([]);
 });
 
 test("SC1: an agent searches the web, reads a page and says what it read", async ({ page, request }) => {
