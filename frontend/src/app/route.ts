@@ -7,6 +7,7 @@
  *   #/studio/<id> edit one of your agents (the Agent Studio)
  *   #/settings/models  your models and keys    #/settings/privacy  usage counts (opt-in)
  *   #/skills      the skill library
+ *   #/start       Getting started: a guided first agent
  */
 import { useCallback, useSyncExternalStore } from "react";
 
@@ -18,7 +19,8 @@ export type Route =
   | { page: "studio"; agentId: string }
   | { page: "models" }
   | { page: "privacy" }
-  | { page: "skills" };
+  | { page: "skills" }
+  | { page: "start" };
 
 export function parse(hash: string): Route {
   const [, kind, id] = hash.replace(/^#/, "").split("/");
@@ -28,6 +30,7 @@ export function parse(hash: string): Route {
   if (kind === "settings" && id === "models") return { page: "models" };
   if (kind === "settings" && id === "privacy") return { page: "privacy" };
   if (kind === "skills") return { page: "skills" };
+  if (kind === "start") return { page: "start" };
   return { page: "home" };
 }
 
@@ -49,6 +52,8 @@ export function href(route: Route): string {
       return "#/settings/privacy";
     case "skills":
       return "#/skills";
+    case "start":
+      return "#/start";
   }
 }
 

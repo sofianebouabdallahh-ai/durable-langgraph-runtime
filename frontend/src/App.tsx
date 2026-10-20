@@ -12,6 +12,7 @@ const AgentsPage = lazy(() => import("./agents/AgentsPage").then((m) => ({ defau
 const AgentDetail = lazy(() => import("./agents/AgentsPage").then((m) => ({ default: m.AgentDetail })));
 const ModelsPage = lazy(() => import("./settings/ModelsPage").then((m) => ({ default: m.ModelsPage })));
 const PrivacyPage = lazy(() => import("./settings/PrivacyPage").then((m) => ({ default: m.PrivacyPage })));
+const GetStarted = lazy(() => import("./guide/GetStarted").then((m) => ({ default: m.GetStarted })));
 const SkillsPage = lazy(() => import("./skills/SkillsPage").then((m) => ({ default: m.SkillsPage })));
 const StudioEditor = lazy(() => import("./studio/StudioEditor").then((m) => ({ default: m.StudioEditor })));
 import { Logo } from "./ui/Logo";
@@ -67,6 +68,7 @@ export function App() {
             {route.page === "models" && <ModelsPage />}
             {route.page === "privacy" && <PrivacyPage />}
             {route.page === "skills" && <SkillsPage />}
+            {route.page === "start" && <GetStarted go={go} />}
           </Suspense>
         </div>
       </main>

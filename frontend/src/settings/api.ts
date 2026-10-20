@@ -21,6 +21,7 @@ export function useModelsRefresh() {
   return () => {
     void client.invalidateQueries({ queryKey: ["models"] });
     void client.invalidateQueries({ queryKey: ["studio"] }); // publish blockers name models
+    void client.invalidateQueries({ queryKey: ["onboarding"] }); // Getting started's model step
   };
 }
 

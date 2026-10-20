@@ -39,12 +39,13 @@ export function useStudioRefresh() {
     if (agent) client.setQueryData(studioKeys.agent(agent.id), agent);
     void client.invalidateQueries({ queryKey: studioKeys.agents });
     void client.invalidateQueries({ queryKey: ["agents"] });
+    void client.invalidateQueries({ queryKey: ["onboarding"] }); // Getting started follows the agent
   };
 }
 
 export const studio = {
-  create: (body: { display_name: string; description: string; copy_of: string | null }) =>
-    unwrap(api.POST("/studio/agents", { body })),
+  create: (body: { display_name: string; description: string; copy_of: string | null }, guide = false) =>
+    unwrap(api.POST("/studio/agents", { body, params: { query: { guide } } })),
   save: (id: string, document: AgentDocument) =>
     unwrap(api.PUT("/studio/agents/{agent_id}/draft", { params: { path: { agent_id: id } }, body: document })),
   edit: (id: string) => unwrap(api.POST("/studio/agents/{agent_id}/edit", { params: { path: { agent_id: id } } })),
@@ -69,7 +70,8 @@ export const studio = {
   /** The builder agents (R17.3): each returns a run whose answer `assist` reads. */
   describe: (description: string) => unwrap(api.POST("/studio/describe", { body: { description } })),
   improve: (id: string) => unwrap(api.POST("/studio/agents/{agent_id}/improve", { params: { path: { agent_id: id } } })),
-  fromProposal: (proposal: DraftProposal) => unwrap(api.POST("/studio/agents/from-proposal", { body: proposal })),
+  fromProposal: (proposal: DraftProposal, guide = false) =>
+    unwrap(api.POST("/studio/agents/from-proposal", { body: proposal, params: { query: { guide } } })),
   exportUrl: (id: string, version?: number) =>
     `/api/studio/agents/${encodeURIComponent(id)}/export${version ? `?version=${String(version)}` : ""}`,
 };
@@ -77,7 +79,7 @@ export const studio = {
 export function useCreateAgent(onDone: (agent: StudioAgent) => void) {
   const refresh = useStudioRefresh();
   return useMutation({
-    mutationFn: studio.create,
+    mutationFn: (body: Parameters<typeof studio.create>[0]) => studio.create(body),
     onSuccess: (agent) => {
       refresh(agent);
       onDone(agent);

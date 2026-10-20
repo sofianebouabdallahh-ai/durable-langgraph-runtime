@@ -1,12 +1,13 @@
 /** The sidebar: Nuria, navigation, and the chats by recency. */
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Bot, Boxes, MessageSquare, MessageSquareHeart, Plus, Search, Shield } from "lucide-react";
+import { BookOpen, Bot, Boxes, Compass, MessageSquare, MessageSquareHeart, Plus, Search, Shield } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { api, unwrap, type SessionView } from "../api/client";
 import { href, type Route } from "../app/route";
 import { Logo } from "../ui/Logo";
 import { FeedbackDialog } from "../feedback/FeedbackDialog";
+import { doneCount, useOnboarding } from "../guide/api";
 import { ModelStatus } from "./ModelStatus";
 
 const DAY = 86_400_000;
@@ -55,6 +56,7 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: () =>
         >
           <Plus aria-hidden className="size-4" /> New chat
         </a>
+        <GuideLink active={route.page === "start"} onNavigate={onNavigate} />
         <NavLink to={{ page: "agents" }} active={route.page === "agents" || route.page === "agent" || route.page === "studio"} onNavigate={onNavigate} icon={<Bot aria-hidden className="size-4" />}>
           Agents
         </NavLink>
@@ -164,5 +166,20 @@ function NavLink({
       {icon}
       {children}
     </a>
+  );
+}
+
+/** "Get started 2/5" while the guide is neither finished nor hidden (phase L3d). */
+function GuideLink({ active, onNavigate }: { active: boolean; onNavigate: () => void }) {
+  const state = useOnboarding();
+  const s = state.data;
+  if (!s || s.finished || s.dismissed) return null;
+  return (
+    <NavLink to={{ page: "start" }} active={active} onNavigate={onNavigate} icon={<Compass aria-hidden className="size-4" />}>
+      Get started
+      <span className="ml-auto rounded-full bg-sun-100 px-1.5 text-[11px] font-semibold text-sun-800 dark:bg-sun-700/30 dark:text-sun-200">
+        {doneCount(s)}/{s.steps.length}
+      </span>
+    </NavLink>
   );
 }

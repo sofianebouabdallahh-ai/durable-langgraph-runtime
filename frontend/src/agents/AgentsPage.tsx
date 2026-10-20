@@ -282,8 +282,18 @@ function NewAgentDialog({
 }
 
 /** "Describe it" (R17.3): the builder agent drafts the form; nothing is saved until you accept. */
-function DescribeIt({ onCreated, onClose }: { onCreated: (id: string) => void; onClose: () => void }) {
-  const [text, setText] = useState("");
+export function DescribeIt({
+  onCreated,
+  onClose,
+  guide = false,
+  example = "",
+}: {
+  onCreated: (id: string) => void;
+  onClose?: () => void;
+  guide?: boolean; // made in Getting started: it becomes the guide's agent
+  example?: string;
+}) {
+  const [text, setText] = useState(example);
   const [runId, setRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [accepting, setAccepting] = useState(false);
@@ -322,7 +332,7 @@ function DescribeIt({ onCreated, onClose }: { onCreated: (id: string) => void; o
             onClick={() => {
               setAccepting(true);
               studio
-                .fromProposal(draft)
+                .fromProposal(draft, guide)
                 .then((agent) => {
                   refresh(agent);
                   onCreated(agent.id);
@@ -364,7 +374,7 @@ function DescribeIt({ onCreated, onClose }: { onCreated: (id: string) => void; o
         minLength={10}
         maxLength={4000}
         required
-        autoFocus
+        autoFocus={onClose !== undefined} // in a dialog, not on a page
         value={text}
         disabled={working}
         placeholder="It plans family trips: finds things to do, keeps to a budget, and has a helper that finds kid-friendly restaurants."
@@ -381,7 +391,7 @@ function DescribeIt({ onCreated, onClose }: { onCreated: (id: string) => void; o
       )}
       {error && <div role="alert" className="text-sm text-rose-600">{error}</div>}
       <div className="flex justify-end gap-2">
-        <Button onClick={onClose}>Cancel</Button>
+        {onClose && <Button onClick={onClose}>Cancel</Button>}
         <Button variant="primary" type="submit" disabled={text.trim().length < 10 || working}>
           <Sparkles aria-hidden className="size-4" /> Draft it
         </Button>
