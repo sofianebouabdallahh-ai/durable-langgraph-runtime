@@ -286,7 +286,7 @@ function renderItems(items: Item[], agent: string, waitingId: string | null, onD
     out.push(
       <StepList key={`steps:${group[0]?.key ?? ""}`}>
         {group.map((s) => (
-          <ToolCard key={s.key} call={s.call} result={s.result} awaitingApproval={s.awaitingApproval} />
+          <ToolCard key={s.key} call={s.call} result={s.result} awaitingApproval={s.awaitingApproval} ended={s.ended} />
         ))}
       </StepList>,
     );

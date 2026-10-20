@@ -18,7 +18,7 @@ export const HELPER_TOOLS: ReadonlySet<string> = new Set([
 
 export type Item =
   | { kind: "text"; key: string; message: Of<"assistant"> }
-  | { kind: "tool"; key: string; call: Of<"tool_call">; result: Of<"tool_result"> | null; awaitingApproval: boolean }
+  | { kind: "tool"; key: string; call: Of<"tool_call">; result: Of<"tool_result"> | null; awaitingApproval: boolean; ended: boolean }
   | { kind: "helpers"; key: string; helpers: Helper[] }
   | { kind: "approval-request"; key: string; message: Of<"interrupt">; decided: Of<"approval"> | null }
   | { kind: "error"; key: string; message: Of<"error"> };
@@ -59,14 +59,15 @@ export function turns(state: ChatState): TurnView[] {
     return {
       runId,
       user: messages.find((m): m is Of<"user"> => m.type === "user") ?? null,
-      items: items(messages, Object.values(state.helpers).filter((h) => h.runId === runId)),
+      items: items(messages, Object.values(state.helpers).filter((h) => h.runId === runId), runId === activeRun),
       draft: state.draft?.runId === runId ? state.draft.text : null,
       active: runId === activeRun,
     };
   });
 }
 
-function items(messages: Message[], helpers: Helper[]): Item[] {
+/** `active`: the turn is still going; in an ended one, a call without a result never finished. */
+function items(messages: Message[], helpers: Helper[], active: boolean): Item[] {
   const results = new Map<string, Of<"tool_result">>();
   const decisions: Of<"approval">[] = [];
   for (const m of messages) {
@@ -93,7 +94,8 @@ function items(messages: Message[], helpers: Helper[]): Item[] {
           }
         } else {
           const result = results.get(m.toolCallId) ?? null;
-          out.push({ kind: "tool", key: m.messageId, call: m, result, awaitingApproval: result === null && held.has(m.tool) });
+          const awaitingApproval = result === null && held.has(m.tool);
+          out.push({ kind: "tool", key: m.messageId, call: m, result, awaitingApproval, ended: result === null && !awaitingApproval && !active });
         }
         break;
       case "interrupt": {

@@ -24,13 +24,16 @@ export function ToolCard({
   call,
   result,
   awaitingApproval = false,
+  ended = false,
 }: {
   call: Of<"tool_call">;
   result: Of<"tool_result"> | null;
   awaitingApproval?: boolean;
+  /** Its turn is over and it has no result: it never finished (stopped, timed out). */
+  ended?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const state = result === null ? (awaitingApproval ? "held" : "running") : result.error ? "failed" : "done";
+  const state = result === null ? (awaitingApproval ? "held" : ended ? "unfinished" : "running") : result.error ? "failed" : "done";
   return (
     <div data-testid="tool-card">
       <button
@@ -47,6 +50,7 @@ export function ToolCard({
         <span className="font-medium text-stone-800 dark:text-stone-200">{toolLabel(call.tool)}</span>
         {state === "running" && <span className="text-stone-500">working…</span>}
         {state === "held" && <span className="text-amber-600 dark:text-amber-400">waiting for your OK</span>}
+        {state === "unfinished" && <span className="text-stone-500">didn't finish</span>}
         {result?.cached && <Pill tone="blue">reused</Pill>}
         <span className="ml-auto flex items-center gap-2 text-xs text-stone-500">
           {result?.durationMs != null && <span className="tabular-nums">{formatMs(result.durationMs)}</span>}

@@ -414,7 +414,8 @@ class RunExecutor:
         }
         if run.started_at is None:  # set by the queued → running transition
             raise RuntimeError(f"run {run.id} is running without started_at")
-        deadline = run.started_at.timestamp() + limits.timeout_s
+        # The agent's working time: waiting for a person to approve doesn't count (R1.7).
+        deadline = run.started_at.timestamp() + run.waited_s + limits.timeout_s
         if deadline - time.time() <= 0:
             return await self._fail(fence, FailureReason.TIMEOUT, outbox)
         if self._orchestrator is not None:
@@ -542,7 +543,7 @@ class RunExecutor:
         """Children + waiting_children in one fenced transaction, or a rejection the
         node sees (R14.6). Children may not outlive their parent's deadline."""
         assert run.started_at is not None
-        remaining = int(run.started_at.timestamp() + limits.timeout_s - time.time())
+        remaining = int(run.started_at.timestamp() + run.waited_s + limits.timeout_s - time.time())
         if remaining < 1:
             return {"rejected": "no time left for children before the run's timeout"}
         try:
@@ -583,7 +584,7 @@ class RunExecutor:
         fm = agent.frontmatter
         inp = AgentInput.model_validate(run.input)
         if agent.subagents:
-            started = run.started_at.timestamp() if run.started_at else time.time()
+            started = (run.started_at.timestamp() + run.waited_s) if run.started_at else time.time()
             self._orchestrator = SubagentOrchestrator(
                 pool=self._pool, fence=fence, bus=self._bus, main=agent,
                 build=lambda sub, cp: subagent_graph(

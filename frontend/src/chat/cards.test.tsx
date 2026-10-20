@@ -26,6 +26,9 @@ describe("ToolCard", () => {
     expect(screen.getByText("working…")).toBeInTheDocument();
     rerender(<ToolCard call={c} result={null} awaitingApproval />);
     expect(screen.getByText("waiting for your OK")).toBeInTheDocument();
+    rerender(<ToolCard call={c} result={null} ended />); // its turn stopped first
+    expect(screen.getByText("didn't finish")).toBeInTheDocument();
+    expect(screen.queryByText("working…")).toBeNull();
     rerender(<ToolCard call={c} result={{ ...(result(2, "search", "c1", null) as Of<"tool_result">), error: "down", cached: true, durationMs: 1500 }} />);
     expect(screen.getByText("reused")).toBeInTheDocument();
     expect(screen.getByText("1.5 s")).toBeInTheDocument();
