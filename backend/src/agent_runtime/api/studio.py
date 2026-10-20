@@ -329,6 +329,13 @@ async def test_chat(agent_id: uuid.UUID, service: StudioDep) -> SessionView:
     return SessionView.of(await service.playground(agent_id))
 
 
+@studio.get("/agents/{agent_id}/test-chat", response_model=SessionView | None,
+            summary="The latest test chat still open, if any")  # fmt: skip
+async def last_test_chat(agent_id: uuid.UUID, service: StudioDep) -> SessionView | None:
+    found = await service.last_playground(agent_id)
+    return SessionView.of(found) if found else None
+
+
 @studio.get("/agents/{agent_id}/export", summary="Download as agent.md (or a zipped folder)",
             responses={200: {"content": {"application/zip": {}, "text/markdown": {}}}})  # fmt: skip
 async def export(

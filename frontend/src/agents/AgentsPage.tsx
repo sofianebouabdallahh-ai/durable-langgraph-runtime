@@ -15,6 +15,7 @@ import { Dialog, Segmented, TextArea, TextField } from "../ui/form";
 import { ToolIcon } from "../ui/icons";
 import { Markdown } from "../ui/Markdown";
 import { Avatar, Button, Pill, Spinner } from "../ui/primitives";
+import { AgentPowerButton, OffPill } from "../safety/KillSwitch";
 import { agentLabel, limitLines, toolName, toolPurpose } from "../ui/words";
 
 type Helper = Schemas["HelperView"];
@@ -107,6 +108,7 @@ export function AgentsPage({ go }: { go: (route: Route) => void }) {
               {a.status === "draft" && <Pill tone="sun">Draft</Pill>}
               {a.status === "published" && <Pill tone="green">Published v{a.published?.number}</Pill>}
               {a.status === "changes" && <Pill tone="amber">v{a.published?.number} · unpublished changes</Pill>}
+              <OffPill agent={a.name} />
               <span className="ml-auto text-xs font-medium text-stone-500 group-hover:text-stone-900 dark:group-hover:text-stone-100">Edit →</span>
             </div>
           </a>
@@ -136,12 +138,13 @@ export function AgentsPage({ go }: { go: (route: Route) => void }) {
                   <Users aria-hidden className="size-3" /> {a.helpers.length} helpers
                 </Pill>
               )}
+              <AgentPowerButton agent={a.name} label={a.display_name} className="relative z-10 ml-auto" />
               <button
                 type="button"
                 onClick={() => {
                   setCreating({ copyOf: a });
                 }}
-                className="relative z-10 ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-stone-600 hover:bg-stone-100 hover:text-stone-900 dark:text-stone-300 dark:hover:bg-stone-800"
+                className="relative z-10 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-stone-600 hover:bg-stone-100 hover:text-stone-900 dark:text-stone-300 dark:hover:bg-stone-800"
               >
                 <Copy aria-hidden className="size-3.5" /> Copy
               </button>

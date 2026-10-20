@@ -33,6 +33,7 @@ from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.service import Overloaded, RunService, prepare_spec
 from agent_runtime.runs.state import RunStatus
 from agent_runtime.runs.store import Run, RunRepository
+from agent_runtime.runs.switches import ensure_on
 from agent_runtime.sessions.store import (
     Message,
     NewMessage,
@@ -201,6 +202,7 @@ class SessionService:
         async with self._pool.connection() as conn:
             pinned = await self._agents.resolve(conn, session.graph_name,
                                                 draft_of=session.playground_of)  # fmt: skip
+            await ensure_on(conn, pinned.definition.id)  # its kill switch (L6)
             # Its models, bound now: a later change of the default can't move this turn.
             bindings = await self._runs.models.bind(conn, pinned.definition)
             limit = pinned.definition.frontmatter.max_session_turns

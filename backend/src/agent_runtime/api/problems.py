@@ -26,6 +26,7 @@ from agent_runtime.models.connections import ConnectionInvalid, ConnectionNotFou
 from agent_runtime.runs.limits import LimitAboveCeiling
 from agent_runtime.runs.service import AdmissionPaused, Overloaded
 from agent_runtime.runs.store import NotWaitingForApproval, RunNotFound, RunTerminal
+from agent_runtime.runs.switches import AgentSwitchedOff
 from agent_runtime.sessions.service import ChatLimitReached, DuplicateSend, NotAnAgent
 from agent_runtime.sessions.store import NoActiveTurn, SessionArchived, SessionNotFound, TurnActive
 from agent_runtime.skills.service import BuiltInSkill, SkillBlocked, SkillExists, SkillInvalid
@@ -170,6 +171,10 @@ def install(app: FastAPI) -> None:
             409, "not-waiting-for-approval", "Run is not waiting for approval", str(exc),
             run_id=str(exc.run.id), status_now=str(exc.run.status),
         )  # fmt: skip
+
+    @app.exception_handler(AgentSwitchedOff)
+    async def _switched_off(_: Request, exc: AgentSwitchedOff) -> JSONResponse:
+        return problem(409, "agent-off", "This agent is switched off", str(exc), agent=exc.agent)
 
     @app.exception_handler(AdmissionPaused)
     async def _paused(_: Request, exc: AdmissionPaused) -> JSONResponse:

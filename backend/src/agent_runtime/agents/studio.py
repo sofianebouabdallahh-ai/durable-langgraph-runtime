@@ -44,7 +44,7 @@ from agent_runtime.ids import new_id
 from agent_runtime.runs.service import RunService
 from agent_runtime.runs.store import Run, RunRepository
 from agent_runtime.sessions.service import SessionService
-from agent_runtime.sessions.store import Session
+from agent_runtime.sessions.store import Session, SessionRepository
 from agent_runtime.skills import spec as skill_spec
 from agent_runtime.skills.binding import MissingSkills, bind, lock_of
 from agent_runtime.skills.scan import ScanReport, scan
@@ -442,6 +442,12 @@ class StudioService:
         return [await self.get(a.id) for a in agents if a.archived_at is None]
 
     # ---------------------------------------------------------- test chats
+
+    async def last_playground(self, agent_id: uuid.UUID) -> Session | None:
+        """The test chat to show again when the Studio opens: the latest still open."""
+        async with self._pool.connection() as conn:
+            await AgentStore(conn).get(agent_id)  # AgentNotFound → 404
+            return await SessionRepository(conn).latest_test_chat(agent_id)
 
     async def playground(self, agent_id: uuid.UUID) -> Session:
         """A new test chat with the draft (or, without one, the published version)."""

@@ -178,6 +178,9 @@ class Settings(AgentSettings):
     # Leases and reclaim (R2.3, R2.4)
     lease_ttl_s: float = Field(default=30.0, gt=0)
     heartbeat_s: float = Field(default=10.0, gt=0)
+    # How often a worker checks whether its run was stopped (Stop, the kill switch): the
+    # step in progress is cut off within this, not only between steps.
+    cancel_poll_s: float = Field(default=1.0, gt=0)
     reaper_interval_s: float = Field(default=5.0, gt=0)
     max_reclaims: int = Field(default=3, ge=0)
 

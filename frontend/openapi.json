@@ -203,6 +203,14 @@
       "AgentDocument": {
         "additionalProperties": false,
         "properties": {
+          "always_skills": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Always Skills",
+            "type": "array"
+          },
           "description": {
             "default": "",
             "title": "Description",
@@ -1334,6 +1342,14 @@
       "HelperDocument": {
         "additionalProperties": false,
         "properties": {
+          "always_skills": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Always Skills",
+            "type": "array"
+          },
           "description": {
             "default": "",
             "title": "Description",
@@ -1538,6 +1554,54 @@
           "message"
         ],
         "title": "IssueView",
+        "type": "object"
+      },
+      "KillSwitchView": {
+        "properties": {
+          "agents": {
+            "description": "Agents switched off one by one",
+            "items": {
+              "$ref": "#/components/schemas/SwitchView"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
+          "all_off": {
+            "description": "Every agent is stopped",
+            "title": "All Off",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          }
+        },
+        "required": [
+          "all_off",
+          "reason",
+          "since",
+          "agents"
+        ],
+        "title": "KillSwitchView",
         "type": "object"
       },
       "MessageView": {
@@ -1910,6 +1974,27 @@
           "partial"
         ],
         "title": "ResultView",
+        "type": "object"
+      },
+      "ResumeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None: every agent",
+            "title": "Agent"
+          }
+        },
+        "title": "ResumeRequest",
         "type": "object"
       },
       "RunStatus": {
@@ -2672,6 +2757,93 @@
         "title": "Step",
         "type": "object"
       },
+      "StopRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None: every agent",
+            "title": "Agent"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "StopRequest",
+        "type": "object"
+      },
+      "StopResult": {
+        "properties": {
+          "agents": {
+            "description": "Agents switched off one by one",
+            "items": {
+              "$ref": "#/components/schemas/SwitchView"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
+          "all_off": {
+            "description": "Every agent is stopped",
+            "title": "All Off",
+            "type": "boolean"
+          },
+          "cancelled": {
+            "description": "Runs stopped (their helpers and children with them)",
+            "title": "Cancelled",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          }
+        },
+        "required": [
+          "all_off",
+          "reason",
+          "since",
+          "agents",
+          "cancelled"
+        ],
+        "title": "StopResult",
+        "type": "object"
+      },
       "StudioAgentView": {
         "properties": {
           "archived": {
@@ -2880,6 +3052,37 @@
           "result"
         ],
         "title": "SubagentView",
+        "type": "object"
+      },
+      "SwitchView": {
+        "properties": {
+          "agent": {
+            "title": "Agent",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent",
+          "reason",
+          "since"
+        ],
+        "title": "SwitchView",
         "type": "object"
       },
       "TelemetryUpdate": {
@@ -3660,6 +3863,109 @@
         "summary": "Liveness: the process is up",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/kill-switch": {
+      "get": {
+        "operationId": "state_kill_switch_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KillSwitchView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "What is switched off",
+        "tags": [
+          "kill switch"
+        ]
+      }
+    },
+    "/kill-switch/resume": {
+      "post": {
+        "operationId": "resume_kill_switch_resume_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResumeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KillSwitchView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Switch back on",
+        "tags": [
+          "kill switch"
+        ]
+      }
+    },
+    "/kill-switch/stop": {
+      "post": {
+        "operationId": "stop_kill_switch_stop_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StopRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StopResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop an agent, or all, now",
+        "tags": [
+          "kill switch"
         ]
       }
     },
@@ -6012,6 +6318,55 @@
       }
     },
     "/studio/agents/{agent_id}/test-chat": {
+      "get": {
+        "operationId": "last_test_chat_studio_agents__agent_id__test_chat_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionView"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Last Test Chat Studio Agents  Agent Id  Test Chat Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "The latest test chat still open, if any",
+        "tags": [
+          "studio"
+        ]
+      },
       "post": {
         "operationId": "test_chat_studio_agents__agent_id__test_chat_post",
         "parameters": [

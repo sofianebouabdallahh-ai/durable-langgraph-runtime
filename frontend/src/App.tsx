@@ -4,6 +4,7 @@ import { lazy, Suspense, useState } from "react";
 import { useRoute } from "./app/route";
 import { ChatView } from "./chat/ChatView";
 import { Home } from "./chat/Home";
+import { KillSwitchBanner } from "./safety/KillSwitch";
 import { Sidebar } from "./sessions/Sidebar";
 import { Spinner } from "./ui/primitives";
 
@@ -59,6 +60,7 @@ export function App() {
           </button>
           <Logo />
         </div>
+        <KillSwitchBanner />
         <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
           {route.page === "chat" && <ChatView key={route.sessionId} sessionId={route.sessionId} />}
           {route.page === "home" && <Home go={go} />}

@@ -178,6 +178,16 @@ class SessionRepository:
             raise SessionNotFound(session_id)
         return Session.from_row(row)
 
+    async def latest_test_chat(self, agent_id: uuid.UUID) -> Session | None:
+        """The agent's most recent test chat still open (the Studio shows it again)."""
+        cur = await self._conn.execute(
+            f"SELECT {_SESSION} {_FROM} WHERE s.playground_of = %s AND s.status = 'active' "
+            "ORDER BY s.created_at DESC LIMIT 1",
+            (agent_id,),
+        )
+        row = await cur.fetchone()
+        return Session.from_row(row) if row else None
+
     async def page(
         self, *, status: str | None, limit: int, before: datetime | None = None
     ) -> list[Session]:

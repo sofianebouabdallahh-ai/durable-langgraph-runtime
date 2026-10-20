@@ -8,6 +8,7 @@ import { href, type Route } from "../app/route";
 import { Logo } from "../ui/Logo";
 import { FeedbackDialog } from "../feedback/FeedbackDialog";
 import { doneCount, useOnboarding } from "../guide/api";
+import { StopAllButton } from "../safety/KillSwitch";
 import { ModelStatus } from "./ModelStatus";
 
 const DAY = 86_400_000;
@@ -118,7 +119,10 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: () =>
           <p className="px-3 py-6 text-center text-sm text-stone-600">Your chats will appear here.</p>
         )}
       </div>
-      <div className="flex items-center gap-1 border-t border-stone-200 px-3 pt-2 dark:border-stone-800">
+      <div className="border-t border-stone-200 px-3 pt-2 dark:border-stone-800">
+        <StopAllButton />
+      </div>
+      <div className="flex items-center gap-1 px-3 dark:border-stone-800">
         <button
           type="button"
           onClick={() => { setFeedback(true); }}

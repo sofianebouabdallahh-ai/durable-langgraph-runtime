@@ -18,6 +18,7 @@ import {
   issuesFor,
   newHelper,
   presetOf,
+  suggestTools,
   type PresetName,
 } from "./editor";
 
@@ -116,6 +117,31 @@ export function InstructionsSection({ doc, issues, dispatch, catalog, readOnly, 
         </div>
       )}
     </Section>
+  );
+}
+
+/** A helper without tools can only think: say so, and offer what its description asks for. */
+function NoToolsYet({ text, catalog, onAdd }: { text: string; catalog: Catalog; onAdd: (names: string[]) => void }) {
+  const allowed = catalog.tools.filter((t) => t.helpers_allowed).map((t) => t.name);
+  const suggested = suggestTools(text, allowed);
+  const label = (name: string) => catalog.tools.find((t) => t.name === name)?.label ?? name;
+  return (
+    <div className="mb-3 rounded-xl bg-amber-50 px-3 py-2.5 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200" data-testid="helper-no-tools">
+      <p>It can't use any tools yet, so it can only answer from what it already knows.</p>
+      {suggested.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span>Its description suggests:</span>
+          <Button
+            size="sm"
+            onClick={() => {
+              onAdd(suggested);
+            }}
+          >
+            Turn on {suggested.map(label).join(", ")}
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -318,7 +344,7 @@ function HelperCard({
         </span>
         {issues.length > 0 && <Pill tone="rose">{issues.length} to fix</Pill>}
         {ownModel(helper.model) && <Pill className="hidden max-w-40 truncate sm:inline-flex">{ownModel(helper.model)}</Pill>}
-        <Pill>{(helper.tools ?? []).length} tools</Pill>
+        {(helper.tools ?? []).length ? <Pill>{(helper.tools ?? []).length} tools</Pill> : <Pill tone="amber">No tools</Pill>}
         <ChevronDown aria-hidden className={`size-4 text-stone-400 transition ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
@@ -364,6 +390,15 @@ function HelperCard({
           />
           <div>
             <div className="mb-2 text-sm font-medium">Its tools</div>
+            {!readOnly && (helper.tools ?? []).length === 0 && (
+              <NoToolsYet
+                text={`${helper.description} ${helper.display_name ?? ""}`}
+                catalog={catalog}
+                onAdd={(names) => {
+                  onChange({ ...helper, tools: names.map((name) => ({ name })) });
+                }}
+              />
+            )}
             <ToolCards
               selected={helper.tools ?? []}
               catalog={catalog}
@@ -390,10 +425,11 @@ function HelperCard({
           <SkillPicker
             label="Its skills"
             value={helper.skills ?? []}
+            always={helper.always_skills ?? []}
             readOnly={readOnly}
-            issues={issuesFor(issues, `helpers.${helper.name}`, ["skills"])}
-            onChange={(skills) => {
-              onChange({ ...helper, skills });
+            issues={issuesFor(issues, `helpers.${helper.name}`, ["skills", "always_skills"])}
+            onChange={(skills, always_skills) => {
+              onChange({ ...helper, skills, always_skills });
             }}
           />
           {!readOnly && (

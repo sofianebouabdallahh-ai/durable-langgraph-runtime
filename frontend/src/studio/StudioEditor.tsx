@@ -7,12 +7,13 @@
  * missing. Publishing creates an immutable version (AC47).
  */
 import { AlertTriangle, ArrowLeft, Check, CircleDashed, Download, History, Loader2, MessageSquarePlus, Pencil, RotateCcw, Send } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api, unwrap } from "../api/client";
 import { href, type Route } from "../app/route";
 import { ChatView } from "../chat/ChatView";
 import { problemText } from "../chat/problems";
+import { AgentPowerButton } from "../safety/KillSwitch";
 import { Dialog, TextField } from "../ui/form";
 import { Avatar, Button, Pill, Spinner } from "../ui/primitives";
 import { type AgentDocument, documentOf, type Edit, edit, unplaced } from "./editor";
@@ -43,6 +44,19 @@ function Editor({ initial, catalog, go }: { initial: StudioAgent; catalog: NonNu
   const [save, setSave] = useState<SaveState>("saved");
   const [notice, setNotice] = useState<string | null>(null);
   const [testChat, setTestChat] = useState<string | null>(null);
+  // Back in the Studio: the test chat you were in is still there.
+  useEffect(() => {
+    let current = true;
+    studio
+      .lastTestChat(initial.id)
+      .then((found) => {
+        if (current && found) setTestChat((shown) => shown ?? found.id);
+      })
+      .catch(() => undefined); // no test chat to show: the panel offers to start one
+    return () => {
+      current = false;
+    };
+  }, [initial.id]);
   const [publishing, setPublishing] = useState(false);
   const [history, setHistory] = useState(false);
 
@@ -131,6 +145,7 @@ function Editor({ initial, catalog, go }: { initial: StudioAgent; catalog: NonNu
         <StatusPill agent={state} />
         {editable && <SaveIndicator state={save} />}
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          <AgentPowerButton agent={state.name} label={name} />
           <Button
             variant="ghost"
             size="sm"

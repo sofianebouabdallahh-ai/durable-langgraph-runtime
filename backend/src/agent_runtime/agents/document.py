@@ -56,6 +56,7 @@ class HelperDocument(_Doc):
     limits: dict[str, Any] = Field(default_factory=dict)
     tools: list[ToolChoice] = Field(default_factory=list)
     skills: Annotated[list[str], Field(max_length=MAX_SKILLS)] = Field(default_factory=list)
+    always_skills: Annotated[list[str], Field(max_length=MAX_SKILLS)] = Field(default_factory=list)
     hooks: dict[str, list[str]] = Field(default_factory=dict)
 
 
@@ -70,6 +71,7 @@ class AgentDocument(_Doc):
     limits: dict[str, Any] = Field(default_factory=dict)
     tools: list[ToolChoice] = Field(default_factory=list)
     skills: Annotated[list[str], Field(max_length=MAX_SKILLS)] = Field(default_factory=list)
+    always_skills: Annotated[list[str], Field(max_length=MAX_SKILLS)] = Field(default_factory=list)
     hooks: dict[str, list[str]] = Field(default_factory=dict)
     # The most messages one chat with it may have (none: no limit beyond the server's).
     max_session_turns: Annotated[int, Field(gt=0)] | None = None
@@ -94,6 +96,8 @@ def _metadata(doc: AgentDocument | HelperDocument, version: int) -> dict[str, An
         out["display_name"] = doc.display_name
     if doc.skills:
         out["skills"] = list(doc.skills)
+    if doc.always_skills:
+        out["always_skills"] = list(doc.always_skills)
     if isinstance(doc, AgentDocument) and doc.max_session_turns:
         out["max_session_turns"] = doc.max_session_turns
     return out
@@ -134,6 +138,7 @@ def _fields(defn: AgentDefinition | SubAgentDefinition) -> dict[str, Any]:
         "limits": fm.limits.model_dump(exclude_none=True),
         "tools": [t.model_dump(exclude_none=True) for t in fm.tools],
         "skills": list(fm.skills),
+        "always_skills": list(fm.always_skills),
         "hooks": {k: v for k, v in fm.hooks.model_dump().items() if v},
     }
 
@@ -163,6 +168,8 @@ def _agent_md(defn: AgentDefinition | SubAgentDefinition) -> str:
         fm.pop("tools", None)
     if not fm.get("skills"):
         fm.pop("skills", None)
+    if not fm.get("always_skills"):
+        fm.pop("always_skills", None)
     head = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True).strip()
     return f"---\n{head}\n---\n{defn.prompt}\n"
 

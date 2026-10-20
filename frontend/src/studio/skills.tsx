@@ -9,28 +9,37 @@ import { type Dispatch, useState } from "react";
 import { href } from "../app/route";
 import { problemText } from "../chat/problems";
 import { SCAN_LABEL, type Skill, useSkills } from "../skills/api";
-import { Dialog, Issues, Section } from "../ui/form";
+import { Dialog, Issues, Section, Switch } from "../ui/form";
 import { Button, Pill, Spinner } from "../ui/primitives";
 import { type InstructionsProposal, studio, useAssist } from "./api";
 import { type AgentDocument, type Edit, type Issue, issuesFor } from "./editor";
 
-/** The skills attached to one agent or helper, and a way to add more from the library. */
+/** The skills attached to one agent or helper, and a way to add more from the library.
+ * Each can be "Always use": in its instructions every turn instead of loaded when needed
+ * (small models rarely load skills themselves). A skill whose scan found something to
+ * check is attached only after a confirmation. */
 export function SkillPicker({
   label,
   value,
+  always,
   onChange,
   issues,
   readOnly,
 }: {
   label: string;
   value: readonly string[];
-  onChange: (skills: string[]) => void;
+  always: readonly string[];
+  onChange: (skills: string[], always: string[]) => void;
   issues: readonly Issue[];
   readOnly: boolean;
 }) {
   const library = useSkills();
+  const [confirming, setConfirming] = useState<Skill | null>(null);
   const byName = new Map((library.data ?? []).map((s) => [s.name, s]));
   const available = (library.data ?? []).filter((s) => !value.includes(s.name));
+  const attach = (name: string) => {
+    onChange([...value, name], [...always]);
+  };
   return (
     <div data-testid="skill-picker">
       <div className="mb-1.5 text-sm font-medium">{label}</div>
@@ -42,8 +51,12 @@ export function SkillPicker({
             name={name}
             skill={byName.get(name)}
             readOnly={readOnly}
+            always={always.includes(name)}
+            onAlways={(on) => {
+              onChange([...value], on ? [...always.filter((n) => n !== name), name] : always.filter((n) => n !== name));
+            }}
             onRemove={() => {
-              onChange(value.filter((n) => n !== name));
+              onChange(value.filter((n) => n !== name), always.filter((n) => n !== name));
             }}
           />
         ))}
@@ -55,7 +68,10 @@ export function SkillPicker({
             value=""
             disabled={available.length === 0}
             onChange={(e) => {
-              if (e.target.value) onChange([...value, e.target.value]);
+              const skill = byName.get(e.target.value);
+              if (!skill) return;
+              if (skill.scan.status === "clean") attach(skill.name);
+              else setConfirming(skill); // "Needs a look": say what the scan found first
             }}
             className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-[15px] dark:border-stone-700 dark:bg-stone-950"
           >
@@ -63,6 +79,7 @@ export function SkillPicker({
             {available.map((s) => (
               <option key={s.id} value={s.name}>
                 {s.name}: {s.description.slice(0, 80)}
+                {s.scan.status !== "clean" ? ` (${SCAN_LABEL[s.scan.status].label.toLowerCase()})` : ""}
               </option>
             ))}
           </select>
@@ -74,13 +91,73 @@ export function SkillPicker({
         <a href={href({ page: "skills" })} className="underline">
           Skills page
         </a>
-        . The agent loads one only when it needs it.
+        . The agent loads one when it needs it, or every time with Always use.
       </p>
+      <Dialog
+        open={confirming !== null}
+        onClose={() => {
+          setConfirming(null);
+        }}
+        title={`Attach “${confirming?.name ?? ""}”?`}
+      >
+        {confirming && (
+          <div className="space-y-3 text-sm" data-testid="skill-confirm">
+            <p>
+              Its check found {confirming.scan.findings.length === 1 ? "something" : "a few things"} worth a look. The agent reads skills as information,
+              never as orders, but make sure this is the skill you mean.
+            </p>
+            <ul className="space-y-1.5">
+              {confirming.scan.findings.map((f, i) => (
+                <li key={i} className="flex gap-2 rounded-lg bg-amber-50 px-3 py-2 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                  <span aria-hidden>⚠</span>
+                  <span>
+                    {f.message}
+                    {f.where && <span className="text-amber-700/80 dark:text-amber-300/70"> ({f.where})</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button
+                onClick={() => {
+                  setConfirming(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                disabled={confirming.scan.status === "blocked"}
+                onClick={() => {
+                  attach(confirming.name);
+                  setConfirming(null);
+                }}
+              >
+                Attach anyway
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
     </div>
   );
 }
 
-function AttachedSkill({ name, skill, readOnly, onRemove }: { name: string; skill: Skill | undefined; readOnly: boolean; onRemove: () => void }) {
+function AttachedSkill({
+  name,
+  skill,
+  readOnly,
+  always,
+  onAlways,
+  onRemove,
+}: {
+  name: string;
+  skill: Skill | undefined;
+  readOnly: boolean;
+  always: boolean;
+  onAlways: (on: boolean) => void;
+  onRemove: () => void;
+}) {
   const scan = skill ? SCAN_LABEL[skill.scan.status] : null;
   return (
     <li className="flex items-start gap-3 rounded-xl border border-stone-200 px-3 py-2 dark:border-stone-700" data-testid="attached-skill">
@@ -97,6 +174,15 @@ function AttachedSkill({ name, skill, readOnly, onRemove }: { name: string; skil
           )}
         </div>
         {skill && <p className="text-xs text-stone-500">{skill.description}</p>}
+        <div className="mt-2">
+          <Switch
+            checked={always}
+            disabled={readOnly}
+            onChange={onAlways}
+            label={`Always use ${name}`}
+            description={always ? "In its instructions every time." : "Loaded when a request needs it."}
+          />
+        </div>
       </div>
       {!readOnly && (
         <button type="button" aria-label={`Remove ${name}`} onClick={onRemove} className="rounded-lg p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700 dark:hover:bg-stone-800">
@@ -118,10 +204,11 @@ export function SkillsSection({ doc, issues, dispatch, readOnly }: { doc: AgentD
       <SkillPicker
         label="Its skills"
         value={doc.skills ?? []}
+        always={doc.always_skills ?? []}
         readOnly={readOnly}
-        issues={issuesFor(issues, "agent", ["skills"])}
-        onChange={(value) => {
-          dispatch({ kind: "skills", value });
+        issues={issuesFor(issues, "agent", ["skills", "always_skills"])}
+        onChange={(value, always) => {
+          dispatch({ kind: "skills", value, always });
         }}
       />
     </Section>

@@ -56,6 +56,8 @@ export const studio = {
     unwrap(api.POST("/studio/agents/{agent_id}/versions/{number}/restore", { params: { path: { agent_id: id, number } } })),
   archive: (id: string) => unwrap(api.POST("/studio/agents/{agent_id}/archive", { params: { path: { agent_id: id } } })),
   testChat: (id: string) => unwrap(api.POST("/studio/agents/{agent_id}/test-chat", { params: { path: { agent_id: id } } })),
+  /** The latest test chat still open (null: none), shown again when the Studio opens. */
+  lastTestChat: (id: string) => unwrap(api.GET("/studio/agents/{agent_id}/test-chat", { params: { path: { agent_id: id } } })),
   /** The raw file is the body (no multipart): small, and checked by the server. */
   importFile: async (file: File): Promise<StudioAgent> => {
     const response = await fetch(`/api/studio/import?filename=${encodeURIComponent(file.name)}`, {
