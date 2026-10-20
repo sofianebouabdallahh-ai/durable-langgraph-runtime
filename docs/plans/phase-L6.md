@@ -9,7 +9,7 @@
 | **Run code** (Python) | Runs code |
 | **Shell** (bash) | Runs commands |
 | **Files** | Keeps files while they work |
-| **Notifications** | Reach people for real |
+| **Notifications** | Unchanged for now (decided: not in this phase) |
 
 The demo-era tools leave the Studio's catalogue: the calculator, and search over the sample documents. Notes stay, because they're real.
 
@@ -114,10 +114,10 @@ People building agents (L3) expect the tools agents have everywhere else.
 | Small models misuse a shell | The sandbox makes mistakes harmless; per-call timeouts and budgets; the shell is opt-in per agent |
 | Licences | SearXNG is AGPL, but it runs as a separate, unmodified service: we don't link it |
 
-## 6. Decisions to make
-1. **Default search:** SearXNG in the stack, no key (recommended), or a keyed service by default.
-2. **Code and shell:** run without asking, since they're sandboxed with no network (recommended), or ask first like notifications.
-3. **Notifications:** webhook first (recommended: one URL works for Slack, Teams and Discord), then email.
-4. **Order:** web tools (L6a: search, pages) first, then the sandbox (L6b: code, shell, files), then real notifications (L6c). Each is shippable on its own.
+## 6. Decisions (2026-10-19)
+1. **Default search:** SearXNG in the stack, no key; Tavily or Brave optional with a key.
+2. **Code and shell:** run without asking (sandboxed, no network); still subject to budgets and the agent's grants.
+3. **Notifications:** **not now.** `notify` stays as it is (asks first, recorded, not delivered); real delivery is a later slice. L6.4 and SC6 are out of this phase.
+4. **Order:** **L6a** web (search, read pages, Settings → Tools), then **L6b** the sandbox (code, shell, files, Kubernetes driver).
 
-**Estimate:** about 22–28 h (L6a ~7 h, L6b ~12 h, L6c ~4 h, plus Kubernetes and docs).
+**Estimate:** about 19–24 h (L6a ~7 h, L6b ~12 h, plus Kubernetes and docs).
