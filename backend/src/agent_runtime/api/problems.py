@@ -31,6 +31,7 @@ from agent_runtime.sessions.store import NoActiveTurn, SessionArchived, SessionN
 from agent_runtime.skills.service import BuiltInSkill, SkillBlocked, SkillExists, SkillInvalid
 from agent_runtime.skills.spec import SkillRejected
 from agent_runtime.skills.store import SkillNotFound
+from agent_runtime.web.settings import ToolSettingsInvalid
 
 log = logging.getLogger(__name__)
 
@@ -124,6 +125,10 @@ def install(app: FastAPI) -> None:
     @app.exception_handler(BuiltInSkill)
     async def _built_in_skill(_: Request, exc: BuiltInSkill) -> JSONResponse:
         return problem(409, "skill-built-in", "Built-in skills can't be changed", str(exc))
+
+    @app.exception_handler(ToolSettingsInvalid)
+    async def _tool_settings_invalid(_: Request, exc: ToolSettingsInvalid) -> JSONResponse:
+        return problem(422, "tool-settings-invalid", "These tool settings can't be saved", str(exc))
 
     @app.exception_handler(MasterKeyMissing)
     async def _master_key_missing(_: Request, exc: MasterKeyMissing) -> JSONResponse:

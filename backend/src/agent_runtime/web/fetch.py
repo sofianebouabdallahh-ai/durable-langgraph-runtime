@@ -90,7 +90,10 @@ class GuardedBackend(httpcore.AsyncNetworkBackend):
         local_address: str | None = None,
         socket_options: Iterable[Any] | None = None,
     ) -> httpcore.AsyncNetworkStream:
-        infos = await anyio.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        try:
+            infos = await anyio.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        except OSError as exc:  # socket.gaierror: no such host
+            raise FetchRefused(f"{host} can't be found") from exc
         addresses = [str(info[4][0]) for info in infos]
         if not addresses:
             raise FetchRefused(f"{host} doesn't resolve")

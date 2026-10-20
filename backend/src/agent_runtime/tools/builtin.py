@@ -131,5 +131,8 @@ def default_tools() -> ToolRegistry:
     from agent_runtime.agents import builder  # the Studio's builder agents' answers
     from agent_runtime.skills import tools as skill_tools  # granted by the harness
     from agent_runtime.subagents import tools as subagent_tools  # granted by the harness
+    from agent_runtime.web import tools as web_tools  # the real tools (L6a)
 
-    return builder.register(skill_tools.register(subagent_tools.register(registry)))
+    return web_tools.register(
+        builder.register(skill_tools.register(subagent_tools.register(registry)))
+    )

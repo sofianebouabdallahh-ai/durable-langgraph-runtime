@@ -51,6 +51,7 @@ from agent_runtime.api.sessions import sessions as sessions_router
 from agent_runtime.api.skills import skills_router
 from agent_runtime.api.studio import studio as studio_router
 from agent_runtime.api.telemetry import telemetry_router
+from agent_runtime.api.tools import tools_router
 from agent_runtime.config import Settings, get_agent_settings, get_settings
 from agent_runtime.db import Pool, create_pool
 from agent_runtime.graphs import GraphRegistry, GraphSpec, default_registry
@@ -65,6 +66,7 @@ from agent_runtime.streaming.broker import Broker
 from agent_runtime.streaming.bus import EventBus, RedisEventBus
 from agent_runtime.streaming.session import RunStream
 from agent_runtime.subagents.store import SubagentRepository
+from agent_runtime.web.settings import ToolSettings
 
 # ----------------------------------------------------------------- dependencies
 
@@ -421,6 +423,7 @@ def create_app(
         )
         app.state.connections = ConnectionService(p, settings)
         app.state.skills = SkillService(p)
+        app.state.tool_settings = ToolSettings(p, settings)
 
     app = FastAPI(
         title="Agent Runtime API",
@@ -443,6 +446,7 @@ def create_app(
     app.include_router(models_router)
     app.include_router(skills_router)
     app.include_router(onboarding_router)
+    app.include_router(tools_router)
     app.include_router(telemetry_router)
     app.include_router(graphs_router)
     app.include_router(health)

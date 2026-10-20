@@ -257,6 +257,17 @@ def _fake_model(args: argparse.Namespace) -> int:
     return 0
 
 
+def _fetcher(args: argparse.Namespace) -> int:
+    """The page reader (web/fetcher.py): the one service tools reach the web through."""
+    import uvicorn
+
+    from agent_runtime.web.fetcher import create_app
+
+    allow = tuple(h.strip() for h in get_settings().fetch_allow_hosts.split(",") if h.strip())
+    uvicorn.run(create_app(allow), host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
 def _openapi(args: argparse.Namespace) -> int:
     """The published contract, for the UI's generated client and its drift check."""
     from pydantic import SecretStr
@@ -537,6 +548,11 @@ def build_parser() -> argparse.ArgumentParser:
     fake.add_argument("--key", default=os.environ.get("FAKE_MODEL_KEY"),
                       help="require this bearer key (default: none)")  # fmt: skip
     fake.set_defaults(handler=_fake_model)
+
+    fetcher = commands.add_parser("fetcher", help="the page reader the web tools use")
+    fetcher.add_argument("--host", default="127.0.0.1")
+    fetcher.add_argument("--port", type=int, default=8090)
+    fetcher.set_defaults(handler=_fetcher)
 
     openapi = commands.add_parser("openapi", help="print the API's OpenAPI spec (JSON)")
     openapi.add_argument("--out", help="write it to this file instead")

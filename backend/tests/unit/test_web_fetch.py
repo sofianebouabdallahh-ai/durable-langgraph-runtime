@@ -175,3 +175,8 @@ async def test_size_time_and_kind_are_bounded(site: str, monkeypatch: pytest.Mon
     monkeypatch.setattr(web, "TIMEOUT_S", 0.5)
     with pytest.raises(FetchRefused, match=r"in time|couldn't read"):
         await fetch(f"{site}/slow", allow_hosts=LOCAL)
+
+
+async def test_a_host_that_doesnt_exist_is_a_plain_refusal() -> None:
+    with pytest.raises(FetchRefused, match="can't be found"):
+        await fetch("http://no-such-host.invalid/")
