@@ -40,7 +40,7 @@ test("several turns keep their context, and a reload shows the same conversation
   await expect(page.getByTestId("assistant-message").first()).toContainText("4");
   await waitTurnOver(request, sid);
   await send(page, "Search for Redis Streams");
-  await expect(page.getByTestId("tool-card").nth(1)).toContainText("Search");
+  await expect(page.getByTestId("tool-card").nth(1)).toContainText("Web search");
   await waitTurnOver(request, sid);
   await page.reload();
   await expectScreenMatchesTranscript(page, request, sid);

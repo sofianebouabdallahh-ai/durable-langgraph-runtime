@@ -163,7 +163,7 @@ test("a real model drafts the agent, and repairs its first attempt", async ({ pa
   await page.getByRole("dialog").getByRole("button", { name: "Draft it" }).click();
   const draft = page.getByTestId("draft-preview");
   await expect(draft).toContainText("Fake drafted assistant", { timeout: 60_000 });
-  await expect(draft).toContainText("Search"); // "teleport" was refused, then repaired
+  await expect(draft).toContainText("Web search"); // "teleport" was refused, then repaired
   await expect(draft).toContainText("Fake scout");
 });
 

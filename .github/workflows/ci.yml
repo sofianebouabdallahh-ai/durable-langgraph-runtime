@@ -179,6 +179,9 @@ jobs:
         run: |
           # the fake model the connection tests use (profile `test`, never in setup)
           docker compose --file infra/compose/docker-compose.yml --env-file .env --profile test up -d --wait fake-model
+          # the fake web (L6a): the page reader may read from fake-model, tests only
+          echo "FETCH_ALLOW_HOSTS=fake-model" >> .env
+          docker compose --file infra/compose/docker-compose.yml --env-file .env up -d --wait fetcher
           make ui-e2e
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
