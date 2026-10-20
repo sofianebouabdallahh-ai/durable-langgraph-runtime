@@ -131,7 +131,8 @@ services:
       SEARXNG_SECRET: ${SEARXNG_SECRET:?set in .env (setup generates it)}
       SEARXNG_BASE_URL: http://searxng:8080/
     volumes:
-      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      # One settings file for Compose and Kubernetes (Helm reads only inside its chart).
+      - ../helm/agent-runtime/files/searxng-settings.yml:/etc/searxng/settings.yml:ro
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped

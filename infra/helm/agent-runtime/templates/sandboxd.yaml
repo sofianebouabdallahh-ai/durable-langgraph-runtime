@@ -1,0 +1,155 @@
+{{- if .Values.sandbox.enabled }}
+{{- $sel := dict "root" . "name" "sandboxd" }}
+{{- $ns := .Values.sandbox.namespace }}
+{{- $name := printf "%s-sandboxd" (include "nuria.fullname" .) }}
+# Code and shell (L6b on Compose, L6c here; CR-002 §13). sandboxd is the only pod that
+# can start sandboxes: one Pod per run, in the sandboxes' namespace, created and run
+# through the Kubernetes API with its own ServiceAccount. No Docker socket anywhere.
+{{- if .Values.sandbox.createNamespace }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $ns }}
+  labels:
+    {{- include "nuria.labels" . | nindent 4 }}
+    # Every sandbox must pass the restricted Pod Security Standard (R10.10).
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+{{- end }}
+# No network for sandboxes, in or out (not even DNS): the cluster's version of
+# Docker's --network none. Always on with the sandbox, whatever networkPolicy says.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandboxes-no-network
+  namespace: {{ $ns }}
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# A ceiling on what sandboxes can take together, whatever sandboxd asks for.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: sandboxes
+  namespace: {{ $ns }}
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  hard:
+    pods: {{ .Values.sandbox.quota.pods | quote }}
+    limits.memory: {{ printf "%dMi" (mul (int .Values.sandbox.quota.pods) (int .Values.sandbox.limits.memoryMb)) | quote }}
+---
+# sandboxd's account: Pods, and exec into them, in the sandboxes' namespace only.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+automountServiceAccountToken: false # mounted only into sandboxd's own pods
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [create, get, list, delete]
+  - apiGroups: [""]
+    resources: [pods/exec] # exec over WebSocket is a GET; newer clusters check create
+    verbs: [create, get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.sandbox.sandboxd.replicas }}
+  selector:
+    matchLabels: {{- include "nuria.selector" $sel | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nuria.selector" $sel | nindent 8 }}
+        {{- include "nuria.podLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $name }}
+      automountServiceAccountToken: true # the one Nuria pod that calls the Kubernetes API
+      securityContext: {{- include "nuria.podSecurity" . | nindent 8 }}
+      {{- include "nuria.spread" $sel | nindent 6 }}
+      containers:
+        - name: sandboxd
+          image: {{ include "nuria.runtimeImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["sandboxd", "--host", "0.0.0.0", "--port", "8070"]
+          securityContext: {{- include "nuria.containerSecurity" . | nindent 12 }}
+          env:
+            - { name: SANDBOX_DRIVER, value: kubernetes }
+            - { name: SANDBOX_NAMESPACE, value: {{ $ns | quote }} }
+            - { name: SANDBOX_IMAGE, value: {{ include "nuria.sandboxImage" . | quote }} }
+            - { name: SANDBOX_IMAGE_PULL_POLICY, value: {{ .Values.image.pullPolicy | quote }} }
+            - { name: SANDBOX_RUNTIME_CLASS, value: {{ .Values.sandbox.runtimeClassName | quote }} }
+            - { name: SANDBOX_USER_NAMESPACES, value: {{ .Values.sandbox.userNamespaces | toString | quote }} }
+            - { name: SANDBOX_MEMORY_MB, value: {{ .Values.sandbox.limits.memoryMb | quote }} }
+            - { name: SANDBOX_CPUS, value: {{ .Values.sandbox.limits.cpus | quote }} }
+            - { name: SANDBOX_WORKSPACE_MB, value: {{ .Values.sandbox.limits.workspaceMb | quote }} }
+            - { name: LOG_FORMAT, value: {{ .Values.config.LOG_FORMAT | quote }} }
+            - name: SANDBOXD_TOKEN
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: SANDBOXD_TOKEN } }
+          ports:
+            - { name: http, containerPort: 8070 }
+          # Liveness: the process answers. Readiness: it can reach the Kubernetes API
+          # and list the sandboxes (its permissions work).
+          livenessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources: {{- toYaml .Values.sandbox.sandboxd.resources | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "nuria.selector" $sel | nindent 4 }}
+  ports:
+    - { name: http, port: 8070, targetPort: http }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.sandbox.sandboxd.pdb.minAvailable }}
+  selector:
+    matchLabels: {{- include "nuria.selector" $sel | nindent 6 }}
+{{- end }}

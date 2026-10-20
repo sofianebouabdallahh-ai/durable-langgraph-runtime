@@ -9,3 +9,4 @@ data:
   {{- range $k, $v := .Values.config }}
   {{ $k }}: {{ $v | quote }}
   {{- end }}
+  {{- include "nuria.toolsConfig" . | nindent 2 }}

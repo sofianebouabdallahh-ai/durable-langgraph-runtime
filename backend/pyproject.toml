@@ -30,6 +30,7 @@ dependencies = [
     "trafilatura>=2",
     "uuid-utils>=0.17.1",
     "uvicorn[standard]>=0.54.0",
+    "websockets>=16.1.1",
 ]
 
 [project.scripts]

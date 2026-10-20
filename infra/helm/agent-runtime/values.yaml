@@ -9,7 +9,8 @@ image:
 
 # Secrets are never in values (R10.4): this Secret must exist in the namespace, with
 # POSTGRES_PASSWORD (the migrator), API_POSTGRES_PASSWORD, WORKER_POSTGRES_PASSWORD,
-# NURIA_SECRET_KEY, and optionally OPENAI_API_KEY and GRAFANA_ADMIN_PASSWORD.
+# NURIA_SECRET_KEY, SEARXNG_SECRET (with search on), SANDBOXD_TOKEN (with the sandbox
+# on), and optionally OPENAI_API_KEY and GRAFANA_ADMIN_PASSWORD.
 # Locally, infra/kind/cluster.sh creates it from .env.
 secretName: nuria-secrets
 
@@ -77,6 +78,48 @@ ui:
   resources:
     requests: { cpu: 20m, memory: 24Mi }
     limits: { memory: 96Mi }
+
+# The agents' tools (L6; Compose: the same services). Web search: SearXNG in the
+# cluster, no key (Settings → Tools can switch to Tavily or Brave). Web pages: the
+# page reader, the one way tools reach the web; the network lets it reach only public
+# addresses, and it refuses private ones itself. Code: sandboxd starts one locked-down
+# Pod per run in a namespace of its own, which has no network at all.
+search:
+  enabled: true
+  replicas: 1
+  image: searxng/searxng:2026.10.4-d48c4b555@sha256:76b0bf285aca014c7191fc4d9234c4bfb358624ac33d8883833d496c059ec072
+  resources:
+    requests: { cpu: 20m, memory: 128Mi }
+    limits: { memory: 384Mi }
+
+fetcher:
+  enabled: true
+  replicas: 2
+  pdb: { minAvailable: 1 }
+  resources:
+    requests: { cpu: 20m, memory: 128Mi }
+    limits: { memory: 320Mi }
+
+sandbox:
+  # Needs a network plugin that enforces NetworkPolicy (the sandboxes' "no network"
+  # is one): kind's kindnet, Calico, Cilium do. Otherwise leave this off.
+  enabled: true
+  image: { repository: ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/sandbox, tag: latest }
+  namespace: nuria-sandboxes # where the sandbox Pods run; sandboxd may touch Pods only there
+  createNamespace: true
+  # Stronger isolation where the cluster has it: a RuntimeClass such as gVisor or
+  # Kata, and user namespaces (root in a sandbox isn't root on the node).
+  runtimeClassName: ""
+  userNamespaces: false
+  limits: { memoryMb: 256, cpus: 0.5, workspaceMb: 64 } # each sandbox
+  # Processes per sandbox: the kubelet's podPidsLimit (a node setting; kind: 4096).
+  quota: { pods: 20 } # at most this many sandboxes at once, cluster-wide
+  sandboxd:
+    replicas: 2 # any replica serves any run: a sandbox's Pod name is its run and epoch
+    pdb: { minAvailable: 1 }
+    resources:
+      requests: { cpu: 20m, memory: 96Mi }
+      limits: { memory: 256Mi }
 
 ingress:
   enabled: true

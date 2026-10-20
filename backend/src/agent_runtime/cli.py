@@ -272,7 +272,7 @@ def _fetcher(args: argparse.Namespace) -> int:
 
 
 def _sandboxd(args: argparse.Namespace) -> int:
-    """sandboxd (sandbox/sandboxd.py): starts the per-run sandboxes; holds the Docker socket."""
+    """sandboxd (sandbox/sandboxd.py): starts the per-run sandboxes (Docker or Kubernetes)."""
     import uvicorn
 
     from agent_runtime.sandbox.sandboxd import create_app

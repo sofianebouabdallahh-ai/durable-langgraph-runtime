@@ -101,17 +101,21 @@ async def run_shell(args: ShellArgs, ctx: ToolContext) -> dict[str, Any]:
     return await _exec(ctx, ["bash", "-c", args.command], args.timeout_s)
 
 
+# What one read returns: its base64 fits in sandboxd's output (20,000 characters).
+READ_BYTES = 14_000
 READ = (
     "import base64,os,sys\n"
     "p = sys.argv[1]\n"
-    "if os.path.getsize(p) > int(sys.argv[2]): sys.exit(3)\n"
-    "print(base64.b64encode(open(p, 'rb').read()).decode())\n"
+    "print(os.path.getsize(p))\n"
+    "print(base64.b64encode(open(p, 'rb').read(int(sys.argv[2]))).decode())\n"
 )
+# Linux caps one argument at 128 KiB (MAX_ARG_STRLEN): the content goes in pieces.
+ARG_CHUNK = 64 * 1024
 WRITE = (
     "import base64,os,sys\n"
     "p = sys.argv[1]\n"
     "os.makedirs(os.path.dirname(p), exist_ok=True)\n"
-    "open(p, 'wb').write(base64.b64decode(sys.argv[2]))\n"
+    "open(p, 'wb').write(base64.b64decode(''.join(sys.argv[2:])))\n"
 )
 
 
@@ -128,20 +132,27 @@ async def workspace_files(args: FilesArgs, ctx: ToolContext) -> dict[str, Any]:
         ]
         return {"path": path, "entries": entries}
     if args.action == "read":
-        result = await _exec(ctx, ["python", "-c", READ, path, str(MAX_FILE_BYTES)], 15)
-        if result["exit_code"] == 3:
-            raise SandboxError(
-                f"{args.path} is bigger than {MAX_FILE_BYTES // 1000} KB: read part of it "
-                "with run_shell (head, grep)."
-            )
+        result = await _exec(ctx, ["python", "-c", READ, path, str(READ_BYTES)], 15)
         if result["exit_code"] != 0:
             raise SandboxError(f"Couldn't read {args.path}: {result['stderr'][-300:].strip()}")
-        data = base64.b64decode(result["stdout"].strip() or b"")
-        return {"path": path, "size": len(data), "content": data.decode("utf-8", errors="replace")}
+        size, _, encoded = result["stdout"].partition("\n")
+        data = base64.b64decode(encoded.strip() or b"")
+        read: dict[str, Any] = {
+            "path": path,
+            "size": int(size),
+            "content": data.decode("utf-8", errors="replace"),
+        }
+        if int(size) > READ_BYTES:
+            read["note"] = (
+                f"The first {READ_BYTES // 1000} KB of {int(size) // 1000} KB: read the rest "
+                "with run_shell (tail -c, sed -n, grep)."
+            )
+        return read
     if args.content is None:
         raise SandboxError("Writing needs the content.")
     encoded = base64.b64encode(args.content.encode("utf-8")).decode()
-    result = await _exec(ctx, ["python", "-c", WRITE, path, encoded], 15)
+    pieces = [encoded[i : i + ARG_CHUNK] for i in range(0, len(encoded), ARG_CHUNK)]
+    result = await _exec(ctx, ["python", "-c", WRITE, path, *pieces], 15)
     if result["exit_code"] != 0:
         raise SandboxError(f"Couldn't write {args.path}: {result['stderr'][-300:].strip()}")
     return {"path": path, "written": len(args.content.encode("utf-8"))}

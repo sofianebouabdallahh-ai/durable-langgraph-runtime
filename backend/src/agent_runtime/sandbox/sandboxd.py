@@ -1,16 +1,19 @@
-"""sandboxd (phase L6b, CR-002 §13): the one service that can start containers.
+"""sandboxd (phase L6b, CR-002 §13; Kubernetes: L6c): the one service that can start sandboxes.
 
-Workers never touch Docker: they ask sandboxd, over the internal network, with a shared
-token. sandboxd holds the Docker socket and offers exactly this:
+Workers never start containers: they ask sandboxd, over the internal network, with a
+shared token. sandboxd alone can start them, through its backend (SANDBOX_DRIVER):
+
+    docker       the Docker socket (Compose)
+    kubernetes   Pods in the sandboxes' namespace, with its own ServiceAccount (Helm)
+
+and offers exactly this:
 
     PUT    /sandboxes/{run}?epoch=N        the run's sandbox (created on first use)
     POST   /sandboxes/{run}/exec           run argv in it: exit code, stdout, stderr
     DELETE /sandboxes/{run}                gone (the run left `running`)
-    GET    /healthz                        Docker reachable
+    GET    /healthz                        the backend reachable
 
-Every sandbox is the same locked-down container (R13.3): the sandbox image, a non-root
-user, read-only root, `/workspace` and `/tmp` as small tmpfs, **no network**, no
-capabilities, no-new-privileges, CPU, memory and process limits. One per run and epoch
+Every sandbox is the same locked-down one (backend.py, R13.3). One per run and epoch
 (R13.2): a reclaimed run gets a fresh one and the old epoch's is removed. Old ones are
 swept, in case a worker died without saying goodbye.
 """
@@ -19,161 +22,43 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 import os
 import re
-import struct
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
-import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from agent_runtime.sandbox.backend import Backend, Limits
+
 log = logging.getLogger(__name__)
 
-LABEL = "nuria.sandbox"
-MAX_OUTPUT = 20_000
 MAX_AGE_S = 2 * 3600  # nothing a run does takes longer (its own timeout is shorter)
 SWEEP_EVERY_S = 60
 RUN_ID = re.compile(r"^[0-9a-f-]{36}$")
 
 
-class Limits(BaseModel):
-    memory_mb: int = 256
-    cpus: float = 0.5
-    pids: int = 64
-    workspace_mb: int = 64
+def backend_from_env() -> Backend:
+    """The driver this installation uses (Strategy, chosen once at start)."""
+    driver = os.environ.get("SANDBOX_DRIVER", "docker")
+    if driver == "kubernetes":
+        from agent_runtime.sandbox.kubernetes import Kubernetes
 
-
-class Docker:
-    """The few Docker Engine API calls sandboxd needs (Adapter), over the socket."""
-
-    def __init__(self, socket_path: str = "/var/run/docker.sock") -> None:
-        self._client = httpx.AsyncClient(
-            transport=httpx.AsyncHTTPTransport(uds=socket_path),
-            base_url="http://docker/v1.43",
-            timeout=httpx.Timeout(30.0, read=None),
+        return Kubernetes(
+            os.environ.get("SANDBOX_NAMESPACE") or None,
+            runtime_class=os.environ.get("SANDBOX_RUNTIME_CLASS") or None,
+            pull_policy=os.environ.get("SANDBOX_IMAGE_PULL_POLICY", "IfNotPresent"),
+            user_namespaces=os.environ.get("SANDBOX_USER_NAMESPACES", "") == "true",
         )
+    if driver == "docker":
+        from agent_runtime.sandbox.docker import Docker
 
-    async def close(self) -> None:
-        await self._client.aclose()
-
-    async def _call(self, method: str, path: str, **kw: Any) -> httpx.Response:
-        response = await self._client.request(method, path, **kw)
-        if response.status_code >= 400 and response.status_code != 404:
-            raise RuntimeError(
-                f"docker {method} {path}: {response.status_code} {response.text[:300]}"
-            )
-        return response
-
-    async def ping(self) -> bool:
-        return (await self._call("GET", "/_ping")).status_code == 200
-
-    async def sandboxes(self, run: str | None = None) -> list[dict[str, Any]]:
-        labels = [f"{LABEL}=1"] + ([f"{LABEL}.run={run}"] if run else [])
-        response = await self._call(
-            "GET",
-            "/containers/json",
-            params={"all": "true", "filters": json.dumps({"label": labels})},
-        )
-        found: list[dict[str, Any]] = response.json()
-        return found
-
-    async def create(self, run: str, epoch: int, image: str, limits: Limits) -> str:
-        body = {
-            "Image": image,
-            "Cmd": ["sleep", "infinity"],
-            "User": "10002",
-            "WorkingDir": "/workspace",
-            "Env": ["HOME=/workspace", "PYTHONUNBUFFERED=1", "MPLCONFIGDIR=/tmp"],
-            "Labels": {
-                LABEL: "1",
-                f"{LABEL}.run": run,
-                f"{LABEL}.epoch": str(epoch),
-                f"{LABEL}.created": str(int(time.time())),
-            },
-            "NetworkDisabled": True,
-            "HostConfig": {
-                "NetworkMode": "none",
-                "ReadonlyRootfs": True,
-                "Tmpfs": {
-                    "/workspace": f"size={limits.workspace_mb}m,uid=10002,gid=10002,mode=0700",
-                    "/tmp": "size=64m,mode=1777",
-                },
-                "CapDrop": ["ALL"],
-                "SecurityOpt": ["no-new-privileges:true"],
-                "PidsLimit": limits.pids,
-                "Memory": limits.memory_mb * 1024 * 1024,
-                "MemorySwap": limits.memory_mb * 1024 * 1024,
-                "NanoCpus": int(limits.cpus * 1e9),
-                "Init": True,
-            },
-        }
-        response = await self._call(
-            "POST",
-            "/containers/create",
-            params={"name": f"nuria-sbx-{run[:8]}-{epoch}-{int(time.time())}"},
-            json=body,
-        )
-        container = str(response.json()["Id"])
-        await self._call("POST", f"/containers/{container}/start")
-        return container
-
-    async def remove(self, container: str) -> None:
-        await self._call("DELETE", f"/containers/{container}", params={"force": "true"})
-
-    async def exec(self, container: str, argv: list[str], timeout_s: float) -> dict[str, Any]:
-        created = await self._call(
-            "POST",
-            f"/containers/{container}/exec",
-            json={
-                "AttachStdout": True,
-                "AttachStderr": True,
-                "Tty": False,
-                "Cmd": ["timeout", "-s", "KILL", f"{timeout_s:g}s", *argv],
-                "User": "10002",
-                "WorkingDir": "/workspace",
-            },
-        )
-        exec_id = created.json()["Id"]
-        out, err = bytearray(), bytearray()
-        async with self._client.stream(
-            "POST",
-            f"/exec/{exec_id}/start",
-            json={"Detach": False, "Tty": False},
-            timeout=httpx.Timeout(timeout_s + 15),
-        ) as stream:
-            buffer = bytearray()
-            async for chunk in stream.aiter_bytes():
-                buffer += chunk
-                while len(buffer) >= 8:
-                    kind, size = buffer[0], struct.unpack(">I", bytes(buffer[4:8]))[0]
-                    if len(buffer) < 8 + size:
-                        break
-                    target = out if kind == 1 else err
-                    if len(target) < MAX_OUTPUT * 4:
-                        target += buffer[8 : 8 + size]
-                    del buffer[: 8 + size]
-        state = (await self._call("GET", f"/exec/{exec_id}/json")).json()
-        code = state.get("ExitCode")
-        return {
-            "exit_code": code,
-            "timed_out": code == 137,
-            "stdout": _text(out),
-            "stderr": _text(err),
-            "truncated": len(out) > MAX_OUTPUT or len(err) > MAX_OUTPUT,
-        }
-
-
-def _text(raw: bytearray) -> str:
-    return bytes(raw).decode("utf-8", errors="replace")[:MAX_OUTPUT]
-
-
-Arg = Annotated[str, Field(max_length=200_000)]
+        return Docker()
+    raise ValueError(f"SANDBOX_DRIVER must be docker or kubernetes, not {driver!r}")
 
 
 class ExecRequest(BaseModel):
@@ -187,12 +72,12 @@ class ExecRequest(BaseModel):
 
 
 def create_app(
-    docker: Docker | None = None,
+    backend: Backend | None = None,
     image: str | None = None,
     token: str | None = None,
     limits: Limits | None = None,
 ) -> FastAPI:
-    docker = docker or Docker()
+    sandboxes = backend or backend_from_env()
     image = image or os.environ.get("SANDBOX_IMAGE", "nuria-sandbox:dev")
     token = token if token is not None else os.environ.get("SANDBOXD_TOKEN", "")
     limits = limits or Limits()
@@ -210,29 +95,34 @@ def create_app(
     async def ensure(run: str, epoch: int) -> str:
         """The run's sandbox for this epoch: reused, or created (older epochs removed)."""
         async with locks.setdefault(run, asyncio.Lock()):
-            current = None
-            for c in await docker.sandboxes(run):
-                if int(c["Labels"].get(f"{LABEL}.epoch", -1)) == epoch and c["State"] == "running":
-                    current = c["Id"]
-                else:
-                    await docker.remove(c["Id"])  # an old epoch's, or a stopped one
-            return current or await docker.create(run, epoch, image, limits)
+            for s in await sandboxes.sandboxes(run):
+                if s.epoch == epoch and s.state == "running":
+                    return s.id
+                if s.epoch != epoch or s.state == "gone":
+                    await sandboxes.remove(s.id)  # an old epoch's, or a stopped one
+            # Starting (another sandboxd replica's): create() waits for that one.
+            return await sandboxes.create(run, epoch, image, limits)
 
     async def sweep() -> None:
         while True:
             await asyncio.sleep(SWEEP_EVERY_S)
-            with contextlib.suppress(Exception):
+            try:
                 now = time.time()
-                for c in await docker.sandboxes():
-                    if now - int(c["Labels"].get(f"{LABEL}.created", now)) > MAX_AGE_S:
-                        await docker.remove(c["Id"])
+                for s in await sandboxes.sandboxes():
+                    age = now - s.created
+                    if age > MAX_AGE_S or (s.state == "gone" and age > SWEEP_EVERY_S):
+                        await sandboxes.remove(s.id)
+            except Exception:
+                log.warning("sandbox sweep failed", exc_info=True)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         task = asyncio.create_task(sweep())
         yield
         task.cancel()
-        await docker.close()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        await sandboxes.close()
 
     app = FastAPI(
         title="Nuria sandboxd",
@@ -240,13 +130,17 @@ def create_app(
         redoc_url=None,
         openapi_url=None,
         lifespan=lifespan,
-        dependencies=[],
     )
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
-        if not await docker.ping():
-            raise HTTPException(503, "docker isn't reachable")
+        try:
+            reachable = await sandboxes.ping()
+        except Exception:
+            log.warning("sandbox backend unreachable", exc_info=True)
+            reachable = False
+        if not reachable:
+            raise HTTPException(503, "the sandbox backend isn't reachable")
         return {"status": "ok"}
 
     @app.put("/sandboxes/{run}", dependencies=[Depends(authorised)])
@@ -256,12 +150,12 @@ def create_app(
     @app.post("/sandboxes/{run}/exec", dependencies=[Depends(authorised)])
     async def run_in(run: str, body: ExecRequest) -> dict[str, Any]:
         container = await ensure(valid(run), body.epoch)
-        return await docker.exec(container, body.argv, body.timeout_s)
+        return await sandboxes.exec(container, body.argv, body.timeout_s)
 
     @app.delete("/sandboxes/{run}", status_code=204, dependencies=[Depends(authorised)])
     async def delete(run: str) -> None:
-        for c in await docker.sandboxes(valid(run)):
-            await docker.remove(c["Id"])
+        for s in await sandboxes.sandboxes(valid(run)):
+            await sandboxes.remove(s.id)
         locks.pop(run, None)
 
     return app
