@@ -8,7 +8,7 @@
 #   ./setup.sh --non-interactive --model scripted     no questions (CI, scripts)
 #   ./setup.sh --chat               chat in this terminal
 #   ./setup.sh --observability      also traces (Jaeger), metrics and a Grafana dashboard
-#   ./setup.sh --no-sandbox         without the code tools (Run code, terminal, files)
+#   ./setup.sh --no-sandbox         without the code tools (Run Python, terminal, files)
 #   ./setup.sh --kubernetes         on a local Kubernetes cluster (kind) instead of Compose
 #   ./setup.sh --update [--to v0.2.0]   back up, then move to the newest (or that) release
 #   ./setup.sh --restore backups/….sql.gz   put a backup back (replaces today's data)
@@ -307,7 +307,7 @@ configure_sandbox() {  # --sandbox / --no-sandbox; on by default; remembered in 
   profiles=$(env_get COMPOSE_PROFILES | tr ',' '\n' | { grep -v '^sandbox$' || true; } | paste -sd, -)
   if [ "$SANDBOX" = off ] || { [ -z "$SANDBOX" ] && [ "$(env_get SANDBOX_ENABLED)" = false ]; }; then
     env_set COMPOSE_PROFILES "${profiles:-app}"; env_set SANDBOXD_URL ""; env_set SANDBOX_ENABLED false
-    ok "code tools off (Run code, the terminal and workspace files aren't offered)"
+    ok "code tools off (Run Python, the terminal and workspace files aren't offered)"
     return
   fi
   env_set COMPOSE_PROFILES "${profiles:-app},sandbox"; env_set SANDBOX_ENABLED true

@@ -238,7 +238,7 @@ function Set-Sandbox {  # -Sandbox / -NoSandbox; on by default; remembered in .e
   if (-not $profiles) { $profiles = "app" }
   if ($NoSandbox -or (-not $Sandbox -and (Get-EnvValue SANDBOX_ENABLED) -eq "false")) {
     Set-EnvValue COMPOSE_PROFILES $profiles; Set-EnvValue SANDBOXD_URL ""; Set-EnvValue SANDBOX_ENABLED "false"
-    Ok "code tools off (Run code, the terminal and workspace files aren't offered)"; return
+    Ok "code tools off (Run Python, the terminal and workspace files aren't offered)"; return
   }
   Set-EnvValue COMPOSE_PROFILES "$profiles,sandbox"; Set-EnvValue SANDBOX_ENABLED "true"
   Set-EnvValue SANDBOXD_URL "http://sandboxd:8070"
