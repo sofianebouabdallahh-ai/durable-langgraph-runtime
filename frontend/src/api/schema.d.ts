@@ -993,6 +993,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tools/search/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Try the search */
+        post: operations["test_search_tools_search_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tools/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tool settings */
+        get: operations["get_settings_tools_settings_get"];
+        /** Change tool settings */
+        put: operations["put_settings_tools_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1920,6 +1955,32 @@ export interface components {
              */
             status: "clean" | "review" | "blocked";
         };
+        /** SearchTest */
+        SearchTest: {
+            /**
+             * Query
+             * @default weather today
+             */
+            query: string;
+        };
+        /** SearchTestHit */
+        SearchTestHit: {
+            /** Snippet */
+            snippet: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+        };
+        /** SearchTestView */
+        SearchTestView: {
+            /** Detail */
+            detail: string;
+            /** Ok */
+            ok: boolean;
+            /** Results */
+            results: components["schemas"]["SearchTestHit"][];
+        };
         /** SendMessageRequest */
         SendMessageRequest: {
             /** Content */
@@ -2257,6 +2318,44 @@ export interface components {
             name: string;
             /** Risk */
             risk: string;
+        };
+        /** ToolSettingsUpdate */
+        ToolSettingsUpdate: {
+            /** Api Key */
+            api_key?: string | null;
+            /** Search Provider */
+            search_provider?: ("searxng" | "tavily" | "brave") | null;
+            /** Searxng Url */
+            searxng_url?: string | null;
+            /** Web Allowlist */
+            web_allowlist?: string[] | null;
+        };
+        /** ToolSettingsView */
+        ToolSettingsView: {
+            /**
+             * Has Key
+             * @description A key is saved for the keyed provider (never returned)
+             */
+            has_key: boolean;
+            /** Key Fingerprint */
+            key_fingerprint: string | null;
+            /**
+             * Search Provider
+             * @enum {string}
+             */
+            search_provider: "searxng" | "tavily" | "brave";
+            /**
+             * Searxng Url
+             * @description Your own SearXNG; none: the one in the stack
+             */
+            searxng_url: string | null;
+            /** Updated At */
+            updated_at: string | null;
+            /**
+             * Web Allowlist
+             * @description When set, pages are read only from these sites
+             */
+            web_allowlist: string[];
         };
         /** Tried */
         Tried: {
@@ -4412,6 +4511,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TelemetryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_search_tools_search_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchTest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchTestView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_settings_tools_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolSettingsView"];
+                };
+            };
+        };
+    };
+    put_settings_tools_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ToolSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolSettingsView"];
                 };
             };
             /** @description Validation Error */

@@ -2181,6 +2181,69 @@
         "title": "ScanView",
         "type": "object"
       },
+      "SearchTest": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "default": "weather today",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "title": "SearchTest",
+        "type": "object"
+      },
+      "SearchTestHit": {
+        "properties": {
+          "snippet": {
+            "title": "Snippet",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "url",
+          "snippet"
+        ],
+        "title": "SearchTestHit",
+        "type": "object"
+      },
+      "SearchTestView": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/SearchTestHit"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ok",
+          "detail",
+          "results"
+        ],
+        "title": "SearchTestView",
+        "type": "object"
+      },
       "SendMessageRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2962,6 +3025,140 @@
           "helpers_allowed"
         ],
         "title": "ToolOption",
+        "type": "object"
+      },
+      "ToolSettingsUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "search_provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "searxng",
+                  "tavily",
+                  "brave"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Search Provider"
+          },
+          "searxng_url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Searxng Url"
+          },
+          "web_allowlist": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 253,
+                  "type": "string"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Web Allowlist"
+          }
+        },
+        "title": "ToolSettingsUpdate",
+        "type": "object"
+      },
+      "ToolSettingsView": {
+        "properties": {
+          "has_key": {
+            "description": "A key is saved for the keyed provider (never returned)",
+            "title": "Has Key",
+            "type": "boolean"
+          },
+          "key_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Fingerprint"
+          },
+          "search_provider": {
+            "enum": [
+              "searxng",
+              "tavily",
+              "brave"
+            ],
+            "title": "Search Provider",
+            "type": "string"
+          },
+          "searxng_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Your own SearXNG; none: the one in the stack",
+            "title": "Searxng Url"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "web_allowlist": {
+            "description": "When set, pages are read only from these sites",
+            "items": {
+              "type": "string"
+            },
+            "title": "Web Allowlist",
+            "type": "array"
+          }
+        },
+        "required": [
+          "search_provider",
+          "searxng_url",
+          "has_key",
+          "key_fingerprint",
+          "web_allowlist",
+          "updated_at"
+        ],
+        "title": "ToolSettingsView",
         "type": "object"
       },
       "Tried": {
@@ -6097,6 +6294,107 @@
         "summary": "Turn sharing usage counts on or off",
         "tags": [
           "telemetry"
+        ]
+      }
+    },
+    "/tools/search/test": {
+      "post": {
+        "operationId": "test_search_tools_search_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchTest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchTestView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Try the search",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/tools/settings": {
+      "get": {
+        "operationId": "get_settings_tools_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolSettingsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Tool settings",
+        "tags": [
+          "tools"
+        ]
+      },
+      "put": {
+        "operationId": "put_settings_tools_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolSettingsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change tool settings",
+        "tags": [
+          "tools"
         ]
       }
     }

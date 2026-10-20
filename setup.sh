@@ -112,7 +112,7 @@ make_env() {
     env_set "$key" "$(random_secret)"; changed=$((changed + 1))
   done
   # Secrets added by later versions: an existing .env gets them too (never overwritten).
-  for key in NURIA_SECRET_KEY; do
+  for key in NURIA_SECRET_KEY SEARXNG_SECRET; do
     [ -n "$(env_get "$key")" ] || { env_set "$key" "$(random_secret)"; changed=$((changed + 1)); }
   done
   [ "$changed" -gt 0 ] && ok "generated $changed local secret(s) (only on this machine, in .env)"

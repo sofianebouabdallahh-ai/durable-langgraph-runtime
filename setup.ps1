@@ -118,7 +118,7 @@ function Initialize-EnvFile {
     if ($line -match "^([A-Z0-9_]+)=change-me") { Set-EnvValue $Matches[1] (New-Secret); $changed++ }
   }
   # Secrets added by later versions: an existing .env gets them too (never overwritten).
-  foreach ($key in @("NURIA_SECRET_KEY")) {
+  foreach ($key in @("NURIA_SECRET_KEY", "SEARXNG_SECRET")) {
     if (-not (Get-EnvValue $key)) { Set-EnvValue $key (New-Secret); $changed++ }
   }
   if ($changed -gt 0) { Ok "generated $changed local secret(s) (only on this machine, in .env)" }

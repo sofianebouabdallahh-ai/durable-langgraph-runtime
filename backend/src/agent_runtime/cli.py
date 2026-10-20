@@ -263,7 +263,10 @@ def _fetcher(args: argparse.Namespace) -> int:
 
     from agent_runtime.web.fetcher import create_app
 
-    allow = tuple(h.strip() for h in get_settings().fetch_allow_hosts.split(",") if h.strip())
+    # Only this setting: the reader has no database or keys, so it doesn't load Settings.
+    allow = tuple(
+        h.strip() for h in os.environ.get("FETCH_ALLOW_HOSTS", "").split(",") if h.strip()
+    )
     uvicorn.run(create_app(allow), host=args.host, port=args.port, log_level="warning")
     return 0
 
