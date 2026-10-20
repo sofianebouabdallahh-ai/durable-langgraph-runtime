@@ -186,15 +186,17 @@ configure_model() {
     if [ "$FIRST_RUN" -eq 0 ] && [ -n "$(env_get MODEL_PROVIDER)" ]; then
       ok "model: $(env_get MODEL_PROVIDER) (unchanged; ./setup.sh --model … to change)"; return
     fi
-    if [ "$INTERACTIVE" -eq 0 ]; then MODEL=scripted; else
-      say "Which model should the agents use?"
-      echo "    1) Demo model: offline, scripted answers (try everything with no key)"
-      echo "    2) Local model with Ollama (free; needs ~6 GB RAM)"
-      echo "    3) OpenAI (your API key)"
-      echo "    4) Azure AI Foundry (your endpoint, key and deployment)"
-      echo "    5) Another OpenAI-compatible service (base URL + key + model)"
+    # Ollama by default: free, private, on this machine. Keys can be added later in the
+    # app (Models), or chosen here.
+    if [ "$INTERACTIVE" -eq 0 ]; then MODEL=ollama; else
+      say "Which model should the agents use? (you can add others later in the app, under Models)"
+      echo "    1) Ollama, on this computer: free and private (recommended; needs ~6 GB of memory)"
+      echo "    2) OpenAI (your API key)"
+      echo "    3) Azure AI Foundry (your endpoint, key and deployment)"
+      echo "    4) Another OpenAI-compatible service (base URL + key + model)"
+      echo "    5) The offline demo model (scripted answers: to look around, not a real AI)"
       ask "Choose 1-5" 1
-      case "$REPLY" in 2) MODEL=ollama ;; 3) MODEL=openai ;; 4) MODEL=foundry ;; 5) MODEL=compatible ;; *) MODEL=scripted ;; esac
+      case "$REPLY" in 2) MODEL=openai ;; 3) MODEL=foundry ;; 4) MODEL=compatible ;; 5) MODEL=scripted ;; *) MODEL=ollama ;; esac
     fi
   fi
   case "$MODEL" in
@@ -207,8 +209,7 @@ configure_model() {
         env_set CONTAINER_OLLAMA_BASE_URL http://host.docker.internal:11434/v1
         env_set COMPOSE_PROFILES app
         ok "using the Ollama found at 127.0.0.1:11434 (the native app uses the GPU; Ollama in Docker on macOS doesn't)"
-        curl -fsS http://127.0.0.1:11434/api/tags | grep -q "\"$name\"" \
-          || warn "model $name isn't downloaded yet: run  ollama pull $name"
+        curl -fsS http://127.0.0.1:11434/api/tags | grep -q "\"$name\"" || pull_native "$name"
       else
         env_set CONTAINER_OLLAMA_BASE_URL http://ollama:11434/v1
         env_set COMPOSE_PROFILES app,llm
@@ -235,6 +236,24 @@ configure_model() {
       ok "model: $MODEL_NAME at $BASE_URL" ;;
     *) die "unknown model '$MODEL'" "Use: scripted | ollama | openai | foundry | compatible" ;;
   esac
+}
+
+# The recommended model isn't in the Ollama found on this machine: download it (asked
+# first when someone is there). Its CLI shows progress; without it, Ollama's API.
+pull_native() {
+  local name=$1
+  if [ "$INTERACTIVE" -eq 1 ]; then
+    ask "Download $name now for Ollama (one time, about 5 GB)? [Y/n]" Y
+    case "$REPLY" in [nN]*) warn "skipped: run  ollama pull $name  before chatting"; return ;; esac
+  fi
+  say "Downloading $name into Ollama (one time, about 5 GB)…"
+  if command -v ollama >/dev/null 2>&1; then
+    ollama pull "$name" || warn "the download didn't finish: run  ollama pull $name"
+  else
+    curl -fsS --max-time 3600 -X POST http://127.0.0.1:11434/api/pull \
+      -d "{\"model\":\"$name\",\"stream\":false}" >/dev/null \
+      && ok "$name is ready" || warn "the download didn't finish: run  ollama pull $name"
+  fi
 }
 
 has_profile() { case ",$(env_get COMPOSE_PROFILES)," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }

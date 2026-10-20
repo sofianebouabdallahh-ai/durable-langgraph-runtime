@@ -55,10 +55,10 @@ Setup picks the starting model (shown as "The model chosen in setup"). Change it
 
 | Choice | Command | Notes |
 |---|---|---|
-| **Demo model** | `--model scripted` | Scripted answers, offline. Good for trying the app; it doesn't really understand you |
-| **Local (Ollama)** | `--model ollama` | `--model-name qwen2.5:3b` for smaller machines |
+| **Local (Ollama)**, the default | `--model ollama` | Free and private. Uses the Ollama app if it's running (and downloads `qwen2.5:7b` into it, asking first), else Ollama in Docker. `--model-name qwen2.5:3b` for smaller machines |
 | **OpenAI** | `--model openai` | Default `gpt-4o-mini`; another: `--model-name gpt-4o` |
 | **Azure AI Foundry** | `--model foundry` | `--base-url "https://<resource>.openai.azure.com/openai/v1/" --model-name "<deployment>" --api-key "<key>"` |
 | **Other OpenAI-compatible** | `--model compatible` | Base URL (+ key) + model name |
+| **Demo model** | `--model scripted` | Scripted answers, offline, nothing to download. For looking around; it doesn't really understand you |
 
 This key is stored in `.env` itself (not encrypted by Nuria); delete its line and run `./setup.sh` again to remove it. Agent files can also name a connection directly: `model: my-foundry:gpt-4o` (`<connection>:<model>`, the connection's id as shown on its card).

@@ -148,15 +148,16 @@ function Set-Model {
   $m = $Model
   if (-not $m) {
     if (-not $script:FirstRun -and (Get-EnvValue "MODEL_PROVIDER")) { Ok "model: $(Get-EnvValue 'MODEL_PROVIDER') (unchanged; -Model ... to change)"; return }
-    if (-not $Interactive) { $m = "scripted" } else {
-      Say "Which model should the agents use?"
-      "    1) Demo model: offline, scripted answers (try everything with no key)",
-      "    2) Local model with Ollama (free; needs ~6 GB RAM)",
-      "    3) OpenAI (your API key)",
-      "    4) Azure AI Foundry (your endpoint, key and deployment)",
-      "    5) Another OpenAI-compatible service (base URL + key + model)" | ForEach-Object { Write-Host $_ }
-      $m = @{ "2" = "ollama"; "3" = "openai"; "4" = "foundry"; "5" = "compatible" }[(Read-Answer "Choose 1-5" "1")]
-      if (-not $m) { $m = "scripted" }
+    # Ollama by default: free, private, on this machine. Keys can be added later in the app.
+    if (-not $Interactive) { $m = "ollama" } else {
+      Say "Which model should the agents use? (you can add others later in the app, under Models)"
+      "    1) Ollama, on this computer: free and private (recommended; needs ~6 GB of memory)",
+      "    2) OpenAI (your API key)",
+      "    3) Azure AI Foundry (your endpoint, key and deployment)",
+      "    4) Another OpenAI-compatible service (base URL + key + model)",
+      "    5) The offline demo model (scripted answers: to look around, not a real AI)" | ForEach-Object { Write-Host $_ }
+      $m = @{ "2" = "openai"; "3" = "foundry"; "4" = "compatible"; "5" = "scripted" }[(Read-Answer "Choose 1-5" "1")]
+      if (-not $m) { $m = "ollama" }
     }
   }
   switch ($m) {
@@ -164,9 +165,10 @@ function Set-Model {
     "ollama" {
       Set-EnvValue "MODEL_PROVIDER" "ollama"; $name = if ($ModelName) { $ModelName } else { $OllamaDefaultModel }
       try {
-        Invoke-RestMethod http://127.0.0.1:11434/api/tags -TimeoutSec 2 | Out-Null
+        $tags = Invoke-RestMethod http://127.0.0.1:11434/api/tags -TimeoutSec 2
         Set-EnvValue "CONTAINER_OLLAMA_BASE_URL" "http://host.docker.internal:11434/v1"; Set-EnvValue "COMPOSE_PROFILES" "app"
         Ok "using the Ollama found at 127.0.0.1:11434"
+        if (-not ($tags.models | Where-Object { $_.name -eq $name })) { Install-OllamaModel $name }
       } catch {
         Set-EnvValue "CONTAINER_OLLAMA_BASE_URL" "http://ollama:11434/v1"; Set-EnvValue "COMPOSE_PROFILES" "app,llm"
         Warn "no Ollama found: using Ollama in Docker (CPU only; slower). For speed: https://ollama.com/download"
@@ -189,6 +191,19 @@ function Set-Model {
       Set-EnvValue "MODEL_CHAT" $name; Set-EnvValue "MODEL_RESEARCHER" $name; Ok "model: $name at $url"
     }
   }
+}
+# The recommended model isn't in the Ollama found on this machine: download it (asked first
+# when someone is there). Its CLI shows progress; without it, Ollama's API.
+function Install-OllamaModel($name) {
+  if ($Interactive -and (Read-Answer "Download $name now for Ollama (one time, about 5 GB)? [Y/n]" "Y") -match "^[nN]") {
+    Warn "skipped: run  ollama pull $name  before chatting"; return
+  }
+  Say "Downloading $name into Ollama (one time, about 5 GB)..."
+  try {
+    if (Get-Command ollama -ErrorAction SilentlyContinue) { & ollama pull $name; if ($LASTEXITCODE) { throw "pull failed" } }
+    else { Invoke-RestMethod -Method Post http://127.0.0.1:11434/api/pull -Body (@{ model = $name; stream = $false } | ConvertTo-Json) -TimeoutSec 3600 | Out-Null }
+    Ok "$name is ready"
+  } catch { Warn "the download didn't finish: run  ollama pull $name" }
 }
 function Test-Profile($name) { (",$(Get-EnvValue COMPOSE_PROFILES),") -like "*,$name,*" }
 

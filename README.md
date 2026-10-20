@@ -16,7 +16,7 @@ cd nuria
 ./setup.sh            # Windows: .\setup.ps1
 ```
 
-Then open **http://localhost:3000** (setup opens it for you). First time? **Get started** on Home walks you through choosing a model (Ollama or a key) and building your first agent with a tool and a helper, step by step ([guide](docs/setup/getting-started.md)). Setup checks your machine, generates private local passwords, asks which model to use (an offline demo, a free local model with Ollama, OpenAI, Azure AI Foundry, or any OpenAI-compatible service), starts everything in Docker, and proves it works with a real chat turn. Guides for each OS, models and troubleshooting: [docs/setup/](docs/setup/).
+Then open **http://localhost:3000** (setup opens it for you). First time? **Get started** on Home walks you through choosing a model (Ollama or a key) and building your first agent with a tool and a helper, step by step ([guide](docs/setup/getting-started.md)). Setup checks your machine, generates private local passwords, asks which model to use (**Ollama by default**: free and private on your machine, downloaded for you if needed; or OpenAI, Azure AI Foundry, any OpenAI-compatible service, or an offline demo), and you can add more models with your keys later in the app, starts everything in Docker, and proves it works with a real chat turn. Guides for each OS, models and troubleshooting: [docs/setup/](docs/setup/).
 
 | Home | A chat | An agent and its helpers |
 |---|---|---|

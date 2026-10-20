@@ -12,6 +12,9 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - Progress is derived from the account (`GET/PUT /onboarding`), so it's the same everywhere and un-ticks when something is undone; only the guide's choices are stored (migration 0014). `?guide=true` when creating an agent.
 - Docs: [Getting started](docs/setup/getting-started.md); the tester guide and script point to it.
 
+#### Changed
+- **Ollama is setup's default model** (interactive and `--non-interactive`): free and private. When the Ollama app is running without the recommended model, setup downloads it (asking first); without the app, Ollama runs in Docker as before. Keys stay an option in setup and in the app; the offline demo is the last choice.
+
 ## [0.1.0] - 2026-10-18
 
 The first release for testers: Nuria, on your own machine, from one command (phases 0–6 and L1–L5).
