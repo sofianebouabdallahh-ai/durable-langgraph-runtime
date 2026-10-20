@@ -38,8 +38,9 @@ class Finding:
 
 # The checks' version: bump it whenever they change, and every stored skill is checked
 # again once at the API's start (SkillService.rescan). 1: L3c; 2: handing over
-# credentials, "do not mention this", sentences that name files (L6).
-RULES = 2
+# credentials, "do not mention this", sentences that name files (L6); 3: one finding per
+# passage when several rules match the same words.
+RULES = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,17 +145,26 @@ def secrets(content: SkillContent, texts: list[_Text]) -> Iterator[Finding]:
 
 def injection(content: SkillContent, texts: list[_Text]) -> Iterator[Finding]:
     for t in texts:
-        for pattern in INJECTION:
-            for m in pattern.finditer(t.text):
-                phrase = " ".join(m.group(0).split())[:80]
-                yield Finding(
-                    "injection",
-                    "review",
-                    f"Tries to steer the agent beyond its "
-                    f"task: “{phrase}”. Agents treat skill text as information, "
-                    "never as rules, but check this is meant.",
-                    f"{t.where}, line {_line(t.text, m.start())}",
-                )
+        # One finding per passage: rules that match the same words (sending keys to an
+        # address is both "sending out" and "handing over credentials") report it once.
+        matches = sorted(
+            (m for pattern in INJECTION for m in pattern.finditer(t.text)),
+            key=lambda m: (m.start(), -m.end()),
+        )
+        end = -1
+        for m in matches:
+            if m.start() < end:
+                continue  # inside a passage already reported
+            end = m.end()
+            phrase = " ".join(m.group(0).split())[:80]
+            yield Finding(
+                "injection",
+                "review",
+                f"Tries to steer the agent beyond its "
+                f"task: “{phrase}”. Agents treat skill text as information, "
+                "never as rules, but check this is meant.",
+                f"{t.where}, line {_line(t.text, m.start())}",
+            )
 
 
 def links(content: SkillContent, texts: list[_Text]) -> Iterator[Finding]:
