@@ -36,6 +36,12 @@ class Finding:
     where: str | None = None  # "SKILL.md, line 4"
 
 
+# The checks' version: bump it whenever they change, and every stored skill is checked
+# again once at the API's start (SkillService.rescan). 1: L3c; 2: handing over
+# credentials, "do not mention this", sentences that name files (L6).
+RULES = 2
+
+
 @dataclass(frozen=True, slots=True)
 class ScanReport:
     findings: tuple[Finding, ...]
@@ -47,7 +53,11 @@ class ScanReport:
         return "review" if self.findings else "clean"
 
     def as_json(self) -> dict[str, Any]:
-        return {"status": self.status, "findings": [asdict(f) for f in self.findings]}
+        return {
+            "status": self.status,
+            "findings": [asdict(f) for f in self.findings],
+            "rules": RULES,
+        }
 
 
 @dataclass(frozen=True, slots=True)

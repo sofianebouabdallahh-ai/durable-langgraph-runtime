@@ -24,7 +24,7 @@ from typing import Any
 from agent_runtime.db import Pool
 from agent_runtime.ids import new_id
 from agent_runtime.skills import spec
-from agent_runtime.skills.scan import ScanReport, scan
+from agent_runtime.skills.scan import RULES, ScanReport, scan
 from agent_runtime.skills.spec import SkillContent, SkillIssue
 from agent_runtime.skills.store import Origin, Skill, SkillNotFound, SkillStore, SkillVersion
 
@@ -194,6 +194,21 @@ class SkillService:
             return entry, await store.file(entry["sha256"])
 
     # ------------------------------------------------------------- built-ins
+
+    async def rescan(self) -> int:
+        """Check every stored version again with the current rules, once (RULES went up).
+        Their stored scans stay; the new results are added (skill_scans). Returns how
+        many were checked."""
+        async with self._pool.connection() as conn:
+            store = SkillStore(conn)
+            stale = await store.checked_before(RULES)
+            for digest in stale:
+                content = await store.content(digest)
+                report = await asyncio.to_thread(scan, content)
+                await store.add_scan(digest, report)
+        if stale:
+            log.info("checked %d stored skill versions with the current rules", len(stale))
+        return len(stale)
 
     async def sync_builtins(self, folder: Path) -> list[str]:
         """Load `backend/skills/<name>/` into the library as built-in skills, and point

@@ -15,6 +15,7 @@ the Ingress never routes `/admin` (phase 12).
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -69,6 +70,8 @@ from agent_runtime.streaming.bus import EventBus, RedisEventBus
 from agent_runtime.streaming.session import RunStream
 from agent_runtime.subagents.store import SubagentRepository
 from agent_runtime.web.settings import ToolSettings
+
+log = logging.getLogger(__name__)
 
 # ----------------------------------------------------------------- dependencies
 
@@ -398,12 +401,12 @@ def create_app(
         try:
             if pool is not None:
                 _wire(app, pool, work_queue, event_bus)
-                await app.state.skills.sync_builtins(get_agent_settings().skills_dir)
+                await _skills_ready(app)
                 yield
                 return
             async with create_pool(settings) as owned:
                 _wire(app, owned, work_queue, event_bus)
-                await app.state.skills.sync_builtins(get_agent_settings().skills_dir)
+                await _skills_ready(app)
                 poller = metrics.StatePoller(owned, work_queue)  # the state gauges (R7.2)
                 poller.start()
                 try:
@@ -414,6 +417,14 @@ def create_app(
             await broker.stop()
             if redis is not None:
                 await redis.aclose()
+
+    async def _skills_ready(app: FastAPI) -> None:
+        """Built-in skills up to date, and stored ones checked with the current rules."""
+        await app.state.skills.sync_builtins(get_agent_settings().skills_dir)
+        try:
+            await app.state.skills.rescan()
+        except Exception:  # the old results stay shown; the next start tries again
+            log.warning("couldn't check stored skills with the current rules", exc_info=True)
 
     def _wire(app: FastAPI, p: Pool, q: WorkQueue, b: EventBus) -> None:
         app.state.pool = p

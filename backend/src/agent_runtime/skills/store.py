@@ -64,7 +64,12 @@ class SkillVersion:
 
 
 _SKILL = "id, name, trust, origin, current_hash, created_at, updated_at, archived_at"
-_VERSION = "hash, name, description, instructions, meta, files, scan, created_at"
+# The newest check of a version: a later rules version's, else the one stored with it.
+_LATEST_SCAN = (
+    "coalesce((SELECT sc.scan FROM skill_scans sc WHERE sc.hash = skill_versions.hash "
+    "ORDER BY sc.rules DESC LIMIT 1), skill_versions.scan) AS scan"
+)
+_VERSION = f"hash, name, description, instructions, meta, files, {_LATEST_SCAN}, created_at"
 
 
 class SkillStore:
@@ -182,6 +187,25 @@ class SkillStore:
             f"SELECT {_VERSION} FROM skill_versions WHERE hash = ANY(%s)", (list(digests),)
         )
         return {r["hash"]: SkillVersion.from_row(r) for r in await cur.fetchall()}
+
+    async def checked_before(self, rules: int) -> list[str]:
+        """The versions last checked with older rules (stored scans before RULES 2 have
+        no `rules`: 1)."""
+        cur = await self._conn.execute(
+            "SELECT v.hash FROM skill_versions v WHERE coalesce("
+            "(SELECT max(sc.rules) FROM skill_scans sc WHERE sc.hash = v.hash), "
+            "(v.scan->>'rules')::int, 1) < %s ORDER BY v.created_at",
+            (rules,),
+        )
+        return [r["hash"] for r in await cur.fetchall()]
+
+    async def add_scan(self, digest: str, report: ScanReport) -> None:
+        """A newer check of a stored version (append-only: the version stays as it was)."""
+        await self._conn.execute(
+            "INSERT INTO skill_scans (hash, rules, scan) VALUES (%s, %s, %s) "
+            "ON CONFLICT (hash, rules) DO NOTHING",  # another replica checked it first
+            (digest, report.as_json()["rules"], Jsonb(report.as_json())),
+        )
 
     async def file(self, sha256: str) -> bytes:
         cur = await self._conn.execute("SELECT data FROM skill_files WHERE sha256 = %s", (sha256,))
