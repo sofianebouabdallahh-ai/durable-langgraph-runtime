@@ -9,6 +9,7 @@ import { useState } from "react";
 
 import { problemText } from "../chat/problems";
 import { GuideStrip } from "../guide/GuideStrip";
+import { useAbout } from "../sessions/ModelStatus";
 import { Dialog, Section, TextField } from "../ui/form";
 import { Button, Pill, Spinner } from "../ui/primitives";
 import { type Connection, KINDS, type Kind, models, useConnections, useDefaultModel, useModelsRefresh } from "./api";
@@ -17,6 +18,8 @@ const KIND_ICON: Record<Kind, typeof Cpu> = { ollama: Cpu, openai: Cloud, azure_
 
 export function ModelsPage() {
   const connections = useConnections();
+  const about = useAbout();
+  const fromSetup = about.data && !about.data.demo_model ? about.data : null; // a real model, set up already
   const [adding, setAdding] = useState(false);
   const list = connections.data ?? [];
   return (
@@ -43,8 +46,17 @@ export function ModelsPage() {
         {connections.isPending && <Spinner label="Loading models…" />}
         {list.length === 0 && connections.isSuccess && (
           <div className="rounded-2xl border border-dashed border-stone-300 p-8 text-center dark:border-stone-700">
-            <p className="font-display text-xl">Connect your first model</p>
-            <p className="mt-1 text-sm text-stone-500">A free local one with Ollama, or a hosted one with your key.</p>
+            {fromSetup ? (
+              <>
+                <p className="font-display text-xl">Your agents use {setupModel(fromSetup.model_provider, fromSetup.chat_model)}</p>
+                <p className="mt-1 text-sm text-stone-500">Chosen in setup. Add another to try it or to give an agent its own: Ollama, or a hosted one with your key.</p>
+              </>
+            ) : (
+              <>
+                <p className="font-display text-xl">Connect your first model</p>
+                <p className="mt-1 text-sm text-stone-500">A free local one with Ollama, or a hosted one with your key.</p>
+              </>
+            )}
           </div>
         )}
         {list.map((c) => (
@@ -63,6 +75,7 @@ export function ModelsPage() {
 
 function DefaultModel({ connections }: { connections: readonly Connection[] }) {
   const current = useDefaultModel();
+  const about = useAbout();
   const refresh = useModelsRefresh();
   const [error, setError] = useState<string | null>(null);
   const ready = connections.filter((c) => c.test_status === "ready");
@@ -86,7 +99,7 @@ function DefaultModel({ connections }: { connections: readonly Connection[] }) {
           className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 dark:border-stone-700 dark:bg-stone-950"
           aria-label="Default model"
         >
-          <option value="">The model chosen in setup ({setupLabel(current.data?.setup_provider)})</option>
+          <option value="">The model chosen in setup ({setupModel(current.data?.setup_provider, about.data?.chat_model)})</option>
           {ready.flatMap((c) =>
             c.models.map((m) => (
               <option key={`${c.id}|${m}`} value={`${c.id}|${m}`}>
@@ -512,6 +525,12 @@ function EditDialog({ open, connection: c, onClose }: { open: boolean; connectio
       </form>
     </Dialog>
   );
+}
+
+/** "Ollama · qwen2.5:7b": the setup's provider, and its model when there is one. */
+function setupModel(provider: string | undefined, model: string | null | undefined): string {
+  const label = setupLabel(provider);
+  return model && provider !== "scripted" ? `${label} · ${model}` : label;
 }
 
 function setupLabel(provider: string | undefined): string {
