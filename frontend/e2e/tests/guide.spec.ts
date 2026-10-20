@@ -80,8 +80,6 @@ test("SC1: from Home to a published agent, with a model added by key", async ({ 
   await expect(page.getByTestId("assistant-message").last()).toContainText("fake-a", { timeout: 30_000 });
   await waitTurnOver(request, decodeURIComponent(new URL(page.url()).hash.slice(4)));
 
-  const progress = await (await request.get("/api/onboarding")).json();
-  test.info().annotations.push({ type: "onboarding", description: JSON.stringify(progress) });
   await page.goto("/#/start");
   await expect(page.getByTestId("guide-finished")).toContainText("You built", { timeout: 15_000 });
   await expect(page.getByRole("link", { name: /Get started/ })).toHaveCount(0); // finished: out of the sidebar

@@ -25,7 +25,7 @@ Use it as you like. These are what we most want to hear about:
 
 1. **A conversation.** Ask something that needs a tool (a sum, a note to keep), and something that needs an approval ("tell the team…"). Press **Stop** in the middle of a long reply.
 2. **"What happened?"** under a reply. Does the story make sense?
-3. **Build an agent** under **Agents → New agent → Describe it**. Give it a helper and a skill, try it in the test chat, then publish it ([guide](agents.md)).
+3. **Build an agent.** The first time, follow **Get started** on Home: it walks you through a model, your agent, a tool and a helper, a test and publishing ([guide](getting-started.md)). Then try a skill ([guide](skills.md)).
 4. **Your own model**, if you have one, under **Models** ([guide](models.md)).
 5. **An update**, when we tell you a new version is out: `./setup.sh --update` ([guide](updating.md)).
 

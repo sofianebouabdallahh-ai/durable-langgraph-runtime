@@ -1,5 +1,7 @@
 # Phase L3d plan — Getting started: a guided first agent
 
+> **Status: delivered.** Results: [progress/phase-L3d.md](../progress/phase-L3d.md).
+
 **Goal:** a person who has just installed Nuria is led, step by step and inside the real app, to their first working agent:
 1. **Choose a model:** a free local one (Ollama), a key (OpenAI, Azure AI Foundry, other), or the demo model for now.
 2. **Create an agent:** describe it, or start from a template.
