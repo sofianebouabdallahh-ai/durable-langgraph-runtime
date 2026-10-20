@@ -45,8 +45,8 @@ export function ToolsPage() {
       <div className="mt-8 space-y-5">
         {settings.data ? (
           <>
-            <SearchSettings key={settings.data.updated_at ?? "new"} current={settings.data} />
-            <SitesSettings key={`sites-${settings.data.updated_at ?? "new"}`} current={settings.data} />
+            <SearchSettings current={settings.data} />
+            <SitesSettings current={settings.data} />
           </>
         ) : (
           <Spinner label="Loading…" />
