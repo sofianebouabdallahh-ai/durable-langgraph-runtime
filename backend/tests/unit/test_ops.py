@@ -72,3 +72,53 @@ async def test_smoke_gives_up_on_a_real_failure_or_after_the_deadline() -> None:
     async with httpx.AsyncClient(transport=answer(502), base_url="http://api") as client:
         with pytest.raises(SmokeFailed, match="502"):
             await wait_ready(client, within_s=0, interval_s=0)
+
+
+@pytest.mark.parametrize(
+    ("sandbox", "agent", "tool", "returned"),
+    [
+        ("http://sandboxd:8070", "chat", "run_python", {"stdout": "42\n", "exit_code": 0}),
+        ("", "assistant", "calculator", {"value": 42.0}),
+    ],
+)
+async def test_the_scripted_smoke_checks_the_sandbox_when_there_is_one(
+    sandbox: str, agent: str, tool: str, returned: dict[str, object]
+) -> None:
+    """With a sandbox, setup's check runs Python in it (a broken sandbox shows at setup);
+    without one (--no-sandbox), the calculator, on a hidden agent: nothing saved."""
+    import json
+
+    from agent_runtime.config import Settings
+    from agent_runtime.ops import SmokeFailed, smoke
+
+    sent: list[dict[str, object]] = []
+
+    def api(result: dict[str, object]) -> httpx.MockTransport:
+        def handle(request: httpx.Request) -> httpx.Response:
+            path = request.url.path
+            if request.method == "POST" and path == "/sessions":
+                sent.append(json.loads(request.content))
+                return httpx.Response(201, json={"id": "s1"})
+            if request.method == "POST" and path.endswith("/messages"):
+                sent.append(json.loads(request.content))
+                return httpx.Response(202, json={"run_id": "r1"})
+            if path == "/sessions/s1":
+                return httpx.Response(200, json={"active_run_id": None})
+            if path.endswith("/messages"):
+                return httpx.Response(200, json={"messages": [
+                    {"type": "user", "content": {"text": "What is 6*7?"}},
+                    {"type": "tool_call", "content": {"tool": tool}},
+                    {"type": "tool_result", "content": {"tool": tool, "result": result}},
+                    {"type": "assistant", "content": {"text": "The answer is 42."}},
+                ]})  # fmt: skip
+            return httpx.Response(200, json={})
+
+        return httpx.MockTransport(handle)
+
+    settings = Settings(postgres_password="pw", model_provider="scripted", sandboxd_url=sandbox)  # type: ignore[arg-type]
+    done = await smoke("http://api", settings, transport=api(returned))
+    assert done.answer == "The answer is 42."
+    assert sent[0]["agent"] == agent
+    assert sent[1]["script"][0]["tool_calls"][0]["name"] == tool  # type: ignore[index]
+    with pytest.raises(SmokeFailed, match="didn't run through the tool pipeline"):
+        await smoke("http://api", settings, transport=api({"error": "no"}))

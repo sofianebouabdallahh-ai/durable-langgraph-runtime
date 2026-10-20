@@ -6,7 +6,7 @@ import { expectScreenMatchesTranscript, send, waitTurnOver, startChat } from "./
 test("a question, a tool card, an answer", async ({ page, request }) => {
   const sid = await startChat(page, "What is 12 * (3 + 4)?");
   await expect(page.getByTestId("model-status")).toContainText("Demo model");
-  await expect(page.getByTestId("tool-card")).toContainText("Calculator");
+  await expect(page.getByTestId("tool-card")).toContainText("Ran Python"); // in the sandbox (L6b)
   await expect(page.getByTestId("assistant-message").last()).toContainText("84");
   await waitTurnOver(request, sid);
   await expectScreenMatchesTranscript(page, request, sid);
