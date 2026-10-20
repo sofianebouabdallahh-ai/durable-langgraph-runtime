@@ -221,7 +221,7 @@ def _propose(tool: str, model: str, messages: list[dict[str, Any]], n: int) -> d
             "display_name": "Fake drafted assistant",
             "description": f"Drafted by {model}.",
             "instructions": "You are a drafted assistant. Today is {{date}}. Be brief.",
-            "tools": ["teleport"] if sloppy else ["search"],
+            "tools": ["teleport"] if sloppy else ["web_search"],
             "effort": "quick",
             "helpers": [
                 {

@@ -32,7 +32,7 @@ simple rules, so you can see how the system works before connecting a real model
 Try one of these:
 - **What is 12 * (3 + 4)?** uses the calculator
 - **Remember that the demo is on Friday** saves a note
-- **Search for Redis Streams** searches the sample documents
+- **Search the web for Redis Streams** runs a web search
 - **Research Redis Streams and compute 12 * 4** starts two helpers in parallel
 - **Notify the team that the build is green** asks for your approval first
 
@@ -84,7 +84,7 @@ def _research(text: str) -> tuple[Script, SubScripts]:
         ]},
         {"tool_calls": [{"name": "wait_subagents",
                          "args": {"handles": [_HANDLE % 0, _HANDLE % 1], "timeout_s": 120}}]},
-        {"content": "Both helpers are done: the **researcher** searched the sample documents "
+        {"content": "Both helpers are done: the **researcher** searched the web "
                     f"and the **data analyst** computed {expression} = "
                     f"**{_number(safe_eval(expression))}**. Their reports are in the cards "
                     f"above."},
@@ -93,12 +93,12 @@ def _research(text: str) -> tuple[Script, SubScripts]:
         "researcher": [
             {"tool_calls": [{"name": "report_progress",
                              "args": {"message": "Searching the sources", "percent": 20}}]},
-            {"tool_calls": [{"name": "search", "args": {"query": text[:500], "k": 3}}]},
+            {"tool_calls": [{"name": "web_search", "args": {"query": text[:400], "k": 3}}]},
             {"tool_calls": [{"name": "report_progress",
                              "args": {"message": "Reading what I found", "percent": 70}}]},
             {"tool_calls": [{"name": "return_result",
-                             "args": {"summary": "I found the most relevant sample documents "
-                                                 "for the question."}}]},
+                             "args": {"summary": "I searched the web for the question; the "
+                                                 "results are in my card."}}]},
         ],
         "data-analyst": [
             {"tool_calls": [{"name": "calculator", "args": {"expression": expression}}]},
@@ -158,9 +158,9 @@ def _note(text: str) -> tuple[Script, SubScripts]:
 
 def _search(text: str) -> tuple[Script, SubScripts]:
     return [
-        {"tool_calls": [{"name": "search", "args": {"query": text[:500], "k": 3}}]},
-        {"content": "Here's what the sample documents have on that; the results are in the "
-                    "card above."},
+        {"tool_calls": [{"name": "web_search", "args": {"query": text[:400], "k": 3}}]},
+        {"content": "Here's what a web search found; the results are in the card above. (The "
+                    "demo model can't read them: connect a real model to get answers.)"},
     ], {}  # fmt: skip
 
 
@@ -170,8 +170,8 @@ RULES: tuple[Rule, ...] = (
     Rule("notify", ("notify",), _words("notify", "tell", "message", "email"), _notify),
     Rule("calculate", ("calculator",), lambda t: _expression(t) is not None, _calculate),
     Rule("note", ("save_note",), _words("remember", "note", "save", "keep"), _note),
-    Rule("search", ("search",), _words("search", "find", "look up", "what", "who", "how", "why"),
-         _search),
+    Rule("search", ("web_search",),
+         _words("search", "find", "look up", "what", "who", "how", "why"), _search),
 )  # fmt: skip
 
 

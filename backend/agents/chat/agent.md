@@ -1,8 +1,8 @@
 ---
 name: chat
 display_name: Nuria
-description: General chat assistant. Searches, computes, keeps notes, delegates research and number work to sub-agents, and notifies people (with human approval).
-version: 2
+description: General chat assistant. Searches the web and reads pages, computes, keeps notes, delegates research and number work to sub-agents, and notifies people (with human approval).
+version: 3
 model: chat
 # The run's budgets cover its sub-agents too (CR-005 R16.8): sized for the team,
 # not for the chat agent alone.
@@ -13,7 +13,8 @@ limits:
   # share the model): sized for them; hosted models finish far sooner.
   timeout_s: 600
 tools:
-  - search
+  - web_search
+  - read_webpage
   - calculator
   - save_note
   - notify: { max_calls: 3 }

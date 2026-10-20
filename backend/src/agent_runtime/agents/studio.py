@@ -56,8 +56,8 @@ from agent_runtime.skills.store import SkillStore
 # The tools a person picks from, in plain words. The sub-agent tools (spawn, wait,
 # report, return) are granted automatically and never shown.
 TOOLS: dict[str, tuple[str, str]] = {
-    "search": ("Search", "Searches the documents it was given and cites them"),
-    "calculator": ("Calculator", "Does exact arithmetic"),
+    "web_search": ("Search the web", "Finds pages on the web, so it can cite them"),
+    "read_webpage": ("Read web pages", "Reads a page or a PDF as text"),
     "save_note": ("Notes", "Keeps notes you ask it to remember"),
     "notify": ("Notifications", "Sends messages to people, always after you approve"),
 }

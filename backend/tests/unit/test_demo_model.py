@@ -23,7 +23,7 @@ def first_tool(text: str, agent: object = CHAT) -> str | None:
         ("What is 12 * (3 + 4)?", "calculator"),
         ("what is 3 x 4", "calculator"),
         ("Remember that the demo is on Friday", "save_note"),
-        ("Search for Redis Streams", "search"),
+        ("Search for Redis Streams", "web_search"),
         ("Research Redis Streams and compute 12 * 4", "spawn_subagent"),
         ("Notify the team that the build is green", "notify"),
         ("hello", None),

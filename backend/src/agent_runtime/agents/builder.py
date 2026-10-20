@@ -243,8 +243,8 @@ def improve_message(display_name: str, purpose: str, instructions: str, tools: l
 # ------------------------------------------------------------------ offline demo
 
 _TOOL_WORDS = {
-    "search": r"search|find|look up|research|sources?|documents?|cite",
-    "calculator": r"calculat|math|budget|cost|price|sum|convert|numbers?",
+    "web_search": r"search|find|look up|research|sources?|web|internet|news|latest",
+    "read_webpage": r"read|pages?|articles?|links?|sources?|research|cite",
     "save_note": r"remember|notes?|keep track|save",
     "notify": r"notify|tell (the )?team|send (a )?message|email|alert",
 }

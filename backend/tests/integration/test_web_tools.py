@@ -95,7 +95,8 @@ async def agent(c: Seen, connection: dict[str, Any], tools: list[str]) -> dict[s
     }
     saved = (await c("PUT", f"/studio/agents/{created['id']}/draft", json=doc)).json()
     assert saved["draft"]["issues"] == [], saved["draft"]["issues"]
-    return created
+    result: dict[str, Any] = created
+    return result
 
 
 async def test_an_agent_searches_reads_and_cites(
