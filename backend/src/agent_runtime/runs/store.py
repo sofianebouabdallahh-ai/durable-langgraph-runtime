@@ -739,6 +739,25 @@ class RunRepository:
             {"id": run_id, "t": tokens, "c": cost},
         )
 
+    async def add_model_usage(self, run_id: uuid.UUID, models: dict[str, list[float]]) -> None:
+        """A committed step's model calls, per model (calls, tokens in/out, cost, ms), for
+        this run only (no roll-up: summing runs must not count a helper's call twice)."""
+        for model, (calls, tokens_in, tokens_out, cost, ms) in models.items():
+            await self._conn.execute(
+                """
+                INSERT INTO run_model_usage
+                    (run_id, model, calls, tokens_in, tokens_out, cost, duration_ms)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (run_id, model) DO UPDATE SET
+                    calls = run_model_usage.calls + EXCLUDED.calls,
+                    tokens_in = run_model_usage.tokens_in + EXCLUDED.tokens_in,
+                    tokens_out = run_model_usage.tokens_out + EXCLUDED.tokens_out,
+                    cost = run_model_usage.cost + EXCLUDED.cost,
+                    duration_ms = run_model_usage.duration_ms + EXCLUDED.duration_ms
+                """,
+                (run_id, model, int(calls), int(tokens_in), int(tokens_out), cost, int(ms)),
+            )
+
     async def save_result(
         self, run_id: uuid.UUID, output: dict[str, Any], *, partial: bool = False
     ) -> None:

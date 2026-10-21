@@ -102,7 +102,7 @@ from agent_runtime.tools.hooks import (
     run_observers,
 )
 from agent_runtime.tools.invocations import BudgetExceeded, LoopDetected
-from agent_runtime.tools.middleware import RunContext, TurnDenied, TurnInfo
+from agent_runtime.tools.middleware import RunContext, TurnDenied, TurnInfo, UsageRecorder
 from agent_runtime.tools.pipeline import Grant, ToolPipeline, ToolRunContext
 from agent_runtime.tools.policy import RiskClassPolicy, ToolPolicy
 from agent_runtime.tools.spec import ToolRegistry
@@ -661,13 +661,14 @@ class RunExecutor:
                                 window_s=s.breaker_window_s, open_s=s.breaker_open_s),
         )  # fmt: skip
 
-    def _usage_recorder(self, outbox: Outbox) -> Callable[[str, int, int], float]:
+    def _usage_recorder(self, outbox: Outbox) -> UsageRecorder:
         prices = self._settings.model_prices
 
-        def record(model: str, tokens_in: int, tokens_out: int) -> float:
+        def record(model: str, tokens_in: int, tokens_out: int, seconds: float = 0.0) -> float:
             price = prices.get(model)
             cost = price.cost(tokens_in, tokens_out) if price else 0.0
             outbox.add_usage(tokens_in + tokens_out, cost)
+            outbox.add_model_call(model, tokens_in, tokens_out, cost, round(seconds * 1000))
             # Counted when the response arrives: a step lost to a crash and re-run is
             # counted twice here, as it was paid for twice (the budget counts it once).
             metrics.llm_usage(model, tokens_in, tokens_out, cost)

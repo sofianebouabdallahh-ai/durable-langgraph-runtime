@@ -28,7 +28,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, NotRequired
+from typing import TYPE_CHECKING, Any, NotRequired, Protocol
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import (
@@ -69,6 +69,14 @@ class TurnDenied(Exception):
         self.reason = reason
 
 
+class UsageRecorder(Protocol):
+    """Counts a model call's tokens and cost (and time) with the step; returns the cost."""
+
+    def __call__(
+        self, model: str, tokens_in: int, tokens_out: int, seconds: float = ...
+    ) -> float: ...
+
+
 @dataclass(frozen=True)
 class TurnInfo:
     """Who this run is, for session and turn hooks (CR-004 R15.5, R15.6)."""
@@ -100,7 +108,7 @@ class RunContext:
     limits: RunLimits | None = None  # the run's budgets, for the soft limit (R14.2)
     soft_limit_ratio: float = 0.8
     # (model, in, out tokens) → cost in USD
-    record_usage: Callable[[str, int, int], float] | None = None
+    record_usage: UsageRecorder | None = None
     # The chat model for one call (the provider's; R3.1). Given the scripted model's
     # offset; the default is the scripted model with this run's script.
     chat_model: Callable[[int], BaseChatModel] | None = None
@@ -258,7 +266,7 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
             response = await ctx.caller.call(attempt, charge=charge)
             seconds = time.monotonic() - t0
             span.set_attribute("llm.attempts", attempts[0] - first)
-            for model, tokens_in, tokens_out, cost in self._account(ctx, response):
+            for model, tokens_in, tokens_out, cost in self._account(ctx, response, seconds):
                 metrics.llm_latency(model, seconds)
                 span.set_attributes({
                     "llm.model": model, "llm.tokens_in": tokens_in,
@@ -281,7 +289,7 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
 
     @staticmethod
     def _account(
-        ctx: RunContext, response: ModelResponse[Any]
+        ctx: RunContext, response: ModelResponse[Any], seconds: float = 0.0
     ) -> list[tuple[str, int, int, float]]:
         """Tokens and cost, staged with the step (counted when it commits, R14.1).
         Returns (model, tokens in, tokens out, cost) per message, for the span."""
@@ -294,7 +302,11 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
                     int(u.get("input_tokens", 0)),
                     int(u.get("output_tokens", 0)),
                 )
-                cost = ctx.record_usage(model, tokens_in, tokens_out) if ctx.record_usage else 0.0
+                cost = (
+                    ctx.record_usage(model, tokens_in, tokens_out, seconds)
+                    if ctx.record_usage
+                    else 0.0
+                )
                 usage.append((model, tokens_in, tokens_out, cost))
         return usage
 

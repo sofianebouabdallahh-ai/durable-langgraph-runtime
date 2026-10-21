@@ -39,6 +39,9 @@ class Outbox:
     # run's totals are exactly the sum of its committed steps (AC26), across reclaims.
     tokens: int = 0
     cost: float = 0.0
+    # The same, per model (calls, tokens in, tokens out, cost, ms): the Activity page's
+    # per-model numbers, committed with the step as the totals are (L7).
+    models: dict[str, list[float]] = field(default_factory=dict)
     _just_written: list[Event] = field(default_factory=list)
 
     def stage(self, type: EventType, payload: dict[str, Any]) -> None:
@@ -47,6 +50,13 @@ class Outbox:
     def add_usage(self, tokens: int, cost: float) -> None:
         self.tokens += tokens
         self.cost += cost
+
+    def add_model_call(
+        self, model: str, tokens_in: int, tokens_out: int, cost: float, ms: int
+    ) -> None:
+        row = self.models.setdefault(model, [0, 0, 0, 0.0, 0])
+        for i, v in enumerate((1, tokens_in, tokens_out, cost, ms)):
+            row[i] += v
 
     async def flush(self, repo: RunRepository) -> None:
         for type, payload in self.pending:
@@ -69,6 +79,9 @@ class Outbox:
         if self.tokens or self.cost:
             await repo.add_usage(self.run_id, self.tokens, self.cost)
             self.tokens, self.cost = 0, 0.0
+        if self.models:
+            await repo.add_model_usage(self.run_id, self.models)
+            self.models = {}
         self._just_written = repo.emitted  # replaced, not appended: a rollback discards it
 
     async def after_commit(self) -> None:

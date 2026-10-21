@@ -29,6 +29,7 @@ from agent_runtime import metrics, report, telemetry
 from agent_runtime.admin import AdminRepository, AdminState
 from agent_runtime.agents.studio import StudioService
 from agent_runtime.api import problems
+from agent_runtime.api.activity import activity_router
 from agent_runtime.api.kill_switch import kill_switch_router
 from agent_runtime.api.models import models_router
 from agent_runtime.api.onboarding import onboarding_router
@@ -467,6 +468,7 @@ def create_app(
     app.include_router(onboarding_router)
     app.include_router(tools_router)
     app.include_router(kill_switch_router)
+    app.include_router(activity_router)
     app.include_router(telemetry_router)
     app.include_router(graphs_router)
     app.include_router(health)
