@@ -35,6 +35,9 @@ export function SkillPicker({
 }) {
   const library = useSkills();
   const [confirming, setConfirming] = useState<Skill | null>(null);
+  // A fresh picker after each choice: picking the same skill again after a Cancel must
+  // still count as a choice (a controlled <select> could swallow it).
+  const [picks, setPicks] = useState(0);
   const byName = new Map((library.data ?? []).map((s) => [s.name, s]));
   const available = (library.data ?? []).filter((s) => !value.includes(s.name));
   const attach = (name: string) => {
@@ -65,9 +68,11 @@ export function SkillPicker({
         <label className="mt-2 block text-sm">
           <span className="sr-only">Add a skill to {label.toLowerCase()}</span>
           <select
-            value=""
+            key={picks}
+            defaultValue=""
             disabled={available.length === 0}
             onChange={(e) => {
+              setPicks((n) => n + 1);
               const skill = byName.get(e.target.value);
               if (!skill) return;
               if (skill.scan.status === "clean") attach(skill.name);
