@@ -333,7 +333,8 @@ if ($Restore) {
   Invoke-Compose stop api worker ui | Out-Null
   Invoke-Compose up -d --wait postgres | Out-Null
   Invoke-Compose cp $Restore "postgres:/tmp/restore.sql.gz"
-  Invoke-Compose exec -T postgres sh -c 'gzip -dc /tmp/restore.sql.gz | psql -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" > /dev/null && rm -f /tmp/restore.sql.gz'
+  # The whole schema goes, then the backup comes in, as one transaction (see setup.sh).
+  Invoke-Compose exec -T postgres sh -c '{ printf ''DROP SCHEMA public CASCADE;\nCREATE SCHEMA public;\n''; gzip -dc /tmp/restore.sql.gz; } | psql -q -v ON_ERROR_STOP=1 --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB" > /dev/null && rm -f /tmp/restore.sql.gz'
   if ($LASTEXITCODE -ne 0) { Die "the restore failed (above)." @("Your backup file is unchanged.") }
   Ok "data restored"; Start-Stack; Test-Smoke; Ok "restored from $Restore"; exit 0
 }

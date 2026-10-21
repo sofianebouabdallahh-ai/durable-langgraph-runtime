@@ -196,12 +196,12 @@ def test_pod_states_and_exit_statuses() -> None:
 
 def test_the_launcher_runs_the_argv_from_stdin_with_an_empty_stdin() -> None:
     """Large arguments travel on the exec's stdin, not in the URL (L6c)."""
-    big = "x" * 200_000
+    big = "x" * 100_000  # Linux caps one argument at 128 KiB; the URL would be the problem
     argv = [sys.executable, "-c", "import sys; print(len(sys.argv[1]), repr(sys.stdin.read()))",
             big]  # fmt: skip
     done = subprocess.run([sys.executable, "-c", k8s.LAUNCHER], input=json.dumps(argv) + "\n",
                           capture_output=True, text=True, timeout=30, check=True)  # fmt: skip
-    assert done.stdout.strip() == "200000 ''"
+    assert done.stdout.strip() == "100000 ''"
 
 
 # -------------------------------------------------------------------- tools

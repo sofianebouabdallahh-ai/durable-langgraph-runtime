@@ -49,6 +49,10 @@ packages = ["src/agent_runtime"]
 # Absolute (not "14 days") so `uv lock` is reproducible; bump it deliberately
 # in a dependency-update PR, keeping it ~2 weeks behind the bump date.
 exclude-newer = "2026-09-27T00:00:00Z"
+# Exceptions, one package each, for a security fix newer than the cooldown:
+# certifi 2026.10.19 removes emSign roots with compromised intermediate keys
+# (GHSA-6q48-6c7w-9gw2, critical). Drop an exception once the cooldown passes it.
+exclude-newer-package = { certifi = "2026-10-21T00:00:00Z" }
 
 [dependency-groups]
 dev = [
