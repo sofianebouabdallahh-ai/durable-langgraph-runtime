@@ -414,8 +414,12 @@ case "$ACTION" in
     say "Restoring $RESTORE…"
     compose stop api worker ui >/dev/null 2>&1 || true
     compose up -d --wait postgres >/dev/null
-    gzip -dc "$RESTORE" | compose exec -T postgres sh -c 'psql -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null \
-      || die "the restore failed (above)." "Your backup file is unchanged; diagnostics: ./setup.sh --doctor"
+    # The whole schema goes, then the backup comes in, as one transaction: a backup from an
+    # older release has fewer tables, and the newer ones (which may reference its tables)
+    # must not survive or block it. Any failure changes nothing. Setup then migrates.
+    { printf 'DROP SCHEMA public CASCADE;\nCREATE SCHEMA public;\n'; gzip -dc "$RESTORE"; } \
+      | compose exec -T postgres sh -c 'psql -q -v ON_ERROR_STOP=1 --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null \
+      || die "the restore failed (above); nothing was changed." "Your backup file is unchanged; diagnostics: ./setup.sh --doctor"
     ok "data restored"
     start_stack; smoke; ok "restored from $RESTORE"
     ;;
