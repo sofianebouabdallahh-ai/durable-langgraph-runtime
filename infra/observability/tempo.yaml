@@ -1,0 +1,33 @@
+# Tempo (phase L7b, replacing Jaeger): the traces, from the collector over OTLP. One
+# binary, blocks on a volume, kept 7 days. Grafana searches them and links a trace to its
+# log lines in Loki, and back.
+stream_over_http_enabled: true
+
+server:
+  http_listen_port: 3200
+  log_level: warn
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+
+ingester:
+  max_block_duration: 5m # recent traces reach the blocks (and search) quickly
+
+compactor:
+  compaction:
+    block_retention: 168h # 7 days
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks
+
+usage_report:
+  reporting_enabled: false

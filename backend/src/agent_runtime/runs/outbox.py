@@ -18,6 +18,7 @@ from typing import Any
 
 from langgraph.checkpoint.base import Checkpoint, CheckpointMetadata
 
+from agent_runtime import metrics
 from agent_runtime.db import Conn
 from agent_runtime.fencing import Fence
 from agent_runtime.runs.events import EventType
@@ -43,6 +44,7 @@ class Outbox:
     # per-model numbers, committed with the step as the totals are (L7).
     models: dict[str, list[float]] = field(default_factory=dict)
     _just_written: list[Event] = field(default_factory=list)
+    _just_used: dict[str, list[float]] = field(default_factory=dict)
 
     def stage(self, type: EventType, payload: dict[str, Any]) -> None:
         self.pending.append((type, payload))
@@ -81,12 +83,17 @@ class Outbox:
             self.tokens, self.cost = 0, 0.0
         if self.models:
             await repo.add_model_usage(self.run_id, self.models)
-            self.models = {}
+        self._just_used, self.models = self.models, {}  # counted once it commits
         self._just_written = repo.emitted  # replaced, not appended: a rollback discards it
 
     async def after_commit(self) -> None:
         """FencedCheckpointer hook: the transaction committed; now announce it."""
         written, self._just_written = self._just_written, []
+        used, self._just_used = self._just_used, {}
+        for model, (calls, tokens_in, tokens_out, cost, _) in used.items():
+            # Counted with the step that committed them, as in the database: a step lost
+            # to a crash and run again is counted once, not twice (L4a's double count).
+            metrics.llm_usage(model, int(tokens_in), int(tokens_out), cost, calls=int(calls))
         await publish_events(self.bus, written)
         if self.transcript is not None:
             await self.transcript.publish()

@@ -257,17 +257,35 @@ services:
     volumes:
       - ../observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro
     depends_on:
-      - jaeger
+      - tempo
+      - loki
     read_only: true
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
 
-  jaeger: # v2: OTLP built in; traces kept in memory (a restart forgets them)
-    image: jaegertracing/jaeger:2.21.0@sha256:3d0ac795ff98aa04d1be04311d2dac6c25b4bfc8322dc02e53bc5b170c5018c3
+  tempo: # traces (L7b, replacing Jaeger): searched in Grafana, linked to their log lines
+    image: grafana/tempo:2.10.8@sha256:f0561deb1c68ec44d6e6e7e4487f30106c4e5e768642077695b37958b105812a
     profiles: ["observability"]
-    ports:
-      - "127.0.0.1:${JAEGER_PORT:-16686}:16686"
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ../observability/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    user: "10001"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  loki: # log lines (L7b), kept 7 days
+    image: grafana/loki:3.7.8@sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193
+    profiles: ["observability"]
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ../observability/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
     read_only: true
     tmpfs:
       - /tmp
@@ -298,6 +316,7 @@ services:
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_VIEWERS_CAN_EDIT: "true" # Explore (traces, logs) for viewers; dashboards stay read-only
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-me-grafana} # setup generates one
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/nuria.json
       GF_ANALYTICS_REPORTING_ENABLED: "false"
@@ -311,6 +330,8 @@ services:
       - grafana-data:/var/lib/grafana
     depends_on:
       - prometheus
+      - loki
+      - tempo
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
@@ -326,3 +347,5 @@ volumes:
   ollama-models:
   prometheus-data:
   grafana-data:
+  tempo-data:
+  loki-data:

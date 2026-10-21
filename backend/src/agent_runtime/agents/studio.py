@@ -38,6 +38,7 @@ from agent_runtime.agents.resolver import AgentResolver
 from agent_runtime.agents.schema import AgentDefinition
 from agent_runtime.agents.store import bundle_digest, snapshot_bundle
 from agent_runtime.agents.studio_store import AgentStore, NameTaken, StoredAgent, Version
+from agent_runtime.audit import Action, AuditLog
 from agent_runtime.config import AgentSettings
 from agent_runtime.db import Conn, Pool
 from agent_runtime.ids import new_id
@@ -198,6 +199,8 @@ class StudioService:
             else:
                 document = self._blank(name, display_name, description)
             agent, _ = await store.create(name, document.model_dump(mode="json"))
+            await AuditLog(conn).record("agent.created", "agent", name, after={
+                "display_name": document.display_name, "copy_of": copy_of})  # fmt: skip
         return await self.save_draft(agent.id, document)
 
     def _blank(self, name: str, display_name: str, description: str) -> AgentDocument:
@@ -351,12 +354,21 @@ class StudioService:
                 draft = Draft(draft_version, issues + model_issues + skill_issues, tested, untested)
         return AgentState(agent, draft, published, versions)
 
-    async def save_draft(self, agent_id: uuid.UUID, document: AgentDocument) -> AgentState:
+    async def save_draft(
+        self,
+        agent_id: uuid.UUID,
+        document: AgentDocument,
+        *,
+        audited: tuple[Action, dict[str, Any]] | None = None,
+    ) -> AgentState:
         """Save the form (autosave). Valid → snapshotted, and its hash is what a test
-        chat runs; invalid → saved anyway (a draft may be unfinished), issues returned."""
+        chat runs; invalid → saved anyway (a draft may be unfinished), issues returned.
+        `audited`: a change to record with it (a restore), in the same transaction."""
         async with self._pool.connection() as conn, conn.transaction():
             store = AgentStore(conn)
             agent = await store.get(agent_id)
+            if audited is not None:
+                await AuditLog(conn).record(audited[0], "agent", agent.name, after=audited[1])
             document = document.model_copy(update={"name": agent.name})  # the id is fixed
             draft = await store.open_draft(agent_id, document.model_dump(mode="json"))
             definition, _ = self._check(document.model_dump(mode="json"), draft.number)
@@ -390,7 +402,10 @@ class StudioService:
             old = await AgentStore(conn).version(agent_id, number)
         if old is None:
             raise LookupError(f"no version {number}")
-        return await self.save_draft(agent_id, AgentDocument.model_validate(old.document))
+        return await self.save_draft(
+            agent_id, AgentDocument.model_validate(old.document),
+            audited=("agent.restored", {"version": number}),
+        )  # fmt: skip
 
     async def discard(self, agent_id: uuid.UUID) -> AgentState:
         async with self._pool.connection() as conn, conn.transaction():
@@ -417,11 +432,15 @@ class StudioService:
                 raise PublishBlocked(["A skill changed since the test: test it again"])
             note = (changelog or "").strip()[:500] or None
             await store.publish(agent_id, note, digest, lock_of(skills))
+            await AuditLog(conn).record("agent.published", "agent", state.agent.name, after={
+                "version": version.number, "changelog": note, "bundle": digest})  # fmt: skip
         return await self.get(agent_id)
 
     async def archive(self, agent_id: uuid.UUID) -> AgentState:
         async with self._pool.connection() as conn, conn.transaction():
+            agent = await AgentStore(conn).get(agent_id)
             await AgentStore(conn).archive(agent_id)
+            await AuditLog(conn).record("agent.archived", "agent", agent.name)
         return await self.get(agent_id)
 
     def tool_risks(self) -> dict[str, str]:
@@ -508,6 +527,8 @@ class StudioService:
             name = await self._free_name(store, definition.id)  # never replaces an agent
             document = from_definition(definition, name=name)
             agent, _ = await store.create(name, document.model_dump(mode="json"))
+            await AuditLog(conn).record("agent.imported", "agent", name, after={
+                "file": filename[:200], "skills": [c.name for c, _ in carried]})  # fmt: skip
         return await self.save_draft(agent.id, document)
 
     # --------------------------------------------------------------- skills in files

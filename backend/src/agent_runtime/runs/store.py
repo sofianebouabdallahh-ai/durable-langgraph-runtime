@@ -146,6 +146,11 @@ class Run:
     model_bindings: dict[str, Any] | None = None
     # W3C trace context of whoever created the run (R2.7): every execution continues it.
     traceparent: str | None = None
+    # Which agent, as published (for logs and Activity), and what the run has used so far.
+    agent_name: str | None = None
+    agent_version: int | None = None
+    tokens: int = 0
+    cost: float = 0.0
 
     @property
     def root_id(self) -> uuid.UUID:
@@ -185,6 +190,10 @@ class Run:
             agent_hash=row.get("agent_hash"),
             model_bindings=row.get("model_bindings"),
             traceparent=row.get("traceparent"),
+            agent_name=row.get("agent_name"),
+            agent_version=row.get("agent_version"),
+            tokens=row.get("tokens") or 0,
+            cost=float(row.get("cost") or 0),
             child_total=row["child_total"],
             child_done=row["child_done"],
         )
@@ -237,7 +246,7 @@ _RUN_COLUMNS = """
     input, options, limits, steps, parent_run_id, session_id,
     created_at, started_at, finished_at, cancel_requested, reclaims, releases, message_id,
     interrupt_payload, resume_value, root_run_id, depth, child_key, child_total, child_done,
-    agent_hash, model_bindings, traceparent, waited_s
+    agent_hash, model_bindings, traceparent, waited_s, agent_name, agent_version, tokens, cost
 """
 
 

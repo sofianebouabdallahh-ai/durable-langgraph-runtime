@@ -32,17 +32,20 @@ export async function restoreStack(apiReplicas: number, workers: number): Promis
   await new Promise((r) => setTimeout(r, 3_000)); // and the proxy's DNS view catches up (2 s)
 }
 
-/** A container's log, stdout and stderr (uvicorn's access log is on stderr). */
+/** A container's log, stdout and stderr (the access log is on stderr). */
 function logs(id: string): string {
   const r = spawnSync("docker", ["logs", "--timestamps", id], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
   return `${r.stdout}\n${r.stderr}`;
 }
 
-/** The API replica serving this session's stream: the last one to log its request. */
+/** The API replica serving this session's stream: the last one to log it opening
+ * (the access log names the route's template and the session as a field, L7a). */
 export function servingReplica(sessionId: string): string {
   let best: { id: string; at: string } | null = null;
   for (const id of containers("api")) {
-    const hits = logs(id).split("\n").filter((l) => l.includes(`/sessions/${sessionId}/stream`));
+    const hits = logs(id)
+      .split("\n")
+      .filter((l) => l.includes('"/sessions/{session_id}/stream"') && l.includes('"stream": "open"') && l.includes(sessionId));
     const last = hits.map((l) => l.split(" ")[0] ?? "").sort().at(-1);
     if (last && (!best || last > best.at)) best = { id, at: last };
   }

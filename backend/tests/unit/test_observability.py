@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from prometheus_client import REGISTRY
 
-from agent_runtime import metrics, telemetry
+from agent_runtime import logs, metrics, telemetry
 from agent_runtime.worker import HealthServer, Worker
 
 # ---------------------------------------------------------------- probes
@@ -163,12 +163,12 @@ def record(msg: str, exc: bool = False) -> logging.LogRecord:
 
 def test_json_lines_carry_the_run(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POD_NAME", "worker-7d9f")
-    fmt = telemetry.JsonFormatter("worker")
+    fmt = logs.JsonFormatter("worker")
     plain = json.loads(fmt.format(record("hello")))
     assert plain["msg"] == "hello" and plain["level"] == "WARNING"
     assert plain["component"] == "worker" and plain["pod"] == "worker-7d9f"
     assert "run_id" not in plain
-    with telemetry.bind_run("r-1", 3, "abc"):
+    with logs.bind(run_id="r-1", epoch=3, trace_id="abc"):
         line = json.loads(fmt.format(record("inside", exc=True)))
     assert (line["run_id"], line["epoch"], line["trace_id"]) == ("r-1", 3, "abc")
     assert "ValueError: boom" in line["exc"]
@@ -178,10 +178,10 @@ def test_setup_logging_switches_format(capsys: pytest.CaptureFixture[str]) -> No
     root = logging.getLogger()
     saved = root.handlers[:], root.level
     try:
-        telemetry.setup_logging("INFO", "json", "api")
+        logs.setup("INFO", "json", "api")
         logging.getLogger("agent_runtime.t").info("one")
         assert json.loads(capsys.readouterr().err)["msg"] == "one"
-        telemetry.setup_logging("INFO", "text")
+        logs.setup("INFO", "text")
         logging.getLogger("agent_runtime.t").info("two")
         assert capsys.readouterr().err.rstrip().endswith("agent_runtime.t: two")
     finally:
@@ -190,7 +190,7 @@ def test_setup_logging_switches_format(capsys: pytest.CaptureFixture[str]) -> No
 
 
 def test_probe_and_scrape_requests_are_not_logged() -> None:
-    probe = telemetry.ProbeFilter()
+    probe = logs.ProbeFilter()
 
     def access(path: str) -> logging.LogRecord:
         return logging.LogRecord(

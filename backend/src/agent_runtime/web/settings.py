@@ -13,6 +13,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
+from agent_runtime.audit import AuditLog, key_change
 from agent_runtime.config import Settings
 from agent_runtime.db import Conn, Pool
 from agent_runtime.keys import Sealed, fingerprint, open_secret, seal, secret_aad
@@ -98,6 +99,7 @@ class ToolSettings:
         key (now, or one already saved)."""
         async with self._pool.connection() as conn, conn.transaction():
             row = await _row(conn) or {}
+            before = _audited(row) if row else None
             provider = search_provider or row.get("search_provider") or "searxng"
             sets: dict[str, Any] = {"search_provider": provider}
             if api_key is not None and api_key.strip():
@@ -131,7 +133,10 @@ class ToolSettings:
                 f"{', '.join(f'{c} = EXCLUDED.{c}' for c in sets)}, updated_at = now()",
                 (WORKSPACE, *sets.values()),
             )
-            return _config(await _row(conn))
+            after = await _row(conn) or {}
+            await AuditLog(conn).record("tool_settings.changed", "setting", "tools",
+                                        before=before, after=_audited(after))  # fmt: skip
+            return _config(after)
 
     async def provider(self) -> SearchProvider:
         """The search to use now (a worker opens the key in memory, cached per version)."""
@@ -169,3 +174,10 @@ class ToolSettings:
         if not hits:
             return False, "The search answered, but with no results", []
         return True, f"Works: {len(hits)} results for “{query}”", hits
+
+
+def _audited(row: dict[str, Any]) -> dict[str, Any]:
+    """Tool settings as the audit trail shows them: never the key, only its fingerprint."""
+    return {"search_provider": row.get("search_provider"), "searxng_url": row.get("searxng_url"),
+            "web_allowlist": row.get("web_allowlist"),
+            **key_change(row.get("key_fingerprint"))}  # fmt: skip

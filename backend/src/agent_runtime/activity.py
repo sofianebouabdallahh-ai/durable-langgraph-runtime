@@ -57,12 +57,14 @@ TURN_RUNS = f"""
     SELECT c.id FROM runs c WHERE c.root_run_id IN (SELECT r.id {TURNS})
 """
 DURATION = "extract(epoch FROM r.finished_at - r.started_at)"
+RATING = "(SELECT f.rating FROM reply_feedback f WHERE f.run_id = r.id)"  # 👍 1, 👎 -1
 TURN_COLUMNS = """
     r.id, r.created_at, r.started_at, r.finished_at, r.agent_name, r.agent_version, r.status,
     r.reason, r.session_id, s.title AS session_title, s.playground_of IS NOT NULL AS test,
     r.steps, r.model_calls, r.tool_calls_total, r.tokens, r.cost, r.reclaims,
     coalesce((SELECT array_agg(u.model ORDER BY u.calls DESC)
-              FROM run_model_usage u WHERE u.run_id = r.id), '{}') AS models
+              FROM run_model_usage u WHERE u.run_id = r.id), '{}') AS models,
+    (SELECT f.rating FROM reply_feedback f WHERE f.run_id = r.id) AS rating
 """
 
 
@@ -221,7 +223,9 @@ class ActivityRepository:
                    percentile_cont(0.5) WITHIN GROUP (ORDER BY {DURATION}) AS p50_s,
                    percentile_cont(0.95) WITHIN GROUP (ORDER BY {DURATION}) AS p95_s,
                    coalesce(sum(r.tokens), 0) AS tokens, coalesce(sum(r.cost), 0) AS cost,
-                   max(r.created_at) AS last_turn
+                   max(r.created_at) AS last_turn,
+                   count(*) FILTER (WHERE {RATING} = 1) AS liked,
+                   count(*) FILTER (WHERE {RATING} = -1) AS disliked
             {TURNS}
             GROUP BY r.agent_name ORDER BY count(*) DESC
             """,
@@ -237,6 +241,8 @@ class ActivityRepository:
                 "tokens": int(r["tokens"]),
                 "cost": _num(r["cost"]),
                 "last_turn": r["last_turn"],
+                "liked": r["liked"],
+                "disliked": r["disliked"],
             }
             for r in rows
         ]

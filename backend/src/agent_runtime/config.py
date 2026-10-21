@@ -85,7 +85,7 @@ class Settings(AgentSettings):
     # with none, OpenTelemetry stays a no-op and the stack pays nothing (L4a SC4).
     otel_exporter_otlp_endpoint: str = ""  # e.g. http://otel-collector:4318
     # Links the UI shows, when observability is on (browser-facing URLs, not secrets).
-    trace_ui_url: str = ""  # Jaeger: {trace_ui_url}/trace/{trace_id}
+    trace_ui_url: str = ""  # Grafana: a run's trace (Tempo) and log lines (Loki) open in Explore
     dashboard_url: str = ""  # Grafana
     # The worker's /healthz /readyz /metrics. 0 = off (the default: several workers share
     # a host in development); containers set 8081, one worker process each.

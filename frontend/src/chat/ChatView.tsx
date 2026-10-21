@@ -16,6 +16,7 @@ import { problemText } from "./problems";
 import { type Item, pendingApproval, type TurnView, turns } from "./selectors";
 import { isBusy } from "./transcript";
 import { useChat } from "./useChat";
+import { ReplyRating } from "./ReplyRating";
 import { WhatHappened } from "./WhatHappened";
 
 type Decide = (decision: "approve" | "reject", reason: string | null) => void;
@@ -243,6 +244,7 @@ function TurnBlock({
             {view.active && status !== "waiting_approval" && !view.draft && <Typing label={turnLabel(status)} />}
             {!view.runId.startsWith("none") && !view.active && (
               <div>
+                <div className="flex flex-wrap items-center gap-1">
                 <button
                   type="button"
                   className="inline-flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-xs text-stone-500 transition hover:bg-stone-100 hover:text-stone-700 focus-visible:outline-2 focus-visible:outline-sun-500 dark:hover:bg-stone-800 dark:hover:text-stone-200"
@@ -254,6 +256,8 @@ function TurnBlock({
                   <Info aria-hidden className="size-3.5" />
                   {details ? "Hide details" : "What happened?"}
                 </button>
+                <ReplyRating runId={view.runId} />
+                </div>
                 {details && (
                   <div className="mt-2">
                     <WhatHappened runId={view.runId} active={view.active} />

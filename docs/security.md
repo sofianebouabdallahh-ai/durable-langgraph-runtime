@@ -15,7 +15,7 @@ Nuria runs entirely on your computer, in Docker.
 | sandboxd *(on unless `--no-sandbox`)* | Starts the code sandboxes. The only part with the Docker socket, so it runs as root, alone, and answers only the workers' token | Inside Docker only |
 | A sandbox per turn that runs code | Python and shell commands. **No network**, read-only, non-root, all capabilities dropped, CPU, memory, process and time limits; removed when the turn ends | Nothing: no network at all |
 | *Optional:* Ollama | A local model | `127.0.0.1` |
-| *Optional:* Jaeger, Prometheus, Grafana (`--observability`) | Traces, metrics, dashboards | `127.0.0.1` |
+| *Optional:* OpenTelemetry Collector, Tempo, Loki, Prometheus, Grafana (`--observability`) | Traces, log lines (redacted at the source and again in the collector), metrics, dashboards | `127.0.0.1` (Grafana and Prometheus); the rest inside the Compose network |
 
 The containers run as ordinary users, not root, on a read-only filesystem (sandboxd
 excepted, as above).

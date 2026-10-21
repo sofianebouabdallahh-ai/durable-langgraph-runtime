@@ -85,6 +85,8 @@ class AgentRow(BaseModel):
     tokens: int
     cost: float
     last_turn: datetime | None
+    liked: int = Field(description="Replies given 👍")
+    disliked: int = Field(description="Replies given 👎")
 
 
 class ModelRow(BaseModel):
@@ -142,6 +144,7 @@ class TurnRow(BaseModel):
     duration_s: float | None
     reclaims: int
     models: list[str]
+    rating: int | None = Field(default=None, description="👍 1, 👎 -1, or not rated")
 
     @classmethod
     def of(cls, row: dict[str, Any]) -> TurnRow:
@@ -152,6 +155,7 @@ class TurnRow(BaseModel):
             test=row["test"], steps=row["steps"], model_calls=row["model_calls"],
             tool_calls=row["tool_calls_total"], tokens=row["tokens"], cost=row["cost"],
             duration_s=row["duration_s"], reclaims=row["reclaims"], models=list(row["models"]),
+            rating=row.get("rating"),
         )  # fmt: skip
 
 

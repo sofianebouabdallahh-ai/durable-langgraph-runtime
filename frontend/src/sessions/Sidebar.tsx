@@ -61,7 +61,7 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: () =>
         <NavLink to={{ page: "agents" }} active={route.page === "agents" || route.page === "agent" || route.page === "studio"} onNavigate={onNavigate} icon={<Bot aria-hidden className="size-4" />}>
           Agents
         </NavLink>
-        <NavLink to={{ page: "activity" }} active={route.page === "activity" || route.page === "turn"} onNavigate={onNavigate} icon={<Activity aria-hidden className="size-4" />}>
+        <NavLink to={{ page: "activity" }} active={route.page === "activity" || route.page === "turn" || route.page === "audit"} onNavigate={onNavigate} icon={<Activity aria-hidden className="size-4" />}>
           Activity
         </NavLink>
         <NavLink to={{ page: "skills" }} active={route.page === "skills"} onNavigate={onNavigate} icon={<BookOpen aria-hidden className="size-4" />}>

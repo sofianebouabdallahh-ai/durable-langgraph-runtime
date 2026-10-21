@@ -1,6 +1,8 @@
-# OpenTelemetry Collector (phase L4a): the API and the workers send spans here over
-# OTLP/HTTP; the collector batches them and forwards them to Jaeger. In Kubernetes
-# (L4b) the same collector adds the pod's resource attributes.
+# OpenTelemetry Collector (phases L4a, L7b): the API and the workers send their spans and
+# their log lines here over OTLP/HTTP; the collector batches them and forwards the spans
+# to Tempo and the log lines to Loki. In Kubernetes (L4b) it adds the pod's attributes.
+# The lines were redacted where they were written; the collector drops a second net of
+# well-known secret attributes, should a future line carry one by mistake.
 receivers:
   otlp:
     protocols:
@@ -15,12 +17,20 @@ processors:
     limit_mib: 200
   batch:
     timeout: 1s
+  attributes/secrets:
+    actions:
+      - { key: authorization, action: delete }
+      - { key: password, action: delete }
+      - { key: api_key, action: delete }
+      - { key: http.request.header.authorization, action: delete }
 
 exporters:
-  otlp/jaeger:
-    endpoint: jaeger:4317
+  otlp_grpc/tempo:
+    endpoint: tempo:4317
     tls:
       insecure: true # inside the Compose network only
+  otlp_http/loki:
+    endpoint: http://loki:3100/otlp
 
 extensions:
   health_check:
@@ -31,5 +41,9 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, batch]
-      exporters: [otlp/jaeger]
+      processors: [memory_limiter, attributes/secrets, batch]
+      exporters: [otlp_grpc/tempo]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/secrets, batch]
+      exporters: [otlp_http/loki]

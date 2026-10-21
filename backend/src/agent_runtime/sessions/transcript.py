@@ -35,11 +35,11 @@ from langchain_core.messages import (
 
 from agent_runtime.db import Conn
 from agent_runtime.fencing import Fence
+from agent_runtime.redaction import redact
 from agent_runtime.sessions.store import Message, MessageType, NewMessage, SessionRepository
 from agent_runtime.sessions.store import message_id as make_id
 from agent_runtime.sessions.turns import REPAIR_PREFIX, baseline
 from agent_runtime.streaming.bus import EventBus, StreamEvent, session_channel
-from agent_runtime.tools.hooks import redact
 from agent_runtime.untrusted import unwrap
 
 log = logging.getLogger(__name__)

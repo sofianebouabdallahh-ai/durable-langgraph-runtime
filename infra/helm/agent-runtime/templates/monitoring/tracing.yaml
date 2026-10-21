@@ -1,7 +1,10 @@
 {{- if .Values.monitoring.enabled }}
 {{- $name := include "nuria.fullname" . }}
-# Tracing (R7.1): the API and the workers send spans to the collector, which batches
-# them into Jaeger (traces kept in memory: a restart forgets them).
+{{- $m := .Values.monitoring }}
+# Traces and log lines (R7.1, phase L7b): the API and the workers send both to the
+# collector over OTLP; it forwards spans to Tempo and lines to Loki, which Grafana reads
+# and links both ways. Same configuration as Compose (infra/observability/*.yaml).
+# No node access: the lines come from the processes themselves, not from /var/log/pods.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -16,16 +19,25 @@ data:
     processors:
       memory_limiter: { check_interval: 1s, limit_mib: 150 }
       batch: { timeout: 1s }
+      attributes/secrets:
+        actions:
+          - { key: authorization, action: delete }
+          - { key: password, action: delete }
+          - { key: api_key, action: delete }
+          - { key: http.request.header.authorization, action: delete }
     exporters:
-      otlp/jaeger:
-        endpoint: {{ $name }}-jaeger:4317
+      otlp_grpc/tempo:
+        endpoint: {{ $name }}-tempo:4317
         tls: { insecure: true }
+      otlp_http/loki:
+        endpoint: http://{{ $name }}-loki:3100/otlp
     extensions:
       health_check: { endpoint: 0.0.0.0:13133 }
     service:
       extensions: [health_check]
       pipelines:
-        traces: { receivers: [otlp], processors: [memory_limiter, batch], exporters: [otlp/jaeger] }
+        traces: { receivers: [otlp], processors: [memory_limiter, attributes/secrets, batch], exporters: [otlp_grpc/tempo] }
+        logs: { receivers: [otlp], processors: [memory_limiter, attributes/secrets, batch], exporters: [otlp_http/loki] }
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -41,7 +53,7 @@ spec:
       labels:
         {{- include "nuria.selector" (dict "root" . "name" "otel-collector") | nindent 8 }}
       annotations:
-        checksum/config: {{ .Values.monitoring.collector | toJson | sha256sum }}
+        checksum/config: {{ $m.collector | toJson | sha256sum }}
     spec:
       automountServiceAccountToken: false
       securityContext:
@@ -49,14 +61,14 @@ spec:
         runAsUser: 10001
       containers:
         - name: collector
-          image: {{ .Values.monitoring.collector.image }}
+          image: {{ $m.collector.image }}
           args: ["--config=/etc/otelcol/config.yaml"]
           securityContext: {{- include "nuria.containerSecurity" . | nindent 12 }}
           ports:
             - { name: otlp-http, containerPort: 4318 }
           readinessProbe:
             httpGet: { path: /, port: 13133 }
-          resources: {{- toYaml .Values.monitoring.collector.resources | nindent 12 }}
+          resources: {{- toYaml $m.collector.resources | nindent 12 }}
           volumeMounts:
             - { name: config, mountPath: /etc/otelcol }
       volumes:
@@ -73,46 +85,171 @@ spec:
   ports:
     - { name: otlp-http, port: 4318 }
 ---
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: v1
+kind: ConfigMap
 metadata:
-  name: {{ $name }}-jaeger
+  name: {{ $name }}-tempo
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+data:
+  tempo.yaml: |
+    stream_over_http_enabled: true
+    server: { http_listen_port: 3200, log_level: warn }
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc: { endpoint: 0.0.0.0:4317 }
+    ingester: { max_block_duration: 5m }
+    compactor:
+      compaction: { block_retention: {{ $m.tempo.retention }} }
+    storage:
+      trace:
+        backend: local
+        wal: { path: /var/tempo/wal }
+        local: { path: /var/tempo/blocks }
+    usage_report: { reporting_enabled: false }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}-tempo
   labels: {{- include "nuria.labels" . | nindent 4 }}
 spec:
+  serviceName: {{ $name }}-tempo
   replicas: 1
   selector:
-    matchLabels: {{- include "nuria.selector" (dict "root" . "name" "jaeger") | nindent 6 }}
+    matchLabels: {{- include "nuria.selector" (dict "root" . "name" "tempo") | nindent 6 }}
   template:
     metadata:
-      labels: {{- include "nuria.selector" (dict "root" . "name" "jaeger") | nindent 8 }}
+      labels: {{- include "nuria.selector" (dict "root" . "name" "tempo") | nindent 8 }}
+      annotations:
+        checksum/config: {{ $m.tempo | toJson | sha256sum }}
     spec:
       automountServiceAccountToken: false
       securityContext:
         {{- include "nuria.podSecurity" . | nindent 8 }}
         runAsUser: 10001
+        fsGroup: 10001
       containers:
-        - name: jaeger
-          image: {{ .Values.monitoring.jaeger.image }}
+        - name: tempo
+          image: {{ $m.tempo.image }}
+          args: ["-config.file=/etc/tempo/tempo.yaml"]
           securityContext: {{- include "nuria.containerSecurity" . | nindent 12 }}
           ports:
-            - { name: ui, containerPort: 16686 }
+            - { name: http, containerPort: 3200 }
             - { name: otlp-grpc, containerPort: 4317 }
           readinessProbe:
-            httpGet: { path: /, port: ui }
-          resources: {{- toYaml .Values.monitoring.jaeger.resources | nindent 12 }}
+            httpGet: { path: /ready, port: http }
+            initialDelaySeconds: 15
+          resources: {{- toYaml $m.tempo.resources | nindent 12 }}
           volumeMounts:
+            - { name: config, mountPath: /etc/tempo }
+            - { name: data, mountPath: /var/tempo }
             - { name: tmp, mountPath: /tmp }
       volumes:
+        - name: config
+          configMap: { name: {{ $name }}-tempo }
         - { name: tmp, emptyDir: {} }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: {{ $m.tempo.storage }} } }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ $name }}-jaeger
+  name: {{ $name }}-tempo
   labels: {{- include "nuria.labels" . | nindent 4 }}
 spec:
-  selector: {{- include "nuria.selector" (dict "root" . "name" "jaeger") | nindent 4 }}
+  selector: {{- include "nuria.selector" (dict "root" . "name" "tempo") | nindent 4 }}
   ports:
-    - { name: ui, port: 16686 }
+    - { name: http, port: 3200 }
     - { name: otlp-grpc, port: 4317 }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-loki
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+data:
+  loki.yaml: |
+    auth_enabled: false
+    server: { http_listen_port: 3100, grpc_listen_port: 9096, log_level: warn }
+    common:
+      instance_addr: 127.0.0.1
+      path_prefix: /loki
+      replication_factor: 1
+      ring: { kvstore: { store: inmemory } }
+      storage:
+        filesystem: { chunks_directory: /loki/chunks, rules_directory: /loki/rules }
+    schema_config:
+      configs:
+        - { from: "2026-01-01", store: tsdb, object_store: filesystem, schema: v13,
+            index: { prefix: index_, period: 24h } }
+    limits_config:
+      retention_period: {{ $m.loki.retention }}
+      allow_structured_metadata: true
+      volume_enabled: true
+    compactor:
+      working_directory: /loki/compactor
+      retention_enabled: true
+      delete_request_store: filesystem
+    analytics: { reporting_enabled: false }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}-loki
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ $name }}-loki
+  replicas: 1
+  selector:
+    matchLabels: {{- include "nuria.selector" (dict "root" . "name" "loki") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "nuria.selector" (dict "root" . "name" "loki") | nindent 8 }}
+      annotations:
+        checksum/config: {{ $m.loki | toJson | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "nuria.podSecurity" . | nindent 8 }}
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: loki
+          image: {{ $m.loki.image }}
+          args: ["-config.file=/etc/loki/loki.yaml"]
+          securityContext: {{- include "nuria.containerSecurity" . | nindent 12 }}
+          ports:
+            - { name: http, containerPort: 3100 }
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            initialDelaySeconds: 15
+          resources: {{- toYaml $m.loki.resources | nindent 12 }}
+          volumeMounts:
+            - { name: config, mountPath: /etc/loki }
+            - { name: data, mountPath: /loki }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: config
+          configMap: { name: {{ $name }}-loki }
+        - { name: tmp, emptyDir: {} }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: {{ $m.loki.storage }} } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-loki
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "nuria.selector" (dict "root" . "name" "loki") | nindent 4 }}
+  ports:
+    - { name: http, port: 3100 }
 {{- end }}

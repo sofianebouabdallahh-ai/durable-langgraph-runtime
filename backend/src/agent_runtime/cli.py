@@ -38,9 +38,9 @@ BACKEND_DIR = Path(os.environ.get("RUNTIME_HOME") or Path(__file__).resolve().pa
 
 def _setup_logging(settings: Settings, component: str | None = None) -> None:
     """Text for a terminal; JSON lines with the run's context in containers (R7.1)."""
-    from agent_runtime.telemetry import setup_logging
+    from agent_runtime import logs
 
-    setup_logging(settings.log_level, settings.log_format, component)
+    logs.setup(settings.log_level, settings.log_format, component)
 
 
 # ----------------------------------------------------------------------- db
@@ -447,6 +447,7 @@ def _api(args: argparse.Namespace) -> int:
         host=args.host,
         port=args.port,
         log_config=None,  # uvicorn's loggers go through ours (JSON in containers, R7.1)
+        access_log=False,  # ours (api.access): the route, the time, the request id
         log_level=settings.log_level.lower(),
         timeout_graceful_shutdown=int(settings.api_grace_s),
     )

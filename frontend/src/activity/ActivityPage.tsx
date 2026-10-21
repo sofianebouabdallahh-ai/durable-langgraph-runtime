@@ -4,7 +4,7 @@
  * above everything and scope every number, chart and list below.
  */
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { AlertTriangle, ArrowRight, CircleDollarSign, Clock, Hourglass, MessageSquare, Power, Wrench } from "lucide-react";
+import { AlertTriangle, ArrowRight, CircleDollarSign, Clock, History, Hourglass, MessageSquare, Power, ThumbsDown, ThumbsUp, Wrench } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
 import { href } from "../app/route";
@@ -35,7 +35,12 @@ export function ActivityPage() {
   const data = activity.data;
   return (
     <div className="mx-auto max-w-6xl px-6 py-10" data-testid="activity">
-      <h1 className="font-display text-4xl font-medium tracking-tight">Activity</h1>
+      <div className="flex flex-wrap items-end gap-3">
+        <h1 className="font-display text-4xl font-medium tracking-tight">Activity</h1>
+        <a href={href({ page: "audit" })} className="mb-1 ml-auto inline-flex items-center gap-1.5 text-sm font-medium text-stone-600 underline-offset-2 hover:underline dark:text-stone-300" data-testid="audit-link">
+          <History aria-hidden className="size-4" /> Who changed what
+        </a>
+      </div>
       <p className="mt-2 max-w-2xl text-stone-500 dark:text-stone-400">What your agents have been doing: every chat and turn, what they used, what it cost, and what went wrong.</p>
 
       <div className="mt-6 flex flex-wrap items-end gap-4" data-testid="activity-filters">
@@ -199,7 +204,7 @@ function Breakdowns({ data, onAgent }: { data: Activity; onAgent: (agent: string
       <Card title="Agents" testId="activity-agents">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr><th className={th}>Agent</th><th className={th}>Turns</th><th className={th}>Failed</th><th className={th}>Median · p95</th><th className={th}>Tokens</th><th className={th}>Cost</th></tr></thead>
+            <thead><tr><th className={th}>Agent</th><th className={th}>Turns</th><th className={th}>Failed</th><th className={th}>Median · p95</th><th className={th}>Tokens</th><th className={th}>Cost</th><th className={th}>Rated</th></tr></thead>
             <tbody>
               {data.agents.map((a) => (
                 <tr key={a.agent} className="border-t border-stone-100 dark:border-stone-800">
@@ -213,9 +218,19 @@ function Breakdowns({ data, onAgent }: { data: Activity; onAgent: (agent: string
                   <td className={td}>{seconds(a.p50_s)} · {seconds(a.p95_s)}</td>
                   <td className={td}>{compact(a.tokens)}</td>
                   <td className={td}>{money(a.cost)}</td>
+                  <td className={td} data-testid="agent-rated">
+                    {a.liked + a.disliked === 0 ? (
+                      "—"
+                    ) : (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="inline-flex items-center gap-0.5" title="Good replies"><ThumbsUp aria-label="Good replies" className="size-3.5" /> {a.liked}</span>
+                        <span className="inline-flex items-center gap-0.5" title="Bad replies"><ThumbsDown aria-label="Bad replies" className="size-3.5" /> {a.disliked}</span>
+                      </span>
+                    )}
+                  </td>
                 </tr>
               ))}
-              {data.agents.length === 0 && <tr><td colSpan={6} className="py-4 text-stone-500">No turns in this range.</td></tr>}
+              {data.agents.length === 0 && <tr><td colSpan={7} className="py-4 text-stone-500">No turns in this range.</td></tr>}
             </tbody>
           </table>
         </div>

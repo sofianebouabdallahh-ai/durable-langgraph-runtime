@@ -85,15 +85,17 @@ and P10 (retention).
 
 - **Compose** (`--observability`): **Loki** (single binary, pinned, 7-day retention) and
   **Tempo** replacing Jaeger (local storage, 7 days). The collector gains a `logs` pipeline:
-  `filelog` over Docker's json-file logs (`/var/lib/docker/containers`, read-only), container
-  labels → `service`, JSON parsed, `trace_id` to structured metadata, redaction processor.
+  ~~`filelog` over Docker's json-file logs~~ OTLP from the processes (Decision 4), the
+  service as `service_name`, every field and `trace_id` as structured metadata, a second
+  redaction net (`attributes` processor).
 - **Grafana:** Loki and Tempo datasources; **trace → logs** (`tracesToLogsV2` on
   `trace_id`) and **log → trace** (derived field); a "Logs" row on the Nuria dashboard
   (errors by component, recent failures with their trace).
-- **Kubernetes** (`monitoring.enabled`): the collector as a **DaemonSet** with `filelog` over
-  `/var/log/pods`, Loki and Tempo as single-replica StatefulSets; same provisioning.
+- **Kubernetes** (`monitoring.enabled`): ~~the collector as a DaemonSet with `filelog` over
+  `/var/log/pods`~~ the same OTLP path (Decision 4); Loki and Tempo as single-replica
+  StatefulSets; same provisioning.
 - The UI's **Open the trace** and **logs for this turn** links open Grafana Explore at the
-  trace, and at `{session_id="…"}` for the logs.
+  trace, and at the turn's `run_id` for its lines ("Its log lines").
 - Off by default, as today: without `--observability`, logs stay on stdout and the in-app
   Activity page (below) works on its own.
 
@@ -187,6 +189,15 @@ first if you want the dashboard soonest.
 1. **Tempo replaces Jaeger:** Grafana searches traces, and trace ↔ logs links go both ways.
 2. **The Activity page first:** L7c, then L7a/L7b (logs), then L7d.
 3. **Feedback 👍/👎 is in this phase,** shown per agent in Activity: the start of evaluations.
+4. **Log lines reach Loki over OTLP from the processes, not from log files** (decided while
+   building L7b, from the spike in §5): Docker Desktop's default logging driver here is `local`
+   (binary files, no JSON for `filelog`), and reading `/var/lib/docker/containers` or
+   `/var/log/pods` needs root in the collector and host or node mounts. Each process instead
+   sends the same redacted fields it writes to stdout, beside its spans; stdout stays the
+   source of truth. One path for Compose and Kubernetes, no DaemonSet, no host access. The
+   cost: lines written before the app is up (a crash at start) are only on stdout, and the
+   Logs API is still `_logs` in the SDK, so it's used in one small handler (`logs.OtlpHandler`)
+   instead of the SDK's deprecated `LoggingHandler`.
 
 ---
 

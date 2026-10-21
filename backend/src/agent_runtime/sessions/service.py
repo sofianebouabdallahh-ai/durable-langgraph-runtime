@@ -24,7 +24,9 @@ from typing import Any
 
 from psycopg.errors import UniqueViolation
 
+from agent_runtime import logs
 from agent_runtime.agents.schema import AgentDefinition
+from agent_runtime.audit import AuditLog
 from agent_runtime.config import Settings
 from agent_runtime.db import Pool
 from agent_runtime.graphs import GraphRegistry, UnknownGraph
@@ -306,8 +308,11 @@ class SessionService:
                            "interrupt": waiting.interrupt_payload}  # fmt: skip
                 await repo.append(session_id, [event_message(active, "approval", content)],
                                   run_id=active, epoch=None)  # fmt: skip
+                await AuditLog(conn).record("approval.decided", "run", active, after={
+                    "decision": decision, "reason": reason, "edited": bool(edits)})  # fmt: skip
         await publish_events(self._bus, runs.emitted)
         await publish_messages(self._bus, repo.created)
+        logs.event(log, f"approval decided: {decision}", run_id=str(active), decision=decision)
         if run.status is RunStatus.QUEUED:
             await self._enqueue(run.id)
         return run

@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -39,16 +40,19 @@ from typing import Any, Literal
 
 from pydantic import ValidationError
 
-from agent_runtime import telemetry
+from agent_runtime import genai, logs, telemetry
 from agent_runtime.db import Conn, Pool
 from agent_runtime.fencing import Fence
+from agent_runtime.redaction import redact
 from agent_runtime.runs.events import EventType
 from agent_runtime.tools import invocations
-from agent_runtime.tools.hooks import Ask, Deny, HookSpec, ToolHookInput, redact, run_hooks
+from agent_runtime.tools.hooks import Ask, Deny, HookSpec, ToolHookInput, run_hooks
 from agent_runtime.tools.policy import Allow, RequireApproval, ToolPolicy
 from agent_runtime.tools.policy import Deny as PolicyDeny
 from agent_runtime.tools.spec import ToolContext, ToolRegistry, ToolSpec
 from agent_runtime.untrusted import as_data
+
+log = logging.getLogger(__name__)
 
 Emit = Callable[[EventType, dict[str, Any]], None]
 Interrupt = Callable[[Any], Any]  # langgraph.types.interrupt, injectable for tests
@@ -140,12 +144,20 @@ class ToolPipeline:
 
     async def run(self, call: ToolCall, ctx: ToolRunContext) -> ToolResult:
         """Run `call` through every stage, in a `tool:{name}` span (R7.1)."""
-        with telemetry.child_span(f"tool:{call.name}", {"tool.call_id": call.id}) as span:
+        attrs = {"tool.call_id": call.id, **genai.tool(call.name, call.id)}
+        with (
+            telemetry.child_span(f"tool:{call.name}", attrs) as span,
+            logs.bind(tool=call.name, tool_call_id=call.id),
+        ):
+            t0 = time.monotonic()
             result = await self._run(call, ctx)
             span.set_attributes({
                 "tool.status": result.status, "tool.cached": result.cached,
                 "tool.stage": result.stage,
             })  # fmt: skip
+            logs.event(log, f"tool call: {call.name} {result.status}", status=result.status,
+                       cached=result.cached or None, stage=result.stage,
+                       duration_ms=round((time.monotonic() - t0) * 1000))  # fmt: skip
         return result
 
     async def _run(self, call: ToolCall, ctx: ToolRunContext) -> ToolResult:
@@ -200,15 +212,16 @@ class ToolPipeline:
                     call, ctx, "approval_unavailable",
                     f"{reason}; approval is only available to the main agent", "policy",
                 )  # fmt: skip
-            ctx.emit(
-                EventType.POLICY_DECISION,
-                {
-                    "tool": spec.name,
-                    "call_id": call.id,
-                    "decision": "require_approval",
-                    "reason": reason,
-                },
-            )
+            if not await _asked_before(ctx, call.id):  # a resume re-runs the node: once
+                ctx.emit(
+                    EventType.POLICY_DECISION,
+                    {
+                        "tool": spec.name,
+                        "call_id": call.id,
+                        "decision": "require_approval",
+                        "reason": reason,
+                    },
+                )
             resume = self._interrupt(
                 {
                     "type": "tool_approval",
@@ -391,3 +404,15 @@ def _truncate(text: str, limit: int) -> str:
 def _cap(result: Any, limit: int) -> Any:
     text = json.dumps(result, default=str)
     return result if len(text) <= limit else {"truncated": _truncate(text, limit)}
+
+
+async def _asked_before(ctx: ToolRunContext, call_id: str) -> bool:
+    """Was this call's approval asked already? After the person decides, the node runs
+    again from its start (LangGraph's resume), so the decision would be logged twice."""
+    async with ctx.pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT 1 FROM run_events WHERE run_id = %s AND type = %s "
+            "AND payload->>'call_id' = %s LIMIT 1",
+            (ctx.fence.run_id, EventType.POLICY_DECISION.value, call_id),
+        )
+        return await cur.fetchone() is not None

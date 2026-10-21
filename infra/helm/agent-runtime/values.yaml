@@ -138,15 +138,22 @@ networkPolicy:
 # Tracing, metrics and the dashboard, inside the cluster (L4b; Compose: L4a).
 monitoring:
   enabled: false
-  traceUiUrl: "" # the links Nuria shows (browser URLs)
+  traceUiUrl: "" # the links Nuria shows (browser URLs): Grafana, for traces and log lines
   dashboardUrl: ""
-  host: { grafana: "", jaeger: "" } # Ingress hosts, e.g. grafana.localhost
+  host: { grafana: "" } # Ingress host, e.g. grafana.localhost
   collector:
     image: otel/opentelemetry-collector-contrib:0.161.0@sha256:fd328de2552466ad78385e1b1289c3f2402b1c45f265b252aab1955b42845ac1
     resources: { requests: { cpu: 20m, memory: 64Mi }, limits: { memory: 192Mi } }
-  jaeger:
-    image: jaegertracing/jaeger:2.21.0@sha256:3d0ac795ff98aa04d1be04311d2dac6c25b4bfc8322dc02e53bc5b170c5018c3
-    resources: { requests: { cpu: 20m, memory: 96Mi }, limits: { memory: 384Mi } }
+  tempo: # traces (L7b, replacing Jaeger)
+    image: grafana/tempo:2.10.8@sha256:f0561deb1c68ec44d6e6e7e4487f30106c4e5e768642077695b37958b105812a
+    retention: 48h
+    storage: 1Gi
+    resources: { requests: { cpu: 20m, memory: 96Mi }, limits: { memory: 512Mi } }
+  loki: # log lines (L7b)
+    image: grafana/loki:3.7.8@sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193
+    retention: 48h
+    storage: 1Gi
+    resources: { requests: { cpu: 20m, memory: 96Mi }, limits: { memory: 512Mi } }
   prometheus:
     image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
     retention: 2d

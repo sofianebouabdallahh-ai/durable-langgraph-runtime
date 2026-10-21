@@ -11,9 +11,9 @@ config:
 
 monitoring:
   enabled: true
-  traceUiUrl: http://jaeger.localhost:8090
+  traceUiUrl: http://grafana.localhost:8090
   dashboardUrl: http://grafana.localhost:8090/d/nuria
-  host: { grafana: grafana.localhost, jaeger: jaeger.localhost }
+  host: { grafana: grafana.localhost }
 
 sandbox:
   image: { repository: nuria/sandbox, tag: dev } # built and loaded by cluster.sh

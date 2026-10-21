@@ -74,3 +74,41 @@ test("an unknown turn says so", async ({ page }) => {
   await page.goto("/#/activity/turns/00000000-0000-0000-0000-000000000000");
   await expect(page.getByTestId("turn-detail")).toContainText("There's no such turn.");
 });
+
+test("rate a reply 👍, change it to 👎 with a reason; Activity counts it per agent", async ({ page, request }) => {
+  const sid = await startChat(page, "What is 2 + 2?");
+  await waitTurnOver(request, sid);
+  const reply = page.getByTestId("reply-rating").last();
+  await reply.getByRole("button", { name: "Good reply" }).click();
+  await expect(reply.getByRole("button", { name: "Good reply" })).toHaveAttribute("aria-pressed", "true");
+  const turn = (await getJson<TurnRow[]>(request, `/api/activity/turns?range=24h&session_id=${sid}`))[0]!;
+  await expect.poll(async () => (await getJson<{ rating: string } | null>(request, `/api/runs/${turn.id}/feedback`))?.rating).toBe("up");
+
+  await reply.getByRole("button", { name: "Bad reply" }).click();
+  await reply.getByLabel("What was wrong? (optional)").fill("Too short");
+  await reply.getByRole("button", { name: "Send" }).click();
+  await expect(reply).toContainText("“Too short”");
+  await page.reload();
+  await expect(page.getByTestId("reply-rating").last().getByRole("button", { name: "Bad reply" })).toHaveAttribute("aria-pressed", "true");
+
+  await page.goto("/#/activity");
+  await page.getByTestId("activity-filters").getByRole("radio", { name: "24 hours" }).click();
+  const nuria = page.getByTestId("activity-agents").getByRole("row").filter({ hasText: "Nuria" });
+  await expect(nuria.getByTestId("agent-rated")).toContainText(/\d/);
+});
+
+test("who changed what: a change shows in the trail, before → after, and downloads as CSV", async ({ page, request }) => {
+  await request.put("/api/telemetry", { data: { sharing: true } });
+  await request.put("/api/telemetry", { data: { sharing: false } });
+  await page.goto("/#/activity");
+  await page.getByTestId("audit-link").click();
+  await expect(page).toHaveURL(/#\/activity\/audit$/);
+  await page.getByLabel("What").selectOption("usage_sharing.changed");
+  const latest = page.getByTestId("audit-row").first();
+  await expect(latest).toHaveAttribute("data-action", "usage_sharing.changed");
+  await expect(latest).toContainText("sharing: true → false");
+  await expect(page.getByTestId("audit-download")).toHaveAttribute("href", "/api/audit.csv?action=usage_sharing.changed");
+  const csv = await request.get("/api/audit.csv?action=usage_sharing.changed");
+  expect(csv.headers()["content-type"]).toContain("text/csv");
+  expect((await csv.text()).split(/\r?\n/)[0]).toBe("at,actor,action,target_type,target_id,before,after,request_id,trace_id");
+});

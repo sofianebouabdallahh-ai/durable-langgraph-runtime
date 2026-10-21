@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from agent_runtime.audit import AuditLog
 from agent_runtime.db import Pool
 from agent_runtime.ids import new_id
 from agent_runtime.skills import spec
@@ -172,10 +173,11 @@ class SkillService:
 
     async def archive(self, skill_id: uuid.UUID) -> None:
         """Out of the library. Published agents keep the version they locked."""
-        async with self._pool.connection() as conn:
+        async with self._pool.connection() as conn, conn.transaction():
             store = SkillStore(conn)
-            await self._editable(store, skill_id)
+            skill = await self._editable(store, skill_id)
             await store.archive(skill_id)
+            await AuditLog(conn).record("skill.archived", "skill", skill.name)
 
     async def export(self, skill_id: uuid.UUID) -> tuple[str, bytes]:
         async with self._pool.connection() as conn:
@@ -268,6 +270,8 @@ class SkillService:
             digest = await store.put_version(checked, report)
             skill = await store.insert(new_id(), checked.name, "private", origin, digest)
             version = await store.version(digest)
+            await AuditLog(conn).record("skill.created", "skill", skill.name,
+                                        after={"origin": origin, "version": digest})  # fmt: skip
         return Saved(skill, version, [i for i in issues if not i.blocking])
 
     async def _replace(
@@ -276,7 +280,11 @@ class SkillService:
         checked, report = self._gate(content, issues)
         async with self._pool.connection() as conn, conn.transaction():
             store = SkillStore(conn)
+            before = await store.get(skill_id)
             digest = await store.put_version(checked, report)
             skill = await store.point(skill_id, digest)
             version = await store.version(digest)
+            await AuditLog(conn).record("skill.updated", "skill", skill.name,
+                                        before={"version": before.current_hash},
+                                        after={"version": digest})  # fmt: skip
         return Saved(skill, version, [i for i in issues if not i.blocking])

@@ -10,6 +10,7 @@
  *   #/skills      the skill library
  *   #/start       Getting started: a guided first agent
  *   #/activity    what all agents have been doing    #/activity/turns/<id>  one turn
+ *   #/activity/audit   who changed what
  */
 import { useCallback, useSyncExternalStore } from "react";
 
@@ -25,7 +26,8 @@ export type Route =
   | { page: "skills" }
   | { page: "start" }
   | { page: "activity" }
-  | { page: "turn"; runId: string };
+  | { page: "turn"; runId: string }
+  | { page: "audit" };
 
 export function parse(hash: string): Route {
   const [, kind, id] = hash.replace(/^#/, "").split("/");
@@ -37,6 +39,7 @@ export function parse(hash: string): Route {
   if (kind === "settings" && id === "privacy") return { page: "privacy" };
   if (kind === "skills") return { page: "skills" };
   if (kind === "start") return { page: "start" };
+  if (kind === "activity" && id === "audit") return { page: "audit" };
   if (kind === "activity") {
     const runId = hash.replace(/^#/, "").split("/")[3];
     return runId ? { page: "turn", runId: decodeURIComponent(runId) } : { page: "activity" };
@@ -70,6 +73,8 @@ export function href(route: Route): string {
       return "#/activity";
     case "turn":
       return `#/activity/turns/${encodeURIComponent(route.runId)}`;
+    case "audit":
+      return "#/activity/audit";
   }
 }
 

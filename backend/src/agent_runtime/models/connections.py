@@ -30,6 +30,7 @@ import httpx
 from pydantic import SecretStr
 
 from agent_runtime.agents.schema import AgentDefinition
+from agent_runtime.audit import AuditLog, key_change
 from agent_runtime.config import Settings
 from agent_runtime.db import Conn, Pool
 from agent_runtime.ids import new_id
@@ -48,7 +49,7 @@ from agent_runtime.models.provider import (
     OpenAICompatibleProvider,
     configured_provider,
 )
-from agent_runtime.tools.hooks import redact
+from agent_runtime.redaction import redact
 
 Kind = Literal["ollama", "openai", "azure_foundry", "compatible"]
 Status = Literal["untested", "ready", "failed"]
@@ -333,7 +334,7 @@ class ConnectionService:
         async with self._pool.connection() as conn, conn.transaction():
             store = ConnectionStore(conn)
             name = await self._free_name(store, display_name)
-            return await store.insert(
+            added = await store.insert(
                 cid,
                 name,
                 display_name.strip()[:60],
@@ -343,6 +344,9 @@ class ConnectionService:
                 fingerprint(key, kek) if key else None,
                 _clean(models),
             )
+            await AuditLog(conn).record("model_connection.added", "model_connection", name,
+                                        after=_audited(added))  # fmt: skip
+            return added
 
     async def update(
         self,
@@ -371,14 +375,22 @@ class ConnectionService:
                 changes["key_fingerprint"] = fingerprint(api_key.strip(), kek)
             if "base_url" in changes or "sealed" in changes:
                 changes.update(test_status="untested", test_detail=None, tested_at=None)
-            return await store.update(cid, **changes) if changes else current
+            if not changes:
+                return current
+            updated = await store.update(cid, **changes)
+            await AuditLog(conn).record("model_connection.changed", "model_connection",
+                                        current.name, before=_audited(current),
+                                        after=_audited(updated))  # fmt: skip
+            return updated
 
     async def archive(self, cid: uuid.UUID) -> None:
         async with self._pool.connection() as conn, conn.transaction():
             store = ConnectionStore(conn)
             if (default := await store.default()) and default[0] == cid:
                 await store.set_default(None, None)
-            await store.update(cid, archived_at=datetime.now().astimezone())
+            gone = await store.update(cid, archived_at=datetime.now().astimezone())
+            await AuditLog(conn).record("model_connection.removed", "model_connection",
+                                        gone.name, before=_audited(gone))  # fmt: skip
 
     async def default(self) -> tuple[Connection, str] | None:
         async with self._pool.connection() as conn:
@@ -388,9 +400,16 @@ class ConnectionService:
 
     async def set_default(self, cid: uuid.UUID | None, model: str | None) -> None:
         async with self._pool.connection() as conn, conn.transaction():
+            store = ConnectionStore(conn)
             if cid is not None:
-                await ConnectionStore(conn).get(cid)  # 404 for an unknown connection
-            await ConnectionStore(conn).set_default(cid, model if cid else None)
+                await store.get(cid)  # 404 for an unknown connection
+            was = await store.default()
+            await store.set_default(cid, model if cid else None)
+            await AuditLog(conn).record(
+                "default_model.changed", "setting", "default_model",
+                before={"connection_id": str(was[0]), "model": was[1]} if was else None,
+                after={"connection_id": str(cid), "model": model} if cid else None,
+            )  # fmt: skip
 
     async def test(self, cid: uuid.UUID, model: str) -> TestResult:
         """One small request with a tool: proves the address, the key, the model and
@@ -600,3 +619,9 @@ class ModelRouter:
                 )
             out[model] = self._providers[cache_key]
         return out
+
+
+def _audited(c: Connection) -> dict[str, Any]:
+    """A connection as the audit trail shows it: never the key, only that one is set."""
+    return {"display_name": c.display_name, "kind": c.kind, "base_url": c.base_url,
+            "models": c.models, **key_change(c.key_fingerprint)}  # fmt: skip

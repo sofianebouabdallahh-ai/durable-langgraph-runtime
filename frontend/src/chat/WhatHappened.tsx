@@ -5,7 +5,7 @@ import { ExternalLink } from "lucide-react";
 import { api, unwrap } from "../api/client";
 import { ReportReply } from "../feedback/ReportReply";
 import { useAbout } from "../sessions/ModelStatus";
-import { traceLink } from "./trace";
+import { logsLink, traceLink } from "./trace";
 import { Spinner } from "../ui/primitives";
 import { eventLine } from "../ui/words";
 
@@ -25,6 +25,7 @@ export function WhatHappened({ runId, active }: { runId: string; active: boolean
   if (run.isError || events.isError) return <div className="text-sm text-rose-600">Couldn't load the details.</div>;
   const r = run.data;
   const traceUrl = traceLink(about.data, r.trace_id);
+  const logsUrl = logsLink(about.data, r.id);
   const start = events.data.events[0]?.ts;
   const lines = events.data.events
     .map((e) => ({ seq: e.seq, ts: e.ts, type: e.type, text: eventLine(e.type, e.payload) }))
@@ -58,6 +59,17 @@ export function WhatHappened({ runId, active }: { runId: string; active: boolean
             data-testid="open-trace"
           >
             Open the trace <ExternalLink aria-hidden className="size-3" />
+          </a>
+        )}
+        {logsUrl && (
+          <a
+            href={logsUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 font-medium text-stone-700 underline-offset-2 hover:underline dark:text-stone-300"
+            data-testid="open-logs"
+          >
+            Its log lines <ExternalLink aria-hidden className="size-3" />
           </a>
         )}
         {!active && <ReportReply runId={r.id} agent={r.graph} />}

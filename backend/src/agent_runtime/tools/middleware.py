@@ -24,6 +24,7 @@ model call that sees their results.
 from __future__ import annotations
 
 import json
+import logging
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -42,7 +43,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langgraph.runtime import Runtime
 from langgraph.types import Command
 
-from agent_runtime import metrics, telemetry
+from agent_runtime import genai, logs, metrics, telemetry
 from agent_runtime.models.retry import ModelCaller
 from agent_runtime.models.scripted import ScriptedChatModel, ScriptTurn
 from agent_runtime.sessions.turns import script_offset
@@ -55,6 +56,8 @@ from agent_runtime.tools.hooks import (
 )
 from agent_runtime.tools.invocations import LoopDetected, charge_model_call
 from agent_runtime.tools.pipeline import ToolCall, ToolPipeline, ToolRunContext
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from agent_runtime.runs.limits import RunLimits
@@ -226,6 +229,8 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
             elif sub is None and (kind := await ctx.soft_limit()):
                 if wrap_up[0] is None:
                     metrics.budget_warning(kind)
+                    logs.event(log, f"budget nearly used: {kind}", budget=kind,
+                               level=logging.WARNING)  # fmt: skip
                 wrap_up[0] = kind  # R14.2: one wrap-up call, with no tools
                 req = req.override(tools=[], messages=[*req.messages, SystemMessage(
                     content=WRAP_UP_TURN.format(kind=kind.removeprefix("budget:")))])  # fmt: skip
@@ -271,7 +276,13 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
                 span.set_attributes({
                     "llm.model": model, "llm.tokens_in": tokens_in,
                     "llm.tokens_out": tokens_out, "llm.cost_usd": cost,
+                    **genai.chat(model, tokens_in, tokens_out),
                 })  # fmt: skip
+                logs.event(
+                    log, f"model call: {model}", model=model, tokens_in=tokens_in,
+                    tokens_out=tokens_out, cost=round(cost, 6),
+                    duration_ms=round(seconds * 1000), attempts=attempts[0] - first,
+                )  # fmt: skip
             span.set_attribute("llm.tool_calls", sum(
                 len(m.tool_calls) for m in response.result if isinstance(m, AIMessage)
             ))  # fmt: skip

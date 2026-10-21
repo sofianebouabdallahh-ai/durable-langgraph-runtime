@@ -7,7 +7,7 @@
 #   ./setup.sh --port 3100          the app on another port (default 3000, or a free one)
 #   ./setup.sh --non-interactive --model scripted     no questions (CI, scripts)
 #   ./setup.sh --chat               chat in this terminal
-#   ./setup.sh --observability      also traces (Jaeger), metrics and a Grafana dashboard
+#   ./setup.sh --observability      also traces, logs and metrics, in Grafana
 #   ./setup.sh --no-sandbox         without the code tools (Run Python, terminal, files)
 #   ./setup.sh --kubernetes         on a local Kubernetes cluster (kind) instead of Compose
 #   ./setup.sh --update [--to v0.2.0]   back up, then move to the newest (or that) release
@@ -288,18 +288,17 @@ configure_observability() {  # --observability / --no-observability; remembered 
   if [ "$OBSERVABILITY" = off ]; then
     env_set COMPOSE_PROFILES "${profiles:-app}"; env_set OTEL_ENDPOINT ""
     env_set TRACE_UI_URL ""; env_set DASHBOARD_URL ""
-    ok "observability off (traces and metrics stop being collected)"
+    ok "observability off (traces, logs and metrics stop being collected)"
     return
   fi
   [ "$OBSERVABILITY" = on ] || has_profile observability || return 0
   env_set COMPOSE_PROFILES "${profiles:-app},observability"
   env_set OTEL_ENDPOINT http://otel-collector:4318
-  JAEGER_PORT=$(pick_port jaeger 16686 JAEGER_PORT 16686)
   GRAFANA_PORT=$(pick_port grafana 3000 GRAFANA_PORT 3001)
   PROMETHEUS_PORT=$(pick_port prometheus 9090 PROMETHEUS_PORT 9090)
-  env_set TRACE_UI_URL "http://localhost:$JAEGER_PORT"
+  env_set TRACE_UI_URL "http://localhost:$GRAFANA_PORT"  # Grafana: traces (Tempo) and logs (Loki)
   env_set DASHBOARD_URL "http://localhost:$GRAFANA_PORT/d/nuria"
-  ok "observability: traces $JAEGER_PORT, dashboard $GRAFANA_PORT, metrics $PROMETHEUS_PORT"
+  ok "observability: Grafana $GRAFANA_PORT (dashboard, traces, logs), metrics $PROMETHEUS_PORT"
 }
 
 configure_sandbox() {  # --sandbox / --no-sandbox; on by default; remembered in .env
@@ -372,7 +371,7 @@ case "$ACTION" in
     echo "    Something wrong?     ./setup.sh --doctor   (a report you can attach to an issue)"
     if has_profile observability; then
       echo "    Dashboard:           $(env_get DASHBOARD_URL)"
-      echo "    Traces:              $(env_get TRACE_UI_URL)   (or \"Open the trace\" under a reply's \"What happened?\")"
+      echo "    Traces and logs:     $(env_get TRACE_UI_URL)/explore   (or \"Open the trace\" under a reply's \"What happened?\")"
       echo "    Metrics:             http://localhost:$(env_get PROMETHEUS_PORT)"
     fi
     if [ "$INTERACTIVE" -eq 1 ] && [ "$OPEN_BROWSER" -eq 1 ]; then

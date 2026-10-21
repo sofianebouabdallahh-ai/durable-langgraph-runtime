@@ -29,7 +29,10 @@ from agent_runtime import metrics, report, telemetry
 from agent_runtime.admin import AdminRepository, AdminState
 from agent_runtime.agents.studio import StudioService
 from agent_runtime.api import problems
+from agent_runtime.api.access import AccessLog
 from agent_runtime.api.activity import activity_router
+from agent_runtime.api.audit import audit_router
+from agent_runtime.api.client_errors import client_errors_router
 from agent_runtime.api.kill_switch import kill_switch_router
 from agent_runtime.api.models import models_router
 from agent_runtime.api.onboarding import onboarding_router
@@ -459,6 +462,7 @@ def create_app(
     app.state.draining = asyncio.Event()
     app.state.loop = None
     problems.install(app)
+    app.add_middleware(AccessLog)
     app.include_router(runs)
     app.include_router(sessions_router)
     app.include_router(agents_router)
@@ -469,7 +473,9 @@ def create_app(
     app.include_router(tools_router)
     app.include_router(kill_switch_router)
     app.include_router(activity_router)
+    app.include_router(audit_router)
     app.include_router(telemetry_router)
+    app.include_router(client_errors_router)
     app.include_router(graphs_router)
     app.include_router(health)
     if settings.admin_api_enabled:

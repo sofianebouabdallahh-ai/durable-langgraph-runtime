@@ -34,7 +34,7 @@ When it finishes:
 |---|---|
 | Nuria | http://localhost:8090 |
 | Dashboards | http://grafana.localhost:8090/d/nuria, and **Nuria on Kubernetes** (pods, restarts, autoscaling) |
-| Traces | http://jaeger.localhost:8090 (or **Open the trace** under a reply's "What happened?") |
+| Traces and logs | http://grafana.localhost:8090/explore (or **Open the trace** and **Its log lines** under a reply's "What happened?") |
 
 **Step by step:** `make k8s-up`, `k8s-build`, `k8s-load`, `k8s-secrets`, `k8s-deploy`.
 
@@ -98,7 +98,7 @@ CI runs `security`, `podkill` and `upgrade` on a fresh kind cluster for every pu
 | **KEDA ScaledObject**: 2 to 8 workers, one more per 4 queued messages, scale-down one pod per 30 s after 120 s | Workers wait on models, so CPU says nothing about load. The queue backlog does (R10.8) | A CPU-based HPA never scales workers |
 | **Worker PDB** (`maxUnavailable: 1`) | Drains and node upgrades take one worker at a time | Several workers released at once: everything is still handed off, but with half the capacity |
 | **Topology spread** (`ScheduleAnyway`) | Replicas land on different nodes (R10.11). `ScheduleAnyway` lets pods still schedule when only one node is left | One node holds all replicas, and its drain is an outage |
-| **Ingress** (class `traefik`) | `/` → the UI; with monitoring, `grafana.localhost` and `jaeger.localhost`. Streams go straight through: Traefik doesn't buffer, the UI's nginx has buffering off and a 1 h read timeout (R10.3) | No way in |
+| **Ingress** (class `traefik`) | `/` → the UI; with monitoring, `grafana.localhost`. Streams go straight through: Traefik doesn't buffer, the UI's nginx has buffering off and a 1 h read timeout (R10.3) | No way in |
 | **ServiceAccount**, no token mounted | Nuria's pods never call the Kubernetes API (R10.10) | A compromised pod finds cluster credentials on disk |
 | **Restricted Pod Security** (namespace label): every pod non-root, `seccomp: RuntimeDefault`, no privilege escalation, every capability dropped, read-only root filesystem (writes only to `/tmp` emptyDirs) | The baseline that makes a container escape hard (R10.10) | The namespace would accept a privileged pod |
 | **NetworkPolicies**: default deny, then DNS for everyone. UI ← Traefik; UI → API; API ← UI and Prometheus. Postgres ← API, workers and migrate only; Redis ← API, workers and KEDA | A pod that shouldn't talk to the database can't (R10.10) | Any pod in the namespace reaches Postgres. The `security` demo's intruder pod would connect |
@@ -121,7 +121,7 @@ Measured on kind: a 90 s `time.sleep` in a sandbox stopped **0.9 s** after its a
 
 | Object | Why |
 |---|---|
-| **OpenTelemetry Collector + Jaeger** | Traces, as in Compose ([guide](setup/observability.md)). On Kubernetes each span also names its pod, namespace and node (Downward API) |
+| **OpenTelemetry Collector + Tempo + Loki** | Traces and log lines, as in Compose ([guide](setup/observability.md)), each a single-replica StatefulSet with a 1 Gi volume and 2 days' retention. The processes send their lines over OTLP: no DaemonSet, no access to the nodes' log files. Each span and line also names its pod, namespace and node (Downward API) |
 | **Prometheus** (StatefulSet with a Role, **namespace-scoped**) | Finds every pod annotated `prometheus.io/scrape` in the namespace: the API replicas and however many workers KEDA runs. Nothing cluster-wide |
 | **kube-state-metrics** (same Role, `--namespaces=nuria`) | Pod restarts, deployment readiness, and the autoscalers' desired replicas, for the **Nuria on Kubernetes** dashboard |
 | **Grafana** | The same dashboards as Compose, plus the Kubernetes one, read from the repository at deploy time |
@@ -136,7 +136,8 @@ Measured on kind: a 90 s `time.sleep` in a sandbox stopped **0.9 s** after its a
 | Postgres | 149 Mi | 192 Mi / 512 Mi |
 | Redis | 15 Mi | 32 Mi / 128 Mi |
 | Grafana | 226 Mi | 192 Mi / 512 Mi |
-| Prometheus, Jaeger, collector, kube-state-metrics | 42, 27, 106, 17 Mi | see [`values.yaml`](../infra/helm/agent-runtime/values.yaml) |
+| Prometheus, collector, kube-state-metrics | 42, 106, 17 Mi | see [`values.yaml`](../infra/helm/agent-runtime/values.yaml) |
+| Tempo, Loki (L7b) | ~85, ~125 Mi (measured in Compose) | 96 Mi / 512 Mi each |
 | Traefik, KEDA (2 pods), metrics-server | 55, 152, 24 Mi | |
 | **The three nodes, together** | **~3.6 Gi** | Fits in Docker's default 8 GB, next to Compose |
 

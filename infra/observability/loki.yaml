@@ -1,0 +1,45 @@
+# Loki (phase L7b): the log lines, from the collector over OTLP. One binary, files on a
+# volume, kept 7 days. Its one label is `service_name` (api, worker, sandboxd); every
+# other field (session_id, run_id, agent, tool, trace_id) is structured metadata:
+# searchable, without the cost of high-cardinality labels.
+auth_enabled: false # local only: bound to the Compose network and 127.0.0.1
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  log_level: warn
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+
+schema_config:
+  configs:
+    - from: "2026-01-01"
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  retention_period: 168h # 7 days
+  allow_structured_metadata: true
+  volume_enabled: true
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+analytics:
+  reporting_enabled: false
