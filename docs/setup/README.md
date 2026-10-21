@@ -10,6 +10,7 @@ Everything runs in Docker on your computer: the app, the database, the queue, tw
 
 Then:
 - **Pick a model** ([models.md](models.md)): the offline demo model, a free local model (Ollama), OpenAI, Azure AI Foundry, or any OpenAI-compatible service.
+- **Give agents tools** ([tools.md](tools.md)): web search, reading pages, running Python in a sandbox, and how to stop an agent.
 - **Watch it work** ([observability.md](observability.md)): traces, metrics and a Grafana dashboard.
 - **Testing for us?** Start with [testers.md](testers.md): what to try, and how to send feedback in two clicks.
 - **If something goes wrong:** [troubleshooting.md](troubleshooting.md).

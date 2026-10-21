@@ -84,6 +84,12 @@ function Get-ProfileArgs {
   $p = Get-EnvValue "COMPOSE_PROFILES"; if (-not $p) { $p = "app" }
   $args = @(); foreach ($x in $p.Split(",")) { $args += "--profile"; $args += $x }; return $args
 }
+# Code sandboxes aren't Compose's: sandboxd starts them, one per turn.
+function Remove-Sandboxes {
+  $ids = & docker ps -aq --filter label=nuria.sandbox=1 2>$null
+  if ($ids) { & docker rm -f @($ids) *> $null }
+}
+
 function Invoke-Compose { param([Parameter(ValueFromRemainingArguments)]$rest)
   & docker compose --file $ComposeFile --env-file $EnvFile @(Get-ProfileArgs) @rest
   if ($LASTEXITCODE -ne 0) { throw "docker compose $rest failed" }
@@ -294,7 +300,7 @@ function Test-Smoke {
 
 # ------------------------------------------------------------------ actions
 if ($Chat) { Test-Docker; Invoke-Compose run --rm --no-deps api chat; exit 0 }
-if ($Stop) { Test-Docker; Invoke-Compose stop; Ok "stopped (your data is kept)"; exit 0 }
+if ($Stop) { Test-Docker; Invoke-Compose stop; Remove-Sandboxes; Ok "stopped (your data is kept)"; exit 0 }
 if ($Doctor) {
   Test-Docker; $out = "diagnostics-$(Get-Date -Format yyyyMMdd-HHmmss)"; New-Item -ItemType Directory $out | Out-Null
   & docker compose --file $ComposeFile --env-file $EnvFile @(Get-ProfileArgs) run --rm --no-deps -T api doctor --api http://ui:8080/api > "$out/doctor.json" 2>$null
@@ -307,7 +313,7 @@ if ($Doctor) {
 if ($Reset) {
   Test-Docker
   if ($Interactive -and (Read-Answer "This DELETES all conversations, agents and downloaded models. Type 'delete' to confirm") -ne "delete") { Die "cancelled; nothing was deleted." }
-  Invoke-Compose down -v --remove-orphans; Ok "everything deleted (.env kept)"; exit 0
+  Invoke-Compose down -v --remove-orphans; Remove-Sandboxes; Ok "everything deleted (.env kept)"; exit 0
 }
 
 if ($Kubernetes) {

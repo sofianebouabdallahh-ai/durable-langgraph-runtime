@@ -55,7 +55,8 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 | **L3c** | Agent Studio: skills & "describe your agent" → M2 | ✅ Done ([plan](plans/phase-L3c.md), [summary](progress/phase-L3c.md)); M2 after the tester sessions | ~16–20 h |
 | **L4** | Dashboards & local Kubernetes (L4a observability, L4b local Kubernetes) | ✅ Done ([plan](plans/phase-L4.md), summaries [L4a](progress/phase-L4a.md), [L4b](progress/phase-L4b.md)) | ~26–33 h |
 | **L5** | **Release v0.1 & feedback loop → M3** | ✅ Done ([plan](plans/phase-L5.md), [summary](progress/phase-L5.md)); M3 after the testers | ~10–14 h |
-| **L3d** | **Getting started: a guided first agent** (v0.1.1) | ⏳ Next ([plan](plans/phase-L3d.md)) | ~8–11 h |
+| **L3d** | **Getting started: a guided first agent** (v0.1.1) | ✅ Done ([plan](plans/phase-L3d.md), [summary](progress/phase-L3d.md)) | ~8–11 h |
+| **L6** | **Real tools**: web search, page reading, Run Python and a terminal in a sandbox, on Compose and Kubernetes; the kill switch | ✅ Done ([plan](plans/phase-L6.md), [summary](progress/phase-L6.md)) | ~19–24 h |
 | P7–P12 | Hosted beta → M4 | After the feedback | ~160–200 h |
 | P13–P16 | Sandboxes, research agent, evals, AKS | After the beta opens | ~65–90 h |
 

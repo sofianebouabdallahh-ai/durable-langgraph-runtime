@@ -314,6 +314,11 @@ configure_sandbox() {  # --sandbox / --no-sandbox; on by default; remembered in 
   env_set SANDBOXD_URL http://sandboxd:8070
 }
 
+remove_sandboxes() {  # code sandboxes aren't Compose's: sandboxd starts them, one per turn
+  local ids; ids=$("$DOCKER" ps -aq --filter label=nuria.sandbox=1 2>/dev/null || true)
+  [ -z "$ids" ] || "$DOCKER" rm -f $ids >/dev/null 2>&1 || true
+}
+
 sandbox_image() {  # the image sandboxd starts for each run (built here; small, no network)
   has_profile sandbox || return 0
   local image="nuria-sandbox:$(cat VERSION)"
@@ -385,7 +390,7 @@ case "$ACTION" in
     echo "    Stop it (deletes the cluster): infra/kind/cluster.sh down   ·   Demos: make k8s-demo-podkill (drain, scale, upgrade)"
     ;;
   chat)  check_docker; compose run --rm --no-deps api chat ;;
-  stop)  check_docker; compose stop; ok "stopped (your data is kept)" ;;
+  stop)  check_docker; compose stop; remove_sandboxes; ok "stopped (your data is kept)" ;;
   doctor)
     check_docker
     out="diagnostics-$(date +%Y%m%d-%H%M%S)"; mkdir -p "$out"
@@ -452,6 +457,7 @@ case "$ACTION" in
       ask "This DELETES all conversations, agents and downloaded models. Type 'delete' to confirm" ""
       [ "$REPLY" = delete ] || die "cancelled; nothing was deleted."
     fi
-    compose down -v --remove-orphans; ok "everything deleted (.env kept; delete it too for a fresh start)"
+    compose down -v --remove-orphans; remove_sandboxes
+    ok "everything deleted (.env kept; delete it too for a fresh start)"
     ;;
 esac

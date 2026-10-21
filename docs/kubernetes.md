@@ -103,6 +103,20 @@ CI runs `security`, `podkill` and `upgrade` on a fresh kind cluster for every pu
 | **Restricted Pod Security** (namespace label): every pod non-root, `seccomp: RuntimeDefault`, no privilege escalation, every capability dropped, read-only root filesystem (writes only to `/tmp` emptyDirs) | The baseline that makes a container escape hard (R10.10) | The namespace would accept a privileged pod |
 | **NetworkPolicies**: default deny, then DNS for everyone. UI ← Traefik; UI → API; API ← UI and Prometheus. Postgres ← API, workers and migrate only; Redis ← API, workers and KEDA | A pod that shouldn't talk to the database can't (R10.10) | Any pod in the namespace reaches Postgres. The `security` demo's intruder pod would connect |
 
+### The agents' tools (L6; `search`, `fetcher`, `sandbox` in values)
+
+| Object | Why | Without it |
+|---|---|---|
+| **SearXNG Deployment** + Service, its settings from a ConfigMap (the same file as Compose: [`files/searxng-settings.yml`](../infra/helm/agent-runtime/files/searxng-settings.yml)) | Web search with no key. Runs as SearXNG's own user (977), read-only root, its cache in an emptyDir | Search the web needs a key (Tavily, Brave) |
+| **Page reader Deployment** (×2) + Service + PDB | The one way tools reach the web. It refuses private and internal addresses itself | — |
+| **NetworkPolicies** for both: in from the workers (and the API for SearXNG's test search); **out to public addresses only** (every private, link-local, loopback and carrier-grade NAT range excepted) | A page can't send the reader to Postgres, a pod or cloud metadata, even if its own checks had a gap. Verified with the reader's checks bypassed: Postgres, Redis and the API time out, the internet answers | One bug in the reader is an SSRF into the cluster |
+| **sandboxd Deployment** (×2) + Service + PDB, `SANDBOX_DRIVER=kubernetes` | Starts one sandbox **Pod** per run and epoch and runs code in it through the exec API (argv on stdin, so big files and code fit). No Docker socket anywhere. Pods are named by run and epoch, so two replicas asking at once get the same one | — |
+| **ServiceAccount + Role** in the sandboxes' namespace only: `pods` create/get/list/delete, `pods/exec` create/get. The token is mounted into sandboxd's pods alone | sandboxd can touch sandbox Pods and nothing else in the cluster | — |
+| **Namespace `nuria-sandboxes`**: restricted Pod Security, a **NetworkPolicy with no rules** (no traffic in or out, not even DNS), a **ResourceQuota** (20 pods, 20 × 256 Mi) | The cluster's version of Docker's `--network none`, and a ceiling on what sandboxes can take together | A sandbox could reach the network, or a burst could crowd out the app |
+| **Sandbox Pods**: non-root (10002), read-only root, all capabilities dropped, seccomp RuntimeDefault, no service account token, no service links, `/workspace` and `/tmp` in memory, CPU and memory limits, `activeDeadlineSeconds` 2 h, `shareProcessNamespace` (the pause container reaps orphans) | The same lockdown as Compose's sandbox. Optional: a `runtimeClassName` (gVisor, Kata) and user namespaces (`hostUsers: false`) | — |
+
+Measured on kind: a 90 s `time.sleep` in a sandbox stopped **0.9 s** after its agent was turned off; eight first calls at once across both sandboxd replicas got one Pod; nothing was left in `nuria-sandboxes` after a turn.
+
 ### Monitoring (`monitoring.enabled`, on in `values-kind.yaml`)
 
 | Object | Why |
@@ -132,5 +146,8 @@ CI runs `security`, `podkill` and `upgrade` on a fresh kind cluster for every pu
 
 - **After a drain, pods don't move back.** `kubectl uncordon` makes the node schedulable again, but running pods stay where they are, as in any cluster without a descheduler. New pods spread.
 - **The dashboards' replica counts** only count targets scraped in the last 15 s. A plain `count(up == 1)` also counted pods that went away while Prometheus itself was being moved, for up to 5 minutes.
+- **The sandbox needs NetworkPolicy enforcement.** Its "no network" is a NetworkPolicy: kind's kindnet, Calico and Cilium enforce it; a plugin that doesn't leaves sandboxes networked. On such a cluster set `sandbox.enabled: false` (the code tools are then not offered).
+- **Processes per sandbox** is a node setting on Kubernetes (the kubelet's `podPidsLimit`), not a pod's. `infra/kind/kind.yaml` sets 4096 for clusters created from now on (`cluster.sh down`, then `up`); Compose caps each sandbox at 64.
+- **Images:** the sandbox image is released with the others (`…/sandbox`); kind builds and loads `nuria/sandbox:$TAG` on every node.
 - **Models:** the cluster uses the model from `.env`. For Ollama on this machine, pods reach `host.docker.internal`, as containers do in Compose.
 - **Windows:** `setup.ps1 -Kubernetes` runs the same bash script, so it needs Git for Windows or WSL. Like the rest of `setup.ps1`, it hasn't been run on Windows yet.
