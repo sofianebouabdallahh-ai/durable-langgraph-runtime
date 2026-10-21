@@ -122,3 +122,33 @@ async def test_the_scripted_smoke_checks_the_sandbox_when_there_is_one(
     assert sent[1]["script"][0]["tool_calls"][0]["name"] == tool  # type: ignore[index]
     with pytest.raises(SmokeFailed, match="didn't run through the tool pipeline"):
         await smoke("http://api", settings, transport=api({"error": "no"}))
+
+
+async def test_a_default_model_chosen_in_the_app_gets_the_real_models_check() -> None:
+    """Setup said demo, but Settings → Models has a default: that model answers, so the
+    check is a real model's (an answer), not the scripted tool turn."""
+    import json
+
+    from agent_runtime.config import Settings
+    from agent_runtime.ops import REAL_PROMPT, smoke
+
+    sent: list[dict[str, object]] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/models/default":
+            return httpx.Response(200, json={"connection": {"id": "c"}, "model": "gpt"})
+        if request.method == "POST":
+            sent.append(json.loads(request.content))
+            return httpx.Response(201 if path == "/sessions" else 202, json={"id": "s1"})
+        if path == "/sessions/s1":
+            return httpx.Response(200, json={"active_run_id": None})
+        if path.endswith("/messages"):
+            return httpx.Response(200, json={"messages": [
+                {"type": "assistant", "content": {"text": "I'm working."}}]})  # fmt: skip
+        return httpx.Response(200, json={})
+
+    settings = Settings(postgres_password="pw", model_provider="scripted")  # type: ignore[arg-type]
+    done = await smoke("http://api", settings, transport=httpx.MockTransport(handle))
+    assert done.answer == "I'm working."
+    assert sent[0]["agent"] == "chat" and sent[1] == {"content": REAL_PROMPT}

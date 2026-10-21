@@ -93,6 +93,11 @@ async def smoke(
         base_url=api.rstrip("/"), timeout=30, transport=transport
     ) as client:
         await wait_ready(client)
+        # A default model chosen in the app (Settings → Models) answers instead of setup's:
+        # then it's a real model's check, whatever setup chose.
+        chosen = await client.get("/models/default")
+        if chosen.status_code == 200 and (chosen.json() or {}).get("connection"):
+            scripted = False
         created = await client.post(
             "/sessions", json={"agent": agent if scripted else "chat", "title": "smoke test"}
         )
