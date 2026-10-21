@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -94,6 +95,9 @@ async def test_activity_tells_the_truth(api: Api, pool: Pool) -> None:
     assert totals["tokens"] == raw["tokens"] and Decimal(str(totals["cost"])) == raw["cost"]
     assert totals["tool_calls"] == raw["tools"]
     assert sum(d["turns"] for d in view["days"]) == 3
+    days = [date.fromisoformat(d["day"]) for d in view["days"]]  # every day, empty ones too
+    today = datetime.now(UTC).date()
+    assert days == [today - timedelta(days=1), today]
     (agent_row,) = view["agents"]
     assert (agent_row["agent"], agent_row["turns"], agent_row["failed"]) == (name, 3, 1)
     models = {m["model"]: m for m in view["models"]}

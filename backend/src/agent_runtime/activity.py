@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 
 from agent_runtime.db import Conn
@@ -185,7 +185,8 @@ class ActivityRepository:
     # -------------------------------------------------------------- over time
 
     async def series(self, scope: Scope) -> list[dict[str, Any]]:
-        """Per day (UTC): turns, failed turns and cost, and turns per agent."""
+        """Per day (UTC), every day in range (empty ones too): turns, failed turns and
+        cost, and turns per agent."""
         rows = await self._rows(
             f"""
             SELECT date_trunc('day', r.created_at AT TIME ZONE 'UTC')::date AS day,
@@ -197,16 +198,18 @@ class ActivityRepository:
             """,
             scope.params,
         )
-        days: dict[str, dict[str, Any]] = {}
+        first, today = scope.since.astimezone(UTC).date(), datetime.now(UTC).date()
+        days = {
+            d: _empty_day(d)
+            for d in (first + timedelta(i) for i in range((today - first).days + 1))
+        }
         for r in rows:
-            key = r["day"].isoformat()
-            empty = {"day": key, "turns": 0, "failed": 0, "cost": 0.0, "by_agent": {}}
-            d = days.setdefault(key, empty)
+            d = days.setdefault(r["day"], _empty_day(r["day"]))
             d["turns"] += r["turns"]
             d["failed"] += r["failed"]
             d["cost"] += _num(r["cost"])
             d["by_agent"][r["agent"] or "?"] = r["turns"]
-        return list(days.values())
+        return [days[k] for k in sorted(days)]
 
     # ------------------------------------------------------------ breakdowns
 
@@ -368,3 +371,7 @@ class ActivityRepository:
             {"id": run_id},
         )
         return [{**r, "cost": _num(r["cost"])} for r in rows]
+
+
+def _empty_day(d: date) -> dict[str, Any]:
+    return {"day": d.isoformat(), "turns": 0, "failed": 0, "cost": 0.0, "by_agent": {}}
