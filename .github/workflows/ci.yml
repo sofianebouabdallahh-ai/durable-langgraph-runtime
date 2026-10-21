@@ -208,6 +208,13 @@ jobs:
         working-directory: .
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Room for three kind nodes' images (the runner's unused toolchains go)
+        # Every image is loaded into each node (runtime, UI, sandbox, SearXNG, …), and the
+        # upgrade demo loads another tag: with L6 the runner ran out of disk mid-demo.
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h / | tail -1
       - name: The pinned tools (kind, helm, kubectl), checksums verified
         run: infra/kind/tools.sh
       - name: Lint and validate both charts (helm lint, kubeconform)
