@@ -182,13 +182,11 @@ first if you want the dashboard soonest.
 - **Tempo replacing Jaeger** changes the trace link people know (`localhost:16686`). The
   Jaeger UI could stay beside it for a release.
 
-## 6. Decisions needed
+## 6. Decisions (2026-10-21)
 
-1. **Tempo instead of Jaeger** (recommended: Grafana search and trace ↔ logs), or keep
-   Jaeger and link logs only from traces' ids.
-2. **Order:** the Activity page first (L7c), or logs first (L7a, L7b).
-3. **Feedback 👍/👎** in this phase (recommended: small, and it starts the eval loop), or
-   later with evaluations.
+1. **Tempo replaces Jaeger:** Grafana searches traces, and trace ↔ logs links go both ways.
+2. **The Activity page first:** L7c, then L7a/L7b (logs), then L7d.
+3. **Feedback 👍/👎 is in this phase,** shown per agent in Activity: the start of evaluations.
 
 ---
 
