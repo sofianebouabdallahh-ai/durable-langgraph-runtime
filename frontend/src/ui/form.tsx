@@ -199,17 +199,26 @@ export function Dialog({
   wide?: boolean; // side-by-side content (a comparison)
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  // The browser announces `close` a moment after we close it ourselves: that late event
+  // isn't the person closing it, and must not close a dialog opened again meanwhile.
+  const closedByUs = useRef(false);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     if (open && !el.open) el.showModal();
-    if (!open && el.open) el.close();
+    if (!open && el.open) {
+      closedByUs.current = true;
+      el.close();
+    }
   }, [open]);
   return (
     <dialog
       ref={ref}
       aria-label={title}
-      onClose={onClose}
+      onClose={() => {
+        if (closedByUs.current) closedByUs.current = false;
+        else onClose(); // Escape: the person closed it
+      }}
       className={`m-auto ${wide ? "w-[min(56rem,calc(100%-2rem))]" : "w-[min(32rem,calc(100%-2rem))]"} rounded-2xl border border-stone-200 bg-white p-0 text-stone-900 shadow-lift backdrop:bg-stone-950/30 backdrop:backdrop-blur-sm dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100`}
     >
       {open && (
