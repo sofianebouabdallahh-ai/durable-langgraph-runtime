@@ -186,15 +186,17 @@ configure_model() {
     if [ "$FIRST_RUN" -eq 0 ] && [ -n "$(env_get MODEL_PROVIDER)" ]; then
       ok "model: $(env_get MODEL_PROVIDER) (unchanged; ./setup.sh --model … to change)"; return
     fi
-    if [ "$INTERACTIVE" -eq 0 ]; then MODEL=scripted; else
-      say "Which model should the agents use?"
-      echo "    1) Demo model: offline, scripted answers (try everything with no key)"
-      echo "    2) Local model with Ollama (free; needs ~6 GB RAM)"
-      echo "    3) OpenAI (your API key)"
-      echo "    4) Azure AI Foundry (your endpoint, key and deployment)"
-      echo "    5) Another OpenAI-compatible service (base URL + key + model)"
+    # Ollama by default: free, private, on this machine. Keys can be added later in the
+    # app (Models), or chosen here.
+    if [ "$INTERACTIVE" -eq 0 ]; then MODEL=ollama; else
+      say "Which model should the agents use? (you can add others later in the app, under Models)"
+      echo "    1) Ollama, on this computer: free and private (recommended; needs ~6 GB of memory)"
+      echo "    2) OpenAI (your API key)"
+      echo "    3) Azure AI Foundry (your endpoint, key and deployment)"
+      echo "    4) Another OpenAI-compatible service (base URL + key + model)"
+      echo "    5) The offline demo model (scripted answers: to look around, not a real AI)"
       ask "Choose 1-5" 1
-      case "$REPLY" in 2) MODEL=ollama ;; 3) MODEL=openai ;; 4) MODEL=foundry ;; 5) MODEL=compatible ;; *) MODEL=scripted ;; esac
+      case "$REPLY" in 2) MODEL=openai ;; 3) MODEL=foundry ;; 4) MODEL=compatible ;; 5) MODEL=scripted ;; *) MODEL=ollama ;; esac
     fi
   fi
   case "$MODEL" in
@@ -207,13 +209,20 @@ configure_model() {
         env_set CONTAINER_OLLAMA_BASE_URL http://host.docker.internal:11434/v1
         env_set COMPOSE_PROFILES app
         ok "using the Ollama found at 127.0.0.1:11434 (the native app uses the GPU; Ollama in Docker on macOS doesn't)"
-        curl -fsS http://127.0.0.1:11434/api/tags | grep -q "\"$name\"" \
-          || warn "model $name isn't downloaded yet: run  ollama pull $name"
+        curl -fsS http://127.0.0.1:11434/api/tags | grep -q "\"$name\"" || pull_native "$name"
+      elif native_ollama_offered; then
+        configure_model; return  # installed and running now: take the native path
       else
         env_set CONTAINER_OLLAMA_BASE_URL http://ollama:11434/v1
         env_set COMPOSE_PROFILES app,llm
-        warn "no Ollama found on this machine: using Ollama in Docker (CPU-only on macOS; slower)."
+        warn "no Ollama app found: using Ollama in Docker (CPU only on macOS; slower)."
         warn "For speed on macOS/Windows install the app instead: https://ollama.com/download"
+        # Docker's memory is shared with the whole stack: a 7B model needs about 5 GB of it.
+        local mem; mem=$("$DOCKER" info --format '{{.MemTotal}}' 2>/dev/null || echo 0)
+        if [ -z "$MODEL_NAME" ] && [ "${mem:-0}" -lt 12000000000 ]; then
+          name=qwen2.5:3b
+          warn "Docker has $((mem / 1000000000)) GB of memory: using the smaller $name (more memory: Docker Desktop → Settings → Resources)."
+        fi
         OLLAMA_PULL=$name
       fi
       env_set MODEL_CHAT "$name"; env_set MODEL_RESEARCHER "$name" ;;
@@ -235,6 +244,37 @@ configure_model() {
       ok "model: $MODEL_NAME at $BASE_URL" ;;
     *) die "unknown model '$MODEL'" "Use: scripted | ollama | openai | foundry | compatible" ;;
   esac
+}
+
+# No Ollama app: on macOS and Windows (where Docker has no GPU and little memory) offer to
+# install it first. True when it's running afterwards.
+native_ollama_offered() {
+  [ "$INTERACTIVE" -eq 1 ] || return 1
+  case "$(uname -s)" in Darwin|MINGW*|MSYS*|CYGWIN*) ;; *) return 1 ;; esac
+  say "Ollama works best as its app (it uses your GPU and memory directly)."
+  echo "    Install it from https://ollama.com/download and open it, then press Enter."
+  ask "Press Enter when it's running (or type 'docker' to run Ollama in Docker instead)" ""
+  [ "$REPLY" = docker ] && return 1
+  curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1 \
+    || { warn "still no Ollama app at 127.0.0.1:11434: using Ollama in Docker"; return 1; }
+}
+
+# The recommended model isn't in the Ollama found on this machine: download it (asked
+# first when someone is there). Its CLI shows progress; without it, Ollama's API.
+pull_native() {
+  local name=$1
+  if [ "$INTERACTIVE" -eq 1 ]; then
+    ask "Download $name now for Ollama (one time, about 5 GB)? [Y/n]" Y
+    case "$REPLY" in [nN]*) warn "skipped: run  ollama pull $name  before chatting"; return ;; esac
+  fi
+  say "Downloading $name into Ollama (one time, about 5 GB)…"
+  if command -v ollama >/dev/null 2>&1; then
+    ollama pull "$name" || warn "the download didn't finish: run  ollama pull $name"
+  else
+    curl -fsS --max-time 3600 -X POST http://127.0.0.1:11434/api/pull \
+      -d "{\"model\":\"$name\",\"stream\":false}" >/dev/null \
+      && ok "$name is ready" || warn "the download didn't finish: run  ollama pull $name"
+  fi
 }
 
 has_profile() { case ",$(env_get COMPOSE_PROFILES)," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
@@ -374,8 +414,12 @@ case "$ACTION" in
     say "Restoring $RESTORE…"
     compose stop api worker ui >/dev/null 2>&1 || true
     compose up -d --wait postgres >/dev/null
-    gzip -dc "$RESTORE" | compose exec -T postgres sh -c 'psql -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null \
-      || die "the restore failed (above)." "Your backup file is unchanged; diagnostics: ./setup.sh --doctor"
+    # The whole schema goes, then the backup comes in, as one transaction: a backup from an
+    # older release has fewer tables, and the newer ones (which may reference its tables)
+    # must not survive or block it. Any failure changes nothing. Setup then migrates.
+    { printf 'DROP SCHEMA public CASCADE;\nCREATE SCHEMA public;\n'; gzip -dc "$RESTORE"; } \
+      | compose exec -T postgres sh -c 'psql -q -v ON_ERROR_STOP=1 --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null \
+      || die "the restore failed (above); nothing was changed." "Your backup file is unchanged; diagnostics: ./setup.sh --doctor"
     ok "data restored"
     start_stack; smoke; ok "restored from $RESTORE"
     ;;

@@ -19,6 +19,7 @@ import { type AgentDocument, documentOf, type Edit, edit, unplaced } from "./edi
 import { studio, type StudioAgent, useCatalog, useStudioAgent, useStudioRefresh } from "./api";
 import { BasicsSection, HelpersSection, InstructionsSection, LimitsSection, ModelSection, ProtectionsSection, ToolsSection } from "./sections";
 import { ImproveInstructions, SkillsSection } from "./skills";
+import { GuideStrip } from "../guide/GuideStrip";
 
 type SaveState = "saved" | "saving" | "pending" | "error";
 const AUTOSAVE_MS = 700;
@@ -178,6 +179,7 @@ function Editor({ initial, catalog, go }: { initial: StudioAgent; catalog: NonNu
       <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_420px]">
         <div className="scrollbar-thin min-h-0 overflow-y-auto px-5 py-6">
           <div className="mx-auto max-w-3xl space-y-5">
+            <GuideStrip steps={["tool", "helper", "try"]} agentId={state.id} />
             {!editable && (
               <div className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white p-4 text-sm dark:border-stone-800 dark:bg-stone-900">
                 <Check aria-hidden className="size-4 text-emerald-600" />

@@ -2,7 +2,7 @@
 
 The delivery plan for **Durable, Distributed Runtime for LangGraph Agents**: what we build, in what order, and how we know each part is done.
 
-**Where we are (2026-10-18):** the runtime core is done (phases 0–6). In the local release, L1 (one-command setup) and **L2 (the chat UI, now called _Nuria_)** are merged: milestone **M1** is reached. L3a (agents and helpers), L3b (your own model) and **L3c (skills and "describe your agent") are merged**. **M2** is declared once 2–3 non-technical testers pass the [tester script](setup/tester-script.md). L4 is in two slices ([plan](plans/phase-L4.md)): **L4a (observability) and L4b (local Kubernetes) are done** ([L4a](progress/phase-L4a.md), [L4b](progress/phase-L4b.md)). **L5 is built** ([summary](progress/phase-L5.md)): **v0.1.0** is ready to tag. **M3** is declared once 5–10 external testers have installed it and their feedback is collected.
+**Where we are (2026-10-18):** the runtime core is done (phases 0–6). In the local release, L1 (one-command setup) and **L2 (the chat UI, now called _Nuria_)** are merged: milestone **M1** is reached. L3a (agents and helpers), L3b (your own model) and **L3c (skills and "describe your agent") are merged**. **M2** is declared once 2–3 non-technical testers pass the [tester script](setup/tester-script.md). L4 is in two slices ([plan](plans/phase-L4.md)): **L4a (observability) and L4b (local Kubernetes) are done** ([L4a](progress/phase-L4a.md), [L4b](progress/phase-L4b.md)). **L5 is merged** ([summary](progress/phase-L5.md)): **v0.1.0** is ready to tag. **Next: L3d, a guided "Get started"** ([plan](plans/phase-L3d.md)), shipped as v0.1.1. **M3** is declared once 5–10 external testers have installed it and their feedback is collected.
 
 **Sources of truth for scope**
 - Base spec: [`Project_4_Detailed_Requirements_K8s.pdf`](requirements/Project_4_Detailed_Requirements_K8s.pdf). Requirements are `R<section>.<n>`; acceptance criteria are `AC<n>`.
@@ -27,7 +27,7 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 ```
  DONE                      LOCAL RELEASE (on testers' machines)                    HOSTED BETA (after feedback)
  ────────────────────      ─────────────────────────────────────────────────      ────────────────────────────────
- 0–6 runtime core    ──►  L1 ✅ ─► L2 ✅ ─► L3a ✅ ─► L3b ✅ ─► L3c ✅ ─► L4 ✅ ─► L5 ✅ ──►  P7 ─► P8 ─► P9 ─► P10 ─► P11 ─► P12
+ 0–6 runtime core    ──►  L1 ✅ ─► L2 ✅ ─► L3a ✅ ─► L3b ✅ ─► L3c ✅ ─► L4 ✅ ─► L5 ✅ ─► L3d ──►  P7 ─► P8 ─► P9 ─► P10 ─► P11 ─► P12
  durable runs, workers,     setup  chat  Studio Studio dash- v0.1               identity keys Studio fair  UI   Azure
  streaming, tools, HITL,          UI    backend UI    boards feedback                       multi- sched.     closed
  sub-agents, chat, models           ▲            ▲    + K8s    ▲                                 user              beta
@@ -54,7 +54,8 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 | **L3b** | Agent Studio: your own model | ✅ Done ([plan](plans/phase-L3b.md), [summary](progress/phase-L3b.md)) | ~14–18 h |
 | **L3c** | Agent Studio: skills & "describe your agent" → M2 | ✅ Done ([plan](plans/phase-L3c.md), [summary](progress/phase-L3c.md)); M2 after the tester sessions | ~16–20 h |
 | **L4** | Dashboards & local Kubernetes (L4a observability, L4b local Kubernetes) | ✅ Done ([plan](plans/phase-L4.md), summaries [L4a](progress/phase-L4a.md), [L4b](progress/phase-L4b.md)) | ~26–33 h |
-| **L5** | **Release v0.1 & feedback loop → M3** | ✅ Built ([plan](plans/phase-L5.md), [summary](progress/phase-L5.md)); M3 after the testers | ~10–14 h |
+| **L5** | **Release v0.1 & feedback loop → M3** | ✅ Done ([plan](plans/phase-L5.md), [summary](progress/phase-L5.md)); M3 after the testers | ~10–14 h |
+| **L3d** | **Getting started: a guided first agent** (v0.1.1) | ⏳ Next ([plan](plans/phase-L3d.md)) | ~8–11 h |
 | P7–P12 | Hosted beta → M4 | After the feedback | ~160–200 h |
 | P13–P16 | Sandboxes, research agent, evals, AKS | After the beta opens | ~65–90 h |
 

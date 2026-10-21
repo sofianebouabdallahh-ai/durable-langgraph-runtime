@@ -4,6 +4,17 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### L3d — Getting started: a guided first agent
+#### Added
+- **Get started** (Home's card, the sidebar with your progress, `#/start`): your first agent in five real steps (a model, the agent, a tool, a helper, try and publish), each ticking by itself when it's done.
+- **Choosing a model in the guide:** Ollama found on this computer (or how to install it on your system, then Check again), a key (OpenAI, Azure AI Foundry, any OpenAI-compatible service), or the demo for now. A model added there is tested and made the default.
+- **A guide strip** on Models and in the Studio of the guide's agent: the step, what to do there, **Show me** (scrolls to the section and focuses it), and a tick when done.
+- Progress is derived from the account (`GET/PUT /onboarding`), so it's the same everywhere and un-ticks when something is undone; only the guide's choices are stored (migration 0014). `?guide=true` when creating an agent.
+- Docs: [Getting started](docs/setup/getting-started.md); the tester guide and script point to it.
+
+#### Changed
+- **Ollama is setup's default model** (interactive and `--non-interactive`): free and private. When the Ollama app is running without the recommended model, setup downloads it (asking first); without the app, Ollama runs in Docker as before. Keys stay an option in setup and in the app; the offline demo is the last choice.
+
 ## [0.1.0] - 2026-10-18
 
 The first release for testers: Nuria, on your own machine, from one command (phases 0–6 and L1–L5).

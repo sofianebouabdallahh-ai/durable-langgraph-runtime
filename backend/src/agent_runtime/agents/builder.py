@@ -277,6 +277,8 @@ def demo_draft(description: str, skills: list[tuple[str, str]]) -> DraftProposal
     """The offline demo's draft: a deterministic reading of the description."""
     text = " ".join(description.split())
     words = [w for w in re.findall(r"[A-Za-z][A-Za-z'-]+", text) if w.lower() not in _FILLER]
+    if len(words) > 2 and re.match(r"(?i)\s*it\s", text) and words[0].lower().endswith("s"):
+        words = words[1:]  # "It plans family trips" → "Family Trips"
     topic = " ".join(words[:2]).title() if words else "My"
     name = (topic if "assistant" in topic.lower() else f"{topic} assistant")[:60]
     tools = [t for t, pattern in _TOOL_WORDS.items() if re.search(pattern, text, re.IGNORECASE)]

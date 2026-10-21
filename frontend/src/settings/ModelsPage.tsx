@@ -8,6 +8,7 @@ import { CheckCircle2, Cloud, Cpu, KeyRound, Loader2, Pencil, Plus, Server, Tras
 import { useState } from "react";
 
 import { problemText } from "../chat/problems";
+import { GuideStrip } from "../guide/GuideStrip";
 import { Dialog, Section, TextField } from "../ui/form";
 import { Button, Pill, Spinner } from "../ui/primitives";
 import { type Connection, KINDS, type Kind, models, useConnections, useDefaultModel, useModelsRefresh } from "./api";
@@ -37,6 +38,7 @@ export function ModelsPage() {
         </Button>
       </div>
       <div className="mt-8 space-y-5">
+        <GuideStrip steps={["model"]} />
         <DefaultModel connections={list} />
         {connections.isPending && <Spinner label="Loading models…" />}
         {list.length === 0 && connections.isSuccess && (
@@ -245,14 +247,34 @@ function ConnectionCard({ connection: c }: { connection: Connection }) {
   );
 }
 
-function AddDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+/** What to open the add dialog on: a kind, and what was already found (Ollama). */
+export interface AddStart {
+  kind: Kind;
+  url?: string;
+  models?: string[];
+}
+
+/** Add a model connection, then test it. `start` opens on one kind (mount the dialog
+ * when it opens, so it starts fresh); `onReady` hears of a connection that passed its
+ * test (Getting started makes it the default). */
+export function AddDialog({
+  open,
+  onClose,
+  start,
+  onReady,
+}: {
+  open: boolean;
+  onClose: () => void;
+  start?: AddStart | undefined;
+  onReady?: ((connectionId: string, model: string) => void) | undefined;
+}) {
   const refresh = useModelsRefresh();
-  const [kind, setKind] = useState<Kind | null>(null);
-  const [name, setName] = useState("");
-  const [url, setUrl] = useState("");
+  const [kind, setKind] = useState<Kind | null>(start?.kind ?? null);
+  const [name, setName] = useState(start ? KINDS[start.kind].label : "");
+  const [url, setUrl] = useState(start?.url ?? "");
   const [key, setKey] = useState("");
-  const [model, setModel] = useState("");
-  const [suggested, setSuggested] = useState<string[]>([]);
+  const [model, setModel] = useState(start?.models?.[0] ?? "");
+  const [suggested, setSuggested] = useState<string[]>(start?.models ?? []);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -292,6 +314,7 @@ function AddDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
       setKey(""); // the key is saved; never kept in the page
       const tested = model ? await models.test(added.id, model.trim()) : null;
       refresh();
+      if (tested?.ok) onReady?.(added.id, model.trim());
       if (!tested || tested.ok) {
         reset();
         return;

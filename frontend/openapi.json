@@ -1269,6 +1269,30 @@
         "title": "GraphView",
         "type": "object"
       },
+      "GuideAgentView": {
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "display_name"
+        ],
+        "title": "GuideAgentView",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1642,6 +1666,117 @@
           "models"
         ],
         "title": "OllamaView",
+        "type": "object"
+      },
+      "OnboardingUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Make this the guide's agent",
+            "title": "Agent Id"
+          },
+          "dismissed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dismissed"
+          },
+          "restart": {
+            "default": false,
+            "title": "Restart",
+            "type": "boolean"
+          },
+          "skip_model": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Use the demo model for now",
+            "title": "Skip Model"
+          }
+        },
+        "title": "OnboardingUpdate",
+        "type": "object"
+      },
+      "OnboardingView": {
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuideAgentView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The agent built in the guide"
+          },
+          "dismissed": {
+            "title": "Dismissed",
+            "type": "boolean"
+          },
+          "finished": {
+            "title": "Finished",
+            "type": "boolean"
+          },
+          "next": {
+            "anyOf": [
+              {
+                "enum": [
+                  "model",
+                  "agent",
+                  "tool",
+                  "helper",
+                  "try"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The first step neither done nor skipped",
+            "title": "Next"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/Step"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "tried": {
+            "$ref": "#/components/schemas/Tried",
+            "description": "Step 5's parts"
+          }
+        },
+        "required": [
+          "steps",
+          "next",
+          "finished",
+          "dismissed",
+          "agent",
+          "tried"
+        ],
+        "title": "OnboardingView",
         "type": "object"
       },
       "PauseRequest": {
@@ -2432,6 +2567,36 @@
         "title": "SkillView",
         "type": "object"
       },
+      "Step": {
+        "properties": {
+          "done": {
+            "title": "Done",
+            "type": "boolean"
+          },
+          "key": {
+            "enum": [
+              "model",
+              "agent",
+              "tool",
+              "helper",
+              "try"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key",
+          "done",
+          "skipped"
+        ],
+        "title": "Step",
+        "type": "object"
+      },
       "StudioAgentView": {
         "properties": {
           "archived": {
@@ -2797,6 +2962,27 @@
           "helpers_allowed"
         ],
         "title": "ToolOption",
+        "type": "object"
+      },
+      "Tried": {
+        "properties": {
+          "chatted": {
+            "default": false,
+            "title": "Chatted",
+            "type": "boolean"
+          },
+          "published": {
+            "default": false,
+            "title": "Published",
+            "type": "boolean"
+          },
+          "tested": {
+            "default": false,
+            "title": "Tested",
+            "type": "boolean"
+          }
+        },
+        "title": "Tried",
         "type": "object"
       },
       "TurnAccepted": {
@@ -3595,6 +3781,66 @@
         "summary": "Find Ollama",
         "tags": [
           "models"
+        ]
+      }
+    },
+    "/onboarding": {
+      "get": {
+        "operationId": "get_onboarding_onboarding_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Where the guide stands",
+        "tags": [
+          "onboarding"
+        ]
+      },
+      "put": {
+        "operationId": "put_onboarding_onboarding_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnboardingUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "The guide's choices",
+        "tags": [
+          "onboarding"
         ]
       }
     },
@@ -5062,6 +5308,20 @@
       },
       "post": {
         "operationId": "create_agent_studio_agents_post",
+        "parameters": [
+          {
+            "description": "Built in Getting started: the guide's agent",
+            "in": "query",
+            "name": "guide",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Built in Getting started: the guide's agent",
+              "title": "Guide",
+              "type": "boolean"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -5103,6 +5363,20 @@
     "/studio/agents/from-proposal": {
       "post": {
         "operationId": "from_proposal_studio_agents_from_proposal_post",
+        "parameters": [
+          {
+            "description": "Built in Getting started: the guide's agent",
+            "in": "query",
+            "name": "guide",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Built in Getting started: the guide's agent",
+              "title": "Guide",
+              "type": "boolean"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {

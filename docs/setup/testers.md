@@ -13,9 +13,9 @@ cd nuria
 ```
 
 Setup asks which model to use:
-- **Demo model:** works offline and needs no key. It follows simple rules, so pick a suggestion or say *hello*.
-- **Ollama:** a free local model ([models.md](models.md)).
-- **Your own account:** an OpenAI or Azure key.
+- **Ollama** (the default): a free model on your computer. If Ollama is installed, setup downloads the model it needs (about 5 GB, once); if not, it runs Ollama in Docker ([models.md](models.md)).
+- **Your own account:** an OpenAI or Azure key. You can also add keys later in the app, under **Models**.
+- **Demo model:** works offline with no download, but follows simple rules rather than understanding you.
 
 When it says **Nuria is ready**, it opens http://localhost:3000.
 
@@ -25,7 +25,7 @@ Use it as you like. These are what we most want to hear about:
 
 1. **A conversation.** Ask something that needs a tool (a sum, a note to keep), and something that needs an approval ("tell the team…"). Press **Stop** in the middle of a long reply.
 2. **"What happened?"** under a reply. Does the story make sense?
-3. **Build an agent** under **Agents → New agent → Describe it**. Give it a helper and a skill, try it in the test chat, then publish it ([guide](agents.md)).
+3. **Build an agent.** The first time, follow **Get started** on Home: it walks you through a model, your agent, a tool and a helper, a test and publishing ([guide](getting-started.md)). Then try a skill ([guide](skills.md)).
 4. **Your own model**, if you have one, under **Models** ([guide](models.md)).
 5. **An update**, when we tell you a new version is out: `./setup.sh --update` ([guide](updating.md)).
 

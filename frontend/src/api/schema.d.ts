@@ -282,6 +282,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/onboarding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Where the guide stands */
+        get: operations["get_onboarding_onboarding_get"];
+        /** The guide's choices */
+        put: operations["put_onboarding_onboarding_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/readyz": {
         parameters: {
             query?: never;
@@ -1520,6 +1538,18 @@ export interface components {
             /** Nodes */
             nodes: string[];
         };
+        /** GuideAgentView */
+        GuideAgentView: {
+            /** Display Name */
+            display_name: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1687,6 +1717,44 @@ export interface components {
             base_url: string;
             /** Models */
             models: string[];
+        };
+        /** OnboardingUpdate */
+        OnboardingUpdate: {
+            /**
+             * Agent Id
+             * @description Make this the guide's agent
+             */
+            agent_id?: string | null;
+            /** Dismissed */
+            dismissed?: boolean | null;
+            /**
+             * Restart
+             * @default false
+             */
+            restart: boolean;
+            /**
+             * Skip Model
+             * @description Use the demo model for now
+             */
+            skip_model?: boolean | null;
+        };
+        /** OnboardingView */
+        OnboardingView: {
+            /** @description The agent built in the guide */
+            agent: components["schemas"]["GuideAgentView"] | null;
+            /** Dismissed */
+            dismissed: boolean;
+            /** Finished */
+            finished: boolean;
+            /**
+             * Next
+             * @description The first step neither done nor skipped
+             */
+            next: ("model" | "agent" | "tool" | "helper" | "try") | null;
+            /** Steps */
+            steps: components["schemas"]["Step"][];
+            /** @description Step 5's parts */
+            tried: components["schemas"]["Tried"];
         };
         /** PauseRequest */
         PauseRequest: {
@@ -2031,6 +2099,18 @@ export interface components {
              */
             version: string;
         };
+        /** Step */
+        Step: {
+            /** Done */
+            done: boolean;
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "model" | "agent" | "tool" | "helper" | "try";
+            /** Skipped */
+            skipped: boolean;
+        };
         /** StudioAgentView */
         StudioAgentView: {
             /** Archived */
@@ -2177,6 +2257,24 @@ export interface components {
             name: string;
             /** Risk */
             risk: string;
+        };
+        /** Tried */
+        Tried: {
+            /**
+             * Chatted
+             * @default false
+             */
+            chatted: boolean;
+            /**
+             * Published
+             * @default false
+             */
+            published: boolean;
+            /**
+             * Tested
+             * @default false
+             */
+            tested: boolean;
         };
         /** TurnAccepted */
         TurnAccepted: {
@@ -2737,6 +2835,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OllamaView"][];
+                };
+            };
+        };
+    };
+    get_onboarding_onboarding_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingView"];
+                };
+            };
+        };
+    };
+    put_onboarding_onboarding_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OnboardingUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3712,7 +3863,10 @@ export interface operations {
     };
     create_agent_studio_agents_post: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Built in Getting started: the guide's agent */
+                guide?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3745,7 +3899,10 @@ export interface operations {
     };
     from_proposal_studio_agents_from_proposal_post: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Built in Getting started: the guide's agent */
+                guide?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;

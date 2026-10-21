@@ -12,7 +12,7 @@ A short session (about 20 minutes) with someone who doesn't write code. It check
 
 > "This is Nuria, an app for building your own AI assistants. I'd like you to build one that helps plan a family trip. It should have a helper that finds restaurants, and it should follow a packing checklist that you write yourself. Then try it, and when you're happy, make it available to everyone. Think aloud as you go. I can't help you, but there are no wrong answers: we're testing the app, not you."
 
-Then stay quiet. If they're stuck for more than 2 minutes, note it, and only then say "What would you try next?" (that counts as help).
+Then stay quiet. (Home offers **Get started**, a guide built into the app: following it counts as doing it on their own; you pointing at it doesn't.) If they're stuck for more than 2 minutes, note it, and only then say "What would you try next?" (that counts as help).
 
 ## What they should manage on their own
 

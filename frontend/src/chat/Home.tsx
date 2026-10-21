@@ -10,6 +10,7 @@ import { Mark } from "../ui/Logo";
 import { agentLabel } from "../ui/words";
 import { Composer } from "./Composer";
 import { problemText, titleFrom } from "./problems";
+import { GuideCard } from "../guide/GuideCard";
 
 const SUGGESTIONS = [
   { icon: Calculator, title: "Calculate", text: "What is 12 * (3 + 4)?" },
@@ -53,6 +54,7 @@ export function Home({ go }: { go: (route: Route) => void }) {
           <h1 className="font-display text-4xl font-medium tracking-tight sm:text-5xl">{greeting()}</h1>
           <p className="mt-3 text-lg text-stone-500 dark:text-stone-400">What can {chosen} do for you today?</p>
         </div>
+        <GuideCard go={go} />
         {notice && (
           <div role="alert" className="mb-3 rounded-xl bg-rose-50 px-4 py-2.5 text-sm text-rose-800 ring-1 ring-rose-200 dark:bg-rose-950/40 dark:text-rose-200 dark:ring-rose-900">
             {notice}
