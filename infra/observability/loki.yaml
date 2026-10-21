@@ -36,6 +36,14 @@ limits_config:
   allow_structured_metadata: true
   volume_enabled: true
 
+ingester:
+  # No write-ahead log: its disk check refuses every write once the disk is 90% full
+  # (seen on a CI runner), and on a laptop that would quietly stop all logs. Stdout stays
+  # the source of truth; a Loki restart loses at most its last 5 unflushed minutes.
+  wal:
+    enabled: false
+  chunk_idle_period: 5m
+
 compactor:
   working_directory: /loki/compactor
   retention_enabled: true

@@ -191,6 +191,9 @@ data:
       retention_period: {{ $m.loki.retention }}
       allow_structured_metadata: true
       volume_enabled: true
+    ingester: # no WAL: its disk check refuses all writes at 90% disk (see Compose's loki.yaml)
+      wal: { enabled: false }
+      chunk_idle_period: 5m
     compactor:
       working_directory: /loki/compactor
       retention_enabled: true

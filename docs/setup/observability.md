@@ -141,6 +141,7 @@ Health checks and metric scrapes are left out of the access log.
 - **Memory:** Tempo, Loki and the collector together take about 285 MiB (measured: 85, 125 and 75 MiB, with a few hundred turns stored). Prometheus about 60 MiB. Grafana is the largest.
 - **Kept for 7 days** (Tempo, Loki and Prometheus, each on its own volume; 2 days on Kubernetes). `./setup.sh --reset` deletes them with everything else.
 - **A killed worker loses its last second of spans and log lines.** Both are exported every second, so a worker killed by `SIGKILL` loses what it hadn't sent yet (its stdout still has the lines). The run itself is unaffected: it is taken over, and the trace continues.
+- **Restarting Loki loses its last few minutes of lines** (up to 5): it keeps no write-ahead log, whose disk check would refuse every line once your disk is 90% full. The lines are still in each container's stdout.
 - **A line written before the process is ready** (a crash at start) is only on stdout: the OTLP pipeline starts with the app.
 - **Turn latency needs traffic.** It shows "No data" until a few turns have finished, because Prometheus computes it from rates.
 - **Replaced Jaeger (L7b).** Traces used to open in Jaeger on port 16686; they're now in Grafana with the logs. Traces from before the update aren't carried over.
