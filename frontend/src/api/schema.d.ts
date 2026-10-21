@@ -177,6 +177,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/kill-switch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What is switched off */
+        get: operations["state_kill_switch_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kill-switch/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Switch back on */
+        post: operations["resume_kill_switch_resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kill-switch/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop an agent, or all, now */
+        post: operations["stop_kill_switch_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/models/connections": {
         parameters: {
             query?: never;
@@ -880,7 +931,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** The latest test chat still open, if any */
+        get: operations["last_test_chat_studio_agents__agent_id__test_chat_get"];
         put?: never;
         /** A test chat with the draft */
         post: operations["test_chat_studio_agents__agent_id__test_chat_post"];
@@ -993,6 +1045,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tools/search/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Try the search */
+        post: operations["test_search_tools_search_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tools/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tool settings */
+        get: operations["get_settings_tools_settings_get"];
+        /** Change tool settings */
+        put: operations["put_settings_tools_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1083,6 +1170,8 @@ export interface components {
         };
         /** AgentDocument */
         AgentDocument: {
+            /** Always Skills */
+            always_skills?: string[];
             /**
              * Description
              * @default
@@ -1105,6 +1194,8 @@ export interface components {
             limits?: {
                 [key: string]: unknown;
             };
+            /** Max Session Turns */
+            max_session_turns?: number | null;
             /**
              * Max Turns
              * @default 20
@@ -1562,6 +1653,8 @@ export interface components {
         };
         /** HelperDocument */
         HelperDocument: {
+            /** Always Skills */
+            always_skills?: string[];
             /**
              * Description
              * @default
@@ -1665,6 +1758,23 @@ export interface components {
              * @description 'agent' or 'helpers.<name>'
              */
             where: string;
+        };
+        /** KillSwitchView */
+        KillSwitchView: {
+            /**
+             * Agents
+             * @description Agents switched off one by one
+             */
+            agents: components["schemas"]["SwitchView"][];
+            /**
+             * All Off
+             * @description Every agent is stopped
+             */
+            all_off: boolean;
+            /** Reason */
+            reason: string | null;
+            /** Since */
+            since: string | null;
         };
         /** MessageView */
         MessageView: {
@@ -1807,6 +1917,14 @@ export interface components {
              */
             run_id: string;
         };
+        /** ResumeRequest */
+        ResumeRequest: {
+            /**
+             * Agent
+             * @description None: every agent
+             */
+            agent?: string | null;
+        };
         /**
          * RunStatus
          * @enum {string}
@@ -1919,6 +2037,32 @@ export interface components {
              * @enum {string}
              */
             status: "clean" | "review" | "blocked";
+        };
+        /** SearchTest */
+        SearchTest: {
+            /**
+             * Query
+             * @default weather today
+             */
+            query: string;
+        };
+        /** SearchTestHit */
+        SearchTestHit: {
+            /** Snippet */
+            snippet: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+        };
+        /** SearchTestView */
+        SearchTestView: {
+            /** Detail */
+            detail: string;
+            /** Ok */
+            ok: boolean;
+            /** Results */
+            results: components["schemas"]["SearchTestHit"][];
         };
         /** SendMessageRequest */
         SendMessageRequest: {
@@ -2111,6 +2255,38 @@ export interface components {
             /** Skipped */
             skipped: boolean;
         };
+        /** StopRequest */
+        StopRequest: {
+            /**
+             * Agent
+             * @description None: every agent
+             */
+            agent?: string | null;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** StopResult */
+        StopResult: {
+            /**
+             * Agents
+             * @description Agents switched off one by one
+             */
+            agents: components["schemas"]["SwitchView"][];
+            /**
+             * All Off
+             * @description Every agent is stopped
+             */
+            all_off: boolean;
+            /**
+             * Cancelled
+             * @description Runs stopped (their helpers and children with them)
+             */
+            cancelled: number;
+            /** Reason */
+            reason: string | null;
+            /** Since */
+            since: string | null;
+        };
         /** StudioAgentView */
         StudioAgentView: {
             /** Archived */
@@ -2186,6 +2362,18 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** SwitchView */
+        SwitchView: {
+            /** Agent */
+            agent: string;
+            /** Reason */
+            reason: string | null;
+            /**
+             * Since
+             * Format: date-time
+             */
+            since: string;
+        };
         /** TelemetryUpdate */
         TelemetryUpdate: {
             /** Sharing */
@@ -2257,6 +2445,50 @@ export interface components {
             name: string;
             /** Risk */
             risk: string;
+        };
+        /** ToolSettingsUpdate */
+        ToolSettingsUpdate: {
+            /** Api Key */
+            api_key?: string | null;
+            /** Search Provider */
+            search_provider?: ("searxng" | "tavily" | "brave") | null;
+            /** Searxng Url */
+            searxng_url?: string | null;
+            /** Web Allowlist */
+            web_allowlist?: string[] | null;
+        };
+        /** ToolSettingsView */
+        ToolSettingsView: {
+            /**
+             * Has Key
+             * @description A key is saved for the keyed provider (never returned)
+             */
+            has_key: boolean;
+            /** Key Fingerprint */
+            key_fingerprint: string | null;
+            /**
+             * Sandbox
+             * @description Run Python, the terminal and files are on
+             * @default false
+             */
+            sandbox: boolean;
+            /**
+             * Search Provider
+             * @enum {string}
+             */
+            search_provider: "searxng" | "tavily" | "brave";
+            /**
+             * Searxng Url
+             * @description Your own SearXNG; none: the one in the stack
+             */
+            searxng_url: string | null;
+            /** Updated At */
+            updated_at: string | null;
+            /**
+             * Web Allowlist
+             * @description When set, pages are read only from these sites
+             */
+            web_allowlist: string[];
         };
         /** Tried */
         Tried: {
@@ -2579,6 +2811,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
+                };
+            };
+        };
+    };
+    state_kill_switch_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KillSwitchView"];
+                };
+            };
+        };
+    };
+    resume_kill_switch_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResumeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KillSwitchView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_kill_switch_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StopRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StopResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -4194,6 +4512,37 @@ export interface operations {
             };
         };
     };
+    last_test_chat_studio_agents__agent_id__test_chat_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionView"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     test_chat_studio_agents__agent_id__test_chat_post: {
         parameters: {
             query?: never;
@@ -4412,6 +4761,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TelemetryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_search_tools_search_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchTest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchTestView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_settings_tools_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolSettingsView"];
+                };
+            };
+        };
+    };
+    put_settings_tools_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ToolSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolSettingsView"];
                 };
             };
             /** @description Validation Error */

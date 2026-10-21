@@ -41,7 +41,9 @@ def test_password_is_not_leaked_in_repr() -> None:
     assert "hunter2" not in str(s.model_dump())
 
 
-def test_database_url() -> None:
+def test_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("POSTGRES_PORT", "POSTGRES_USER", "POSTGRES_DB"):  # the defaults, not a dev env
+        monkeypatch.delenv(name, raising=False)
     s = Settings(postgres_password="pw", postgres_host="db")  # type: ignore[arg-type]
     assert s.database_url() == "postgresql+psycopg://agent:pw@db:5432/agent_runtime"
 

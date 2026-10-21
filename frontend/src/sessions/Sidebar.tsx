@@ -1,6 +1,6 @@
 /** The sidebar: Nuria, navigation, and the chats by recency. */
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Bot, Boxes, Compass, MessageSquare, MessageSquareHeart, Plus, Search, Shield } from "lucide-react";
+import { BookOpen, Bot, Boxes, Compass, MessageSquare, MessageSquareHeart, Plus, Search, Shield, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { api, unwrap, type SessionView } from "../api/client";
@@ -8,6 +8,7 @@ import { href, type Route } from "../app/route";
 import { Logo } from "../ui/Logo";
 import { FeedbackDialog } from "../feedback/FeedbackDialog";
 import { doneCount, useOnboarding } from "../guide/api";
+import { StopAllButton } from "../safety/KillSwitch";
 import { ModelStatus } from "./ModelStatus";
 
 const DAY = 86_400_000;
@@ -66,6 +67,9 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: () =>
         <NavLink to={{ page: "models" }} active={route.page === "models"} onNavigate={onNavigate} icon={<Boxes aria-hidden className="size-4" />}>
           Models
         </NavLink>
+        <NavLink to={{ page: "tools" }} active={route.page === "tools"} onNavigate={onNavigate} icon={<Wrench aria-hidden className="size-4" />}>
+          Tools
+        </NavLink>
       </div>
 
       <div className="mt-5 px-3">
@@ -115,7 +119,10 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: () =>
           <p className="px-3 py-6 text-center text-sm text-stone-600">Your chats will appear here.</p>
         )}
       </div>
-      <div className="flex items-center gap-1 border-t border-stone-200 px-3 pt-2 dark:border-stone-800">
+      <div className="border-t border-stone-200 px-3 pt-2 dark:border-stone-800">
+        <StopAllButton />
+      </div>
+      <div className="flex items-center gap-1 px-3 dark:border-stone-800">
         <button
           type="button"
           onClick={() => { setFeedback(true); }}

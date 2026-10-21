@@ -95,17 +95,17 @@ async def thread_messages(pool: Pool, session_id: uuid.UUID) -> list[Any]:
 
 
 async def test_a_session_carries_its_context_across_turns_and_the_transcript_matches(
-    pool: Pool, test_settings: Settings, checkpoint_tables: None
+    pool: Pool, test_settings: Settings, checkpoint_tables: None, sandbox: Settings
 ) -> None:
     sid = await chat(pool, test_settings)
     t1 = await turn(pool, test_settings, sid, "what is 6*7?",
-                    [tools(call("calculator", expression="6*7")), say("42")])  # fmt: skip
+                    [tools(call("run_python", code="print(6*7)")), say("42")])  # fmt: skip
     t2 = await turn(pool, test_settings, sid, "remember that",
-                    [tools(call("save_note", text="the answer is ${calculator[0].value}")),
+                    [tools(call("save_note", text="the answer is ${run_python[0].stdout}")),
                      say("Noted.")])  # fmt: skip
     # Turn 3 uses turn 1's tool result: only possible if the context carried over.
     t3 = await turn(pool, test_settings, sid, "double it",
-                    [tools(call("calculator", expression="${calculator[0].value} * 2")),
+                    [tools(call("run_python", code="print(${run_python[0].stdout} * 2)")),
                      say("84")])  # fmt: skip
     assert [r.status for r in (t1, t2, t3)] == [S.COMPLETED] * 3
     assert {r.thread_id for r in (t1, t2, t3)} == {str(sid)}  # one thread (CR-001 D4)
@@ -119,7 +119,7 @@ async def test_a_session_carries_its_context_across_turns_and_the_transcript_mat
     assert [m.seq for m in msgs] == list(range(1, len(msgs) + 1))  # SC4: gap-free, in order
     results = [m.content for m in msgs if m.type == "tool_result"]
     assert results[1]["result"] == {"note_id": results[1]["result"]["note_id"]}
-    assert results[2]["result"] == {"value": 84.0}  # turn 3 saw turn 1
+    assert results[2]["result"]["stdout"] == "84\n"  # turn 3 saw turn 1
     assert all("cached" in r and "duration_ms" in r for r in results)
 
     # SC3 / R12.4: the transcript is exactly the projection of the checkpoint.
@@ -225,9 +225,9 @@ async def test_a_turn_after_one_that_ended_mid_tool_call_is_repaired(
     sid = await chat(pool, test_settings)
     sent = await service.send(
         sid,
-        "two sums",
+        "two notes",
         {"max_tool_calls": 1},
-        script=[tools(call("calculator", expression="1+1"), call("calculator", expression="2+2"))],
+        script=[tools(call("save_note", text="one"), call("save_note", text="two"))],
     )
     failed = await RunExecutor(pool, test_settings, GRAPHS).execute(sent.run.id)
     assert (failed.status, failed.reason) == (S.FAILED, "budget:tool_calls")
@@ -479,19 +479,19 @@ async def test_the_session_stream_says_when_a_turn_starts_waits_and_ends(
 
 
 async def test_the_demo_model_answers_free_text_with_its_tools(
-    pool: Pool, test_settings: Settings, checkpoint_tables: None
+    pool: Pool, test_settings: Settings, checkpoint_tables: None, sandbox: Settings
 ) -> None:
     """MODEL_PROVIDER=scripted and no script: the demo responder picks one, and stores
     it in the run's input (so a replay reads the same script back)."""
     service = sessions(pool, test_settings)
     sid = await chat(pool, test_settings)
     sent = await service.send(sid, "What is 12 * (3 + 4)?")
-    assert sent.run.input["script"][0]["tool_calls"][0]["args"] == {"expression": "12 * (3 + 4)"}
+    assert sent.run.input["script"][0]["tool_calls"][0]["args"] == {"code": "print(12 * (3 + 4))"}
     done = await RunExecutor(pool, test_settings, GRAPHS).execute(sent.run.id)
     assert done.status is S.COMPLETED
     msgs = await transcript(pool, sid)
     result = next(m for m in msgs if m.type == "tool_result")
-    assert result.content["result"] == {"value": 84.0}
+    assert result.content["result"]["stdout"] == "84\n"  # computed in the sandbox
     assert "**84**" in msgs[-1].content["text"]
 
     help_turn = await service.send(sid, "hello there")  # nothing matches: how to use it

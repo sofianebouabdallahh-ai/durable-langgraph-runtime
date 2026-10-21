@@ -31,6 +31,9 @@ TABLES = {
     "skills",
     "skill_versions",
     "skill_files",
+    "tool_settings",
+    "kill_switches",
+    "skill_scans",
 }
 
 

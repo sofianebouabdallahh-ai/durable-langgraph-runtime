@@ -20,10 +20,10 @@ def first_tool(text: str, agent: object = CHAT) -> str | None:
 @pytest.mark.parametrize(
     ("text", "tool"),
     [
-        ("What is 12 * (3 + 4)?", "calculator"),
-        ("what is 3 x 4", "calculator"),
+        ("What is 12 * (3 + 4)?", "run_python"),  # Nuria computes in the sandbox (L6b)
+        ("what is 3 x 4", "run_python"),
         ("Remember that the demo is on Friday", "save_note"),
-        ("Search for Redis Streams", "search"),
+        ("Search for Redis Streams", "web_search"),
         ("Research Redis Streams and compute 12 * 4", "spawn_subagent"),
         ("Notify the team that the build is green", "notify"),
         ("hello", None),
@@ -44,13 +44,14 @@ def test_every_script_is_valid_and_the_same_text_gives_the_same_script() -> None
 def test_a_rule_needs_the_agents_tools() -> None:
     assistant = GRAPHS.get("assistant").agent  # no sub-agents, no notify
     assert first_tool("Research Redis Streams", assistant) != "spawn_subagent"
+    assert first_tool("What is 2 + 2?", assistant) == "calculator"  # no Run Python: the calculator
     assert demo_script("Notify the team", None) == ([{"content": HELP}], {})
 
 
 def test_research_gives_both_helpers_a_script() -> None:
     script, subs = demo_script("Research queues and compute 12 * 4", CHAT)
     assert set(subs) == {"researcher", "data-analyst"}
-    assert subs["data-analyst"][0]["tool_calls"][0]["args"] == {"expression": "12 * 4"}
+    assert subs["data-analyst"][0]["tool_calls"][0]["args"] == {"code": "print(12 * 4)"}
     assert "**48**" in script[-1]["content"]
 
 
@@ -139,6 +140,6 @@ def test_an_agent_with_skills_loads_its_first_skill_in_the_demo() -> None:
     )
     script, _ = demo_script("What is 2 + 2?", skilled)
     assert script[0] == {"tool_calls": [{"name": "load_skill", "args": {"name": "trip-planning"}}]}
-    assert script[1]["tool_calls"][0]["name"] == "calculator"  # then the usual rule
+    assert script[1]["tool_calls"][0]["name"] == "run_python"  # then the usual rule
     plain, _ = demo_script("What is 2 + 2?", CHAT)
-    assert plain[0]["tool_calls"][0]["name"] == "calculator"
+    assert plain[0]["tool_calls"][0]["name"] == "run_python"

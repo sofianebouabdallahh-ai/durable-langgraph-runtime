@@ -122,6 +122,62 @@ spec:
         - podSelector: { matchLabels: { app.kubernetes.io/name: worker } }
         - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ .Values.networkPolicy.kedaNamespace }} } }
       ports: [{ port: 6379 }]
+{{- if .Values.search.enabled }}
+---
+# Web search: asked by the API (Settings → Tools' test) and the workers; asks the
+# search engines, at public addresses only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $inst }}-searxng
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: searxng } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: api } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: worker } }
+      ports: [{ port: 8080 }]
+  egress:
+    - to: {{- include "nuria.publicInternet" . | nindent 8 }}
+{{- end }}
+{{- if .Values.fetcher.enabled }}
+---
+# The page reader: asked by the workers (Read web pages); reaches public addresses
+# only, so a page can't send it to Postgres, the cloud's metadata service or a pod,
+# even if its own address checks had a gap.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $inst }}-fetcher
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: fetcher } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{ podSelector: { matchLabels: { app.kubernetes.io/name: worker } } }]
+      ports: [{ port: 8090 }]
+  egress:
+    - to: {{- include "nuria.publicInternet" . | nindent 8 }}
+{{- end }}
+{{- if .Values.sandbox.enabled }}
+---
+# sandboxd: asked by the workers; talks only to the Kubernetes API.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $inst }}-sandboxd
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: sandboxd } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{ podSelector: { matchLabels: { app.kubernetes.io/name: worker } } }]
+      ports: [{ port: 8070 }]
+  egress:
+    - ports: [{ port: 443 }, { port: 6443 }] # the Kubernetes API
+{{- end }}
 {{- if .Values.monitoring.enabled }}
 ---
 # Monitoring: the collector takes spans from the API and workers and sends them to

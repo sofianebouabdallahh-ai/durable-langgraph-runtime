@@ -64,3 +64,24 @@ topologySpreadConstraints:
     labelSelector:
       matchLabels: {{- include "nuria.selector" . | nindent 8 }}
 {{- end }}
+
+{{- define "nuria.sandboxImage" -}}{{ .Values.sandbox.image.repository }}:{{ .Values.sandbox.image.tag }}{{- end }}
+
+{{/* Where the runtime finds the tools' services (L6), next to the ConfigMap's settings. */}}
+{{- define "nuria.toolsConfig" -}}
+{{- $name := include "nuria.fullname" . }}
+SEARXNG_URL: {{ if .Values.search.enabled }}{{ printf "http://%s-searxng:8080" $name | quote }}{{ else }}""{{ end }}
+FETCHER_URL: {{ if .Values.fetcher.enabled }}{{ printf "http://%s-fetcher:8090" $name | quote }}{{ else }}""{{ end }}
+SANDBOXD_URL: {{ if .Values.sandbox.enabled }}{{ printf "http://%s-sandboxd:8070" $name | quote }}{{ else }}""{{ end }}
+{{- end }}
+
+{{/* Public addresses only (NetworkPolicy `to`): not the cluster, not private networks,
+     not link-local (cloud metadata), not loopback or carrier-grade NAT. */}}
+{{- define "nuria.publicInternet" -}}
+- ipBlock:
+    cidr: 0.0.0.0/0
+    except: [0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16]
+- ipBlock:
+    cidr: ::/0
+    except: ["::1/128", "fc00::/7", "fe80::/10"]
+{{- end }}

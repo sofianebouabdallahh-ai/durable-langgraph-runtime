@@ -1,0 +1,68 @@
+{{- if .Values.fetcher.enabled }}
+{{- $sel := dict "root" . "name" "fetcher" }}
+# The page reader (L6a): the one way the web tools reach the internet. It refuses
+# private and internal addresses itself (web/fetch.py), and its NetworkPolicy lets it
+# reach only public ones. No database, no keys, no Kubernetes token.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nuria.fullname" . }}-fetcher
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.fetcher.replicas }}
+  selector:
+    matchLabels: {{- include "nuria.selector" $sel | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nuria.selector" $sel | nindent 8 }}
+        {{- include "nuria.podLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "nuria.fullname" . }}
+      automountServiceAccountToken: false
+      securityContext: {{- include "nuria.podSecurity" . | nindent 8 }}
+      {{- include "nuria.spread" $sel | nindent 6 }}
+      containers:
+        - name: fetcher
+          image: {{ include "nuria.runtimeImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["fetcher", "--host", "0.0.0.0", "--port", "8090"]
+          securityContext: {{- include "nuria.containerSecurity" . | nindent 12 }}
+          env:
+            - { name: LOG_FORMAT, value: {{ .Values.config.LOG_FORMAT | quote }} }
+          ports:
+            - { name: http, containerPort: 8090 }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources: {{- toYaml .Values.fetcher.resources | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nuria.fullname" . }}-fetcher
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "nuria.selector" $sel | nindent 4 }}
+  ports:
+    - { name: http, port: 8090, targetPort: http }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "nuria.fullname" . }}-fetcher
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.fetcher.pdb.minAvailable }}
+  selector:
+    matchLabels: {{- include "nuria.selector" $sel | nindent 6 }}
+{{- end }}

@@ -1,0 +1,83 @@
+{{- if .Values.search.enabled }}
+{{- $sel := dict "root" . "name" "searxng" }}
+# Web search (L6a): SearXNG, private to the cluster, no key. The API (Settings → Tools'
+# test) and the workers (the Search the web tool) ask it; it asks the search engines.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nuria.fullname" . }}-searxng
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+data:
+  # The same file as Compose: infra/helm/agent-runtime/files/searxng-settings.yml.
+  settings.yml: |
+    {{- .Files.Get "files/searxng-settings.yml" | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nuria.fullname" . }}-searxng
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.search.replicas }}
+  selector:
+    matchLabels: {{- include "nuria.selector" $sel | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nuria.selector" $sel | nindent 8 }}
+        {{- include "nuria.podLabels" . | nindent 8 }}
+      annotations:
+        checksum/settings: {{ .Files.Get "files/searxng-settings.yml" | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "nuria.fullname" . }}
+      automountServiceAccountToken: false
+      # The image's own `searxng` user; it starts as root only to fix file ownership.
+      securityContext:
+        {{- include "nuria.podSecurity" . | nindent 8 }}
+        runAsUser: 977
+        runAsGroup: 977
+        fsGroup: 977
+      containers:
+        - name: searxng
+          image: {{ .Values.search.image }}
+          imagePullPolicy: IfNotPresent
+          securityContext: {{- include "nuria.containerSecurity" . | nindent 12 }}
+          env:
+            - name: SEARXNG_SECRET
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: SEARXNG_SECRET } }
+            - { name: SEARXNG_BASE_URL, value: "http://{{ include "nuria.fullname" . }}-searxng:8080/" }
+          ports:
+            - { name: http, containerPort: 8080 }
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 2
+            failureThreshold: 60
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources: {{- toYaml .Values.search.resources | nindent 12 }}
+          volumeMounts:
+            - { name: settings, mountPath: /etc/searxng, readOnly: true }
+            - { name: cache, mountPath: /var/cache/searxng }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: settings
+          configMap: { name: {{ include "nuria.fullname" . }}-searxng }
+        - { name: cache, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nuria.fullname" . }}-searxng
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "nuria.selector" $sel | nindent 4 }}
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+{{- end }}

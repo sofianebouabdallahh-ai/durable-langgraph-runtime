@@ -4,6 +4,32 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### L6 — Real tools
+#### Added
+- **Search the web** (SearXNG in the stack: private, no key; or Tavily / Brave with your key, saved encrypted) and **Read web pages** (pages and PDFs as text, through the page reader, which refuses anything that isn't a public website, after every redirect). **Settings → Tools**: the provider, Save and test, the sites agents may read.
+- **Run Python, Use a terminal, Work with files**, in a sandbox per turn: no network, no keys or files of yours, non-root, read-only, CPU, memory, process and time limits, removed when the turn ends. A last line that's an expression is shown, as in a notebook. `./setup.sh --no-sandbox` / `--sandbox`.
+- **On Kubernetes too:** SearXNG, the page reader (out to public addresses only, by NetworkPolicy) and sandboxd with a Kubernetes driver: a locked-down Pod per run in its own namespace with no network at all, a quota, optional gVisor/Kata and user namespaces. The sandbox image is released with the others.
+- **The kill switch:** Stop now ends a reply at once (the model call, tool, code and helpers in progress). **Turn off** an agent (Studio, Agents page) or **Stop all agents** (sidebar, with a banner until they're back on). API: `/kill-switch`. Migration 0017.
+- **Always use**, per attached skill: its instructions in every turn (as data), for small models that rarely load skills. Attaching a skill whose check found something asks first.
+- **Messages per chat** (optional) and the step, tool-use and time limits, always visible when creating an agent.
+- **The chat download** has the model's reasoning (when it gives one), every tool call with its arguments and full result, models and tokens, and what each helper did.
+- Stored skills are **checked again** when the checks improve (rules versions; migration 0018, append-only).
+- The Studio shows your **test chat again** when you come back; a helper with **no tools** says so and offers the ones its description asks for.
+- Docs: [Tools](docs/setup/tools.md); the security page, Kubernetes guide and design notes cover the new parts.
+
+#### Changed
+- The Studio's catalogue: **the calculator and sample-document search are gone**; Nuria and its helpers search, read and run Python instead. Tools are listed by their Studio names ("Run Python").
+- `load_skill` names the agent's own skills (small models then load the right one); the drafter offers only tools this installation has (no Run Python without a sandbox).
+- Setup's check runs Python in the sandbox (or the calculator on a hidden agent without one) and follows a default model chosen in the app. `--stop` and `--reset` remove leftover sandboxes.
+
+#### Fixed
+- **Waiting for an approval used up a turn's time:** approving after the limit stopped the turn and the action never ran. Approval waits no longer count (migration 0016).
+- Writing a file over ~96 KB, and reading one over ~15 KB, in the sandbox.
+- A tool call in a stopped turn showed "working…" forever ("didn't finish" now); a helper's answer showed raw Markdown; a reply of just "48." vanished.
+- A dialog opened right after another closed could close itself; picking the same skill again after Cancel did nothing.
+- The skill scan missed handing over credentials and "do not mention this" (and now reports one finding per passage).
+- Models said "Connect your first model" when setup's model already worked.
+
 ### L3d — Getting started: a guided first agent
 #### Added
 - **Get started** (Home's card, the sidebar with your progress, `#/start`): your first agent in five real steps (a model, the agent, a tool, a helper, try and publish), each ticking by itself when it's done.

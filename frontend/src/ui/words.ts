@@ -11,6 +11,11 @@ const TOOLS: Record<string, string> = {
   retrieve: "Documents",
   save_note: "Saved a note",
   notify: "Notification",
+  web_search: "Web search",
+  read_webpage: "Read a page",
+  run_python: "Ran Python",
+  run_shell: "Terminal",
+  workspace_files: "Files",
   load_skill: "Used a skill",
   read_skill_file: "Read a skill's file",
 };
@@ -21,6 +26,25 @@ export function agentLabel(name: string | null | undefined): string {
   return name.replaceAll(/[-_]/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 }
 
+/** A tool's name where tools are listed (a draft, the Agents page): the Studio's words. */
+const TOOL_NAMES: Record<string, string> = {
+  calculator: "Calculator",
+  search: "Search",
+  retrieve: "Documents",
+  save_note: "Notes",
+  notify: "Notifications",
+  web_search: "Search the web",
+  read_webpage: "Read web pages",
+  run_python: "Run Python",
+  run_shell: "Use a terminal",
+  workspace_files: "Work with files",
+};
+
+export function toolName(tool: string): string {
+  return TOOL_NAMES[tool] ?? toolLabel(tool);
+}
+
+/** What a tool did, as a chat card's title. */
 export function toolLabel(tool: string): string {
   return TOOLS[tool] ?? tool.replaceAll("_", " ").replace(/^\w/, (c) => c.toUpperCase());
 }
@@ -38,6 +62,16 @@ export function toolPurpose(tool: string): string {
       return "Keeps notes you want to remember";
     case "notify":
       return "Sends messages to people, only with your approval";
+    case "web_search":
+      return "Searches the web";
+    case "read_webpage":
+      return "Reads web pages and PDFs";
+    case "run_python":
+      return "Runs Python (numpy, pandas) in a sandbox, no internet";
+    case "run_shell":
+      return "Runs commands in the sandbox";
+    case "workspace_files":
+      return "Keeps files in the sandbox";
     default:
       return "";
   }

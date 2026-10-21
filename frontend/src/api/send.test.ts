@@ -32,4 +32,10 @@ describe("sendMessage", () => {
     await expect(sendMessage("s1", "hi", { sleep: () => Promise.resolve() })).rejects.toMatchObject({ status: 503 });
     expect(fetch).toHaveBeenCalledTimes(SEND_ATTEMPTS);
   });
+
+  it("doesn't retry while every agent is stopped (the kill switch): it says so at once", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(reply(503, { type: "https://x/problems/paused", status: 503 }))));
+    await expect(sendMessage("s1", "hi", { sleep: () => Promise.resolve() })).rejects.toMatchObject({ status: 503 });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
 });

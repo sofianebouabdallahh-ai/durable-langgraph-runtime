@@ -43,8 +43,9 @@ from agent_runtime.db import Conn, Pool
 from agent_runtime.ids import new_id
 from agent_runtime.runs.service import RunService
 from agent_runtime.runs.store import Run, RunRepository
+from agent_runtime.sandbox.tools import SANDBOX_TOOLS
 from agent_runtime.sessions.service import SessionService
-from agent_runtime.sessions.store import Session
+from agent_runtime.sessions.store import Session, SessionRepository
 from agent_runtime.skills import spec as skill_spec
 from agent_runtime.skills.binding import MissingSkills, bind, lock_of
 from agent_runtime.skills.scan import ScanReport, scan
@@ -56,8 +57,14 @@ from agent_runtime.skills.store import SkillStore
 # The tools a person picks from, in plain words. The sub-agent tools (spawn, wait,
 # report, return) are granted automatically and never shown.
 TOOLS: dict[str, tuple[str, str]] = {
-    "search": ("Search", "Searches the documents it was given and cites them"),
-    "calculator": ("Calculator", "Does exact arithmetic"),
+    "web_search": ("Search the web", "Finds pages on the web, so it can cite them"),
+    "read_webpage": ("Read web pages", "Reads a page or a PDF as text"),
+    "run_python": (
+        "Run Python",
+        "Runs Python (with numpy and pandas) in a sandbox: no internet, no access to your files",
+    ),
+    "run_shell": ("Use a terminal", "Runs commands in the same sandbox"),
+    "workspace_files": ("Work with files", "Keeps files in the sandbox while it works"),
     "save_note": ("Notes", "Keeps notes you ask it to remember"),
     "notify": ("Notifications", "Sends messages to people, always after you approve"),
 }
@@ -166,12 +173,15 @@ class StudioService:
         sessions: SessionService,
         settings: AgentSettings,
         runs: RunService | None = None,
+        *,
+        sandbox: bool = False,
     ) -> None:
         self._pool = pool
         self._agents = resolver
         self._sessions = sessions
         self._settings = settings
         self._runs = runs
+        self._sandbox = sandbox  # sandboxd is set up: the code tools can be offered
 
     # -------------------------------------------------------------- creating
 
@@ -230,12 +240,18 @@ class StudioService:
 
     # ---------------------------------------------- describe it, improve it
 
+    def offered_tools(self) -> list[str]:
+        """The Studio's tools this installation has: the code tools only with a sandbox."""
+        risks = self.tool_risks()
+        return [n for n in TOOLS if n in risks and (n not in SANDBOX_TOOLS or self._sandbox)]
+
     async def describe(self, description: str) -> Run:
         """Start the builder agent on a description (R17.3). Nothing is saved: the
         result is a proposal (`assist`), which `create_from_proposal` turns into a draft."""
         skills = await self._library()
-        message = builder.describe_message(description, skills)
-        script = builder.demo_script(builder.demo_draft(description, skills))
+        offered = self.offered_tools()
+        message = builder.describe_message(description, skills, offered)
+        script = builder.demo_script(builder.demo_draft(description, skills, offered))
         return await self._assist_run(builder.BUILDER, message, script)
 
     async def improve(self, agent_id: uuid.UUID) -> Run:
@@ -270,6 +286,9 @@ class StudioService:
             return Assist("working", kind)
         proposal = (result or {}).get("output", {}).get("proposal") if result else None
         if run.status.value == "completed" and proposal:
+            if kind == "draft":  # only tools this installation has
+                draft = builder.DraftProposal.model_validate(proposal)
+                proposal = builder.only_offered(draft, self.offered_tools()).model_dump()
             return Assist("done", kind, proposal)
         problem = (
             "The model didn't come up with a proposal. Try again, or describe it a little "
@@ -283,7 +302,7 @@ class StudioService:
         """A new agent whose draft is the builder's proposal (skills it named that aren't
         in the library are left out)."""
         library = {n for n, _ in await self._library()}
-        proposal = proposal.model_copy(update={
+        proposal = builder.only_offered(proposal, self.offered_tools()).model_copy(update={
             "skills": [s for s in proposal.skills if s in library]})  # fmt: skip
         async with self._pool.connection() as conn, conn.transaction():
             store = AgentStore(conn)
@@ -436,6 +455,12 @@ class StudioService:
         return [await self.get(a.id) for a in agents if a.archived_at is None]
 
     # ---------------------------------------------------------- test chats
+
+    async def last_playground(self, agent_id: uuid.UUID) -> Session | None:
+        """The test chat to show again when the Studio opens: the latest still open."""
+        async with self._pool.connection() as conn:
+            await AgentStore(conn).get(agent_id)  # AgentNotFound → 404
+            return await SessionRepository(conn).latest_test_chat(agent_id)
 
     async def playground(self, agent_id: uuid.UUID) -> Session:
         """A new test chat with the draft (or, without one, the published version)."""

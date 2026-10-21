@@ -6,7 +6,7 @@ import { expectScreenMatchesTranscript, send, waitTurnOver, startChat } from "./
 test("a question, a tool card, an answer", async ({ page, request }) => {
   const sid = await startChat(page, "What is 12 * (3 + 4)?");
   await expect(page.getByTestId("model-status")).toContainText("Demo model");
-  await expect(page.getByTestId("tool-card")).toContainText("Calculator");
+  await expect(page.getByTestId("tool-card")).toContainText("Ran Python"); // in the sandbox (L6b)
   await expect(page.getByTestId("assistant-message").last()).toContainText("84");
   await waitTurnOver(request, sid);
   await expectScreenMatchesTranscript(page, request, sid);
@@ -40,7 +40,7 @@ test("several turns keep their context, and a reload shows the same conversation
   await expect(page.getByTestId("assistant-message").first()).toContainText("4");
   await waitTurnOver(request, sid);
   await send(page, "Search for Redis Streams");
-  await expect(page.getByTestId("tool-card").nth(1)).toContainText("Search");
+  await expect(page.getByTestId("tool-card").nth(1)).toContainText("Web search");
   await waitTurnOver(request, sid);
   await page.reload();
   await expectScreenMatchesTranscript(page, request, sid);

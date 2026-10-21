@@ -22,6 +22,7 @@ in CI.
 from __future__ import annotations
 
 import re
+from collections.abc import Collection
 from typing import Annotated, Any
 
 from pydantic import Field
@@ -221,16 +222,37 @@ def proposal_of(messages: list[Any]) -> dict[str, Any] | None:
 # ------------------------------------------------------------------ the messages
 
 
-def describe_message(description: str, skills: list[tuple[str, str]]) -> str:
-    """What the builder is asked: the person's words, and what it may choose from."""
+def describe_message(
+    description: str, skills: list[tuple[str, str]], offered: Collection[str] | None = None
+) -> str:
+    """What the builder is asked: the person's words, and what it may choose from
+    (`offered`: the tools this installation has; all by default)."""
     from agent_runtime.agents.studio import TOOLS
 
-    tools = "\n".join(f"- {name}: {desc}" for name, (_, desc) in TOOLS.items())
+    tools = "\n".join(
+        f"- {name}: {desc}"
+        for name, (_, desc) in TOOLS.items()
+        if offered is None or name in offered
+    )
     library = "\n".join(f"- {n}: {d}" for n, d in skills[:30]) or "(none yet)"
     return (
         f"Tools offered:\n{tools}\n\nSkills in the library:\n{library}\n\n"
         f"The person's description:\n{description.strip()}"
     )[:7900]
+
+
+def only_offered(proposal: DraftProposal, offered: Collection[str]) -> DraftProposal:
+    """A proposal without tools this installation doesn't have (a model may name them
+    anyway; the Studio wouldn't show them, and the agent couldn't use them)."""
+    return proposal.model_copy(
+        update={
+            "tools": [t for t in proposal.tools if t in offered],
+            "helpers": [
+                h.model_copy(update={"tools": [t for t in h.tools if t in offered]})
+                for h in proposal.helpers
+            ],
+        }
+    )
 
 
 def improve_message(display_name: str, purpose: str, instructions: str, tools: list[str]) -> str:
@@ -243,8 +265,9 @@ def improve_message(display_name: str, purpose: str, instructions: str, tools: l
 # ------------------------------------------------------------------ offline demo
 
 _TOOL_WORDS = {
-    "search": r"search|find|look up|research|sources?|documents?|cite",
-    "calculator": r"calculat|math|budget|cost|price|sum|convert|numbers?",
+    "web_search": r"search|find|look up|research|sources?|web|internet|news|latest",
+    "read_webpage": r"read|pages?|articles?|links?|sources?|research|cite",
+    "run_python": r"calculat|math|budget|cost|price|sum|convert|numbers?|data|csv|chart|analy[sz]",
     "save_note": r"remember|notes?|keep track|save",
     "notify": r"notify|tell (the )?team|send (a )?message|email|alert",
 }
@@ -273,7 +296,9 @@ _FILLER = frozenset(
 _HELPER = re.compile(r"\b(?:and|with) a helper (?:that|who|to) ([^.;\n]{3,120})", re.IGNORECASE)
 
 
-def demo_draft(description: str, skills: list[tuple[str, str]]) -> DraftProposal:
+def demo_draft(
+    description: str, skills: list[tuple[str, str]], offered: Collection[str] | None = None
+) -> DraftProposal:
     """The offline demo's draft: a deterministic reading of the description."""
     text = " ".join(description.split())
     words = [w for w in re.findall(r"[A-Za-z][A-Za-z'-]+", text) if w.lower() not in _FILLER]
@@ -281,7 +306,11 @@ def demo_draft(description: str, skills: list[tuple[str, str]]) -> DraftProposal
         words = words[1:]  # "It plans family trips" → "Family Trips"
     topic = " ".join(words[:2]).title() if words else "My"
     name = (topic if "assistant" in topic.lower() else f"{topic} assistant")[:60]
-    tools = [t for t, pattern in _TOOL_WORDS.items() if re.search(pattern, text, re.IGNORECASE)]
+    tools = [
+        t
+        for t, pattern in _TOOL_WORDS.items()
+        if re.search(pattern, text, re.IGNORECASE) and (offered is None or t in offered)
+    ]
     helpers = []
     if m := _HELPER.search(text):
         job = m.group(1).strip()

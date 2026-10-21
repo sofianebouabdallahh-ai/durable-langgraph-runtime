@@ -28,7 +28,7 @@ test("model output can't run script, load images or phone home", async ({ page, 
   ].join("\n");
   const sent = await request.post(`/api/sessions/${sid}/messages`, {
     data: { content: "show me", script: [
-      { tool_calls: [{ name: "calculator", args: { expression: `<img src=https://${EVIL}/t.png onerror=alert(1)>` } }] },
+      { tool_calls: [{ name: "run_python", args: { code: `<img src=https://${EVIL}/t.png onerror=alert(1)>` } }] },
       { content: payload },
     ] },
   });

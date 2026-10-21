@@ -86,6 +86,9 @@ class _AgentFields(_Strict):
     # Skills from the library (CR-006 R17.4), by name: listed in the prompt by name and
     # description, loaded on demand. Each agent and helper sees only its own.
     skills: list[Annotated[str, Field(pattern=SKILL_NAME_PATTERN, max_length=64)]] = []
+    # Of those, the ones in its instructions every turn (as data, like a loaded skill):
+    # for know-how that always applies, and for small models that rarely load skills.
+    always_skills: list[Annotated[str, Field(pattern=SKILL_NAME_PATTERN, max_length=64)]] = []
     output_schema: str | None = None
 
     @field_validator("tools", mode="before")
@@ -100,6 +103,8 @@ class _AgentFields(_Strict):
             raise ValueError(f"tools listed more than once: {', '.join(duplicates)}")
         if repeated := sorted({s for s in self.skills if self.skills.count(s) > 1}):
             raise ValueError(f"skills listed more than once: {', '.join(repeated)}")
+        if stray := sorted(set(self.always_skills) - set(self.skills)):
+            raise ValueError(f"always_skills must be among its skills: {', '.join(stray)}")
         return self
 
 

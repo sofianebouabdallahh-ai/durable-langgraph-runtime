@@ -9,6 +9,7 @@ All three also prove SC1: runs are created over HTTP and nobody runs `execute`.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import signal
 import time
@@ -18,6 +19,7 @@ from datetime import datetime
 from typing import Any
 
 from tests.e2e.harness import LEASE_TTL_S, REAPER_INTERVAL_S, Cluster
+from tests.integration.local_sandbox import SANDBOX_TOKEN, local_sandboxd
 from tests.sse import Sse, read_sse
 
 STEP_S = 1.5  # each toy node sleeps this long
@@ -511,8 +513,8 @@ async def subagents_crash(c: Cluster) -> Report:
 # ------------------------------------------------------------ phase 6a: chat
 
 
-def _calc(expression: str) -> dict[str, Any]:
-    return {"tool_calls": [{"name": "calculator", "args": {"expression": expression}}]}
+def _python(code: str) -> dict[str, Any]:
+    return {"tool_calls": [{"name": "run_python", "args": {"code": code}}]}
 
 
 async def _session(c: Cluster) -> str:
@@ -549,12 +551,12 @@ async def chat_sessions(c: Cluster) -> Report:
 
     def turn(k: int, n: int) -> tuple[str, list[dict[str, Any]]]:
         if k == 0:
-            return "what is n*7?", [_calc(f"{n}*7"), {"content": "done"}]
+            return "what is n*7?", [_python(f"print({n}*7)"), {"content": "done"}]
         if k == 1:
-            note = {"name": "save_note", "args": {"text": "${calculator[0].value}",
+            note = {"name": "save_note", "args": {"text": "${run_python[0].stdout}",
                                                   "linger_s": 0.3}}  # fmt: skip
             return "note it", [{"tool_calls": [note]}, {"content": "noted"}]
-        return "add one to the first result", [_calc("${calculator[0].value} + 1"),
+        return "add one to the first result", [_python("print(${run_python[0].stdout} + 1)"),
                                                {"content": "added"}]  # fmt: skip
 
     runs: list[str] = []
@@ -579,8 +581,8 @@ async def chat_sessions(c: Cluster) -> Report:
         types = [m["type"] for m in msgs]
         in_order = types == shape and seqs == list(range(1, len(msgs) + 1))
         r.check(f"session {n}: complete and in order", in_order, str(types))
-        r.check(f"session {n}: turn 3 used turn 1's value", last == {"value": (n + 1) * 7 + 1.0},
-                str(last))  # fmt: skip
+        r.check(f"session {n}: turn 3 used turn 1's value",
+                last.get("stdout") == f"{(n + 1) * 7 + 1}\n", str(last))  # fmt: skip
     got = await watch
     r.check("a stream on the other replica got every message once, in order",
             got.seqs == list(range(1, 12)), str(got.seqs))  # fmt: skip
@@ -707,7 +709,7 @@ SCENARIOS: dict[str, tuple[Callable[[Cluster], Awaitable[Report]], dict[str, Any
     "fanout": (fanout, {}),
     "child-crash": (child_crash, {}),
     "subagents-crash": (subagents_crash, {}),
-    "chat-sessions": (chat_sessions, {"api_replicas": [{}, {}]}),
+    "chat-sessions": (chat_sessions, {"api_replicas": [{}, {}], "sandbox": True}),
     "chat-crash": (chat_crash, {}),
     "chat-subagents": (chat_subagents, {"api_replicas": [{}, {}]}),
 }
@@ -715,8 +717,13 @@ SCENARIOS: dict[str, tuple[Callable[[Cluster], Awaitable[Report]], dict[str, Any
 
 async def run_scenario(name: str) -> tuple[Report, str]:
     """Run one scenario in a fresh cluster; returns the report and the logs' tail."""
-    scenario, cluster_kwargs = SCENARIOS[name]
-    async with Cluster(workers=2, concurrency=2, **cluster_kwargs) as c:
+    scenario, options = SCENARIOS[name]
+    kwargs = {k: v for k, v in options.items() if k != "sandbox"}
+    async with contextlib.AsyncExitStack() as stack:
+        if options.get("sandbox"):  # Run Python: a sandboxd the workers reach (tests only)
+            url, _ = await stack.enter_async_context(local_sandboxd())
+            kwargs["env"] = {"SANDBOXD_URL": url, "SANDBOXD_TOKEN": SANDBOX_TOKEN}
+        c = await stack.enter_async_context(Cluster(workers=2, concurrency=2, **kwargs))
         try:
             report = await scenario(c)
         except Exception as exc:

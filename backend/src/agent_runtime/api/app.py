@@ -15,6 +15,7 @@ the Ingress never routes `/admin` (phase 12).
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -28,6 +29,7 @@ from agent_runtime import metrics, report, telemetry
 from agent_runtime.admin import AdminRepository, AdminState
 from agent_runtime.agents.studio import StudioService
 from agent_runtime.api import problems
+from agent_runtime.api.kill_switch import kill_switch_router
 from agent_runtime.api.models import models_router
 from agent_runtime.api.onboarding import onboarding_router
 from agent_runtime.api.problems import ApiDraining, ResultNotReady
@@ -51,11 +53,13 @@ from agent_runtime.api.sessions import sessions as sessions_router
 from agent_runtime.api.skills import skills_router
 from agent_runtime.api.studio import studio as studio_router
 from agent_runtime.api.telemetry import telemetry_router
+from agent_runtime.api.tools import tools_router
 from agent_runtime.config import Settings, get_agent_settings, get_settings
 from agent_runtime.db import Pool, create_pool
 from agent_runtime.graphs import GraphRegistry, GraphSpec, default_registry
 from agent_runtime.models.connections import ConnectionService
 from agent_runtime.queue import RedisWorkQueue, WorkQueue, create_redis
+from agent_runtime.runs.kill_switch import KillSwitch
 from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.service import RunService
 from agent_runtime.runs.store import RunRepository
@@ -65,6 +69,9 @@ from agent_runtime.streaming.broker import Broker
 from agent_runtime.streaming.bus import EventBus, RedisEventBus
 from agent_runtime.streaming.session import RunStream
 from agent_runtime.subagents.store import SubagentRepository
+from agent_runtime.web.settings import ToolSettings
+
+log = logging.getLogger(__name__)
 
 # ----------------------------------------------------------------- dependencies
 
@@ -394,12 +401,12 @@ def create_app(
         try:
             if pool is not None:
                 _wire(app, pool, work_queue, event_bus)
-                await app.state.skills.sync_builtins(get_agent_settings().skills_dir)
+                await _skills_ready(app)
                 yield
                 return
             async with create_pool(settings) as owned:
                 _wire(app, owned, work_queue, event_bus)
-                await app.state.skills.sync_builtins(get_agent_settings().skills_dir)
+                await _skills_ready(app)
                 poller = metrics.StatePoller(owned, work_queue)  # the state gauges (R7.2)
                 poller.start()
                 try:
@@ -411,16 +418,31 @@ def create_app(
             if redis is not None:
                 await redis.aclose()
 
+    async def _skills_ready(app: FastAPI) -> None:
+        """Built-in skills up to date, and stored ones checked with the current rules."""
+        await app.state.skills.sync_builtins(get_agent_settings().skills_dir)
+        try:
+            await app.state.skills.rescan()
+        except Exception:  # the old results stay shown; the next start tries again
+            log.warning("couldn't check stored skills with the current rules", exc_info=True)
+
     def _wire(app: FastAPI, p: Pool, q: WorkQueue, b: EventBus) -> None:
         app.state.pool = p
         relay = OutboxRelay(p, q, stale_s=settings.relay_stale_s)
         app.state.service = RunService(p, settings, graphs, relay, b)
         app.state.sessions = SessionService(p, settings, graphs, app.state.service, relay, b)
         app.state.studio = StudioService(
-            p, app.state.service.agents, app.state.sessions, settings, app.state.service
+            p,
+            app.state.service.agents,
+            app.state.sessions,
+            settings,
+            app.state.service,
+            sandbox=bool(settings.sandboxd_url),
         )
         app.state.connections = ConnectionService(p, settings)
         app.state.skills = SkillService(p)
+        app.state.tool_settings = ToolSettings(p, settings)
+        app.state.kill_switch = KillSwitch(p, app.state.service)
 
     app = FastAPI(
         title="Agent Runtime API",
@@ -443,6 +465,8 @@ def create_app(
     app.include_router(models_router)
     app.include_router(skills_router)
     app.include_router(onboarding_router)
+    app.include_router(tools_router)
+    app.include_router(kill_switch_router)
     app.include_router(telemetry_router)
     app.include_router(graphs_router)
     app.include_router(health)

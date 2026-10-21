@@ -6,7 +6,8 @@ import { expect, type APIRequestContext, type Page } from "@playwright/test";
 const PROJECT = process.env.COMPOSE_PROJECT ?? "agent-runtime";
 
 export function docker(...args: string[]): string {
-  return execFileSync("docker", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  // A long-lived stack's logs pass Node's default 1 MB: read them whole.
+  return execFileSync("docker", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 256 * 1024 * 1024 }).trim();
 }
 
 /** The containers of a Compose service (full ids): running ones, or all with `all`. */
@@ -33,7 +34,7 @@ export async function restoreStack(apiReplicas: number, workers: number): Promis
 
 /** A container's log, stdout and stderr (uvicorn's access log is on stderr). */
 function logs(id: string): string {
-  const r = spawnSync("docker", ["logs", "--timestamps", id], { encoding: "utf8" });
+  const r = spawnSync("docker", ["logs", "--timestamps", id], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
   return `${r.stdout}\n${r.stderr}`;
 }
 

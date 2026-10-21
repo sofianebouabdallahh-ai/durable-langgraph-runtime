@@ -26,6 +26,8 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from agent_runtime.config import Settings, get_settings
 from agent_runtime.db import Pool, create_pool
 from agent_runtime.queue import RedisWorkQueue, create_redis
+from agent_runtime.sandbox import tools as sandbox_tools
+from tests.integration.local_sandbox import SANDBOX_TOKEN, LocalBackend, local_sandboxd
 
 ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"  # backend/alembic.ini
 
@@ -130,3 +132,23 @@ async def queue(settings: Settings) -> AsyncIterator[RedisWorkQueue]:
     finally:
         await redis.delete(q.stream)
         await redis.aclose()
+
+
+@pytest.fixture(scope="session")
+async def sandboxd() -> AsyncIterator[tuple[str, LocalBackend]]:
+    """The real sandboxd app on a free port, over a local backend (tests only)."""
+    async with local_sandboxd() as served:
+        yield served
+
+
+@pytest.fixture
+def sandbox(
+    sandboxd: tuple[str, LocalBackend], test_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> Settings:
+    """Run Python, the terminal and the workspace files work in this test's turns."""
+    url, _ = sandboxd
+    with_sandbox = test_settings.model_copy(
+        update={"sandboxd_url": url, "sandboxd_token": SecretStr(SANDBOX_TOKEN)}
+    )
+    monkeypatch.setattr(sandbox_tools, "get_settings", lambda: with_sandbox)
+    return with_sandbox

@@ -65,7 +65,8 @@ test("report this reply, and download this chat", async ({ page, request }) => {
   await page.getByTestId("download-chat").click();
   const md = readFileSync(await (await chat).path(), "utf8");
   expect(md).toContain("Remember that the demo is on Friday");
-  expect(md).toContain("*Used save_note*");
+  expect(md).toContain("#### 🔧 Tool call: `save_note`"); // each call, with its arguments and result (L6)
+  expect(md).toContain("#### 📥 Result of `save_note`");
 
   await page.getByRole("button", { name: "What happened?" }).click();
   await page.getByTestId("report-reply").click();

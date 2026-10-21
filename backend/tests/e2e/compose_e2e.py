@@ -7,6 +7,7 @@ under their least-privilege database logins.
     crash      docker kill the worker running a chat turn, mid tool call (AC19)
     graceful   docker stop it instead: SIGTERM → released → resumed elsewhere (R10.7)
     privilege  the worker's login can't drop a table or delete runs (R14.13)
+    sandbox    docker kill the worker while its turn runs Python in the sandbox (L6 SC5)
 
 Usage (the stack must be up):
     COMPOSE_PROJECT_NAME=agent-runtime UI_PORT=3000 \\
@@ -136,6 +137,65 @@ def graceful() -> bool:
     return not c.failed
 
 
+def sandbox() -> bool:
+    """L6 SC5: the worker dies while its turn's code runs in the sandbox. The turn is
+    reclaimed and completes; its result is recorded once; no sandbox outlives it."""
+    c = Check("docker kill a worker while its turn runs Python (L6 SC5)")
+    project = os.environ.get("COMPOSE_PROJECT_NAME", "agent-runtime")
+    running = subprocess.run(
+        [DOCKER, "ps", "-q", "--filter", f"label=com.docker.compose.project={project}",
+         "--filter", "label=com.docker.compose.service=sandboxd"],
+        capture_output=True, text=True,
+    ).stdout.strip()  # fmt: skip
+    if not running:  # the `sandbox` profile: not in this helper's `compose`
+        c("sandboxd runs (setup without --no-sandbox)", False)
+        return False
+    with httpx.Client(base_url=API, timeout=30) as client:
+        sid = client.post("/sessions", json={"agent": "chat"}).json()["id"]
+        code = "import time; time.sleep(6); print('done')"
+        sent = client.post(f"/sessions/{sid}/messages", json={"content": "slow code", "script": [
+            {"tool_calls": [{"name": "run_python", "args": {"code": code}}]},
+            {"content": "Ran it."},
+        ]})  # fmt: skip
+        sent.raise_for_status()
+        run_id = sent.json()["run_id"]
+        victim = owner_container(client, run_id)
+        time.sleep(2.5)  # inside the 6 s of code
+        subprocess.run([DOCKER, "kill", victim], check=True, capture_output=True)
+        try:
+            wait(lambda: client.get(f"/runs/{run_id}").json()["status"] in ("completed", "failed"),
+                 120, "the turn to finish")  # fmt: skip
+            run = client.get(f"/runs/{run_id}").json()
+            events = [
+                e["type"]
+                for e in client.get(f"/runs/{run_id}/events", params={"limit": 500}).json()[
+                    "events"
+                ]
+            ]
+            msgs = client.get(f"/sessions/{sid}/messages").json()["messages"]
+            results = [m["content"] for m in msgs if m["type"] == "tool_result"]
+            c("the turn completed", run["status"] == "completed", run["status"])
+            c("exactly one run.reclaimed", events.count("run.reclaimed") == 1)
+            c("its result recorded once, from a finished run",
+              len(results) == 1 and (results[0].get("result") or {}).get("stdout") == "done\n",
+              str(results)[:200])  # fmt: skip
+
+            def sandboxes() -> list[str]:
+                return subprocess.run(
+                    [DOCKER, "ps", "-aq", "--filter", f"label=nuria.sandbox.run={run_id}"],
+                    capture_output=True, text=True,
+                ).stdout.split()  # fmt: skip
+
+            deadline = time.monotonic() + 30  # released as the run ends; swept otherwise
+            while sandboxes() and time.monotonic() < deadline:
+                time.sleep(0.5)
+            left = sandboxes()
+            c("no sandbox outlives the turn", not left, f"{len(left)} left")
+        finally:
+            subprocess.run([DOCKER, "start", victim], capture_output=True)  # back to 2 workers
+    return not c.failed
+
+
 def privilege() -> bool:
     c = Check("least privilege at runtime (R14.13)")
     whoami = compose("exec", "-T", "worker", "python", "-c",
@@ -156,7 +216,7 @@ def privilege() -> bool:
     return not c.failed
 
 
-SCENARIOS = {"crash": crash, "graceful": graceful, "privilege": privilege}
+SCENARIOS = {"crash": crash, "graceful": graceful, "sandbox": sandbox, "privilege": privilege}
 
 
 def main() -> int:

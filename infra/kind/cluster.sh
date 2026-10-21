@@ -3,7 +3,8 @@
 #
 #   infra/kind/cluster.sh up         the cluster (1 control plane + 2 workers) and its
 #                                    add-ons: Traefik (Ingress), metrics-server, KEDA
-#   infra/kind/cluster.sh build      build the images (nuria/runtime, nuria/ui) at $TAG
+#   infra/kind/cluster.sh build      build the images (nuria/runtime, nuria/ui, nuria/sandbox)
+#                                    at $TAG
 #   infra/kind/cluster.sh load       copy them into the cluster's nodes (never pulled)
 #   infra/kind/cluster.sh secrets    the Secret, from .env (only the secret keys)
 #   infra/kind/cluster.sh deploy     Postgres + Redis (nuria-data), then Nuria (Helm)
@@ -74,12 +75,15 @@ build() {
   say "Building the images at tag $TAG…"
   docker build -q -t "nuria/runtime:$TAG" backend >/dev/null
   docker build -q -t "nuria/ui:$TAG" frontend >/dev/null
-  ok "nuria/runtime:$TAG, nuria/ui:$TAG"
+  docker build -q -t "nuria/sandbox:$TAG" sandbox >/dev/null
+  ok "nuria/runtime:$TAG, nuria/ui:$TAG, nuria/sandbox:$TAG"
 }
 
 load() {
   say "Loading the images into the cluster's nodes…"
-  kind load docker-image --name "$CLUSTER" "nuria/runtime:$TAG" "nuria/ui:$TAG" >/dev/null 2>&1
+  # Every node gets the sandbox image: a sandbox Pod may land on any of them.
+  kind load docker-image --name "$CLUSTER" "nuria/runtime:$TAG" "nuria/ui:$TAG" "nuria/sandbox:$TAG" \
+    >/dev/null 2>&1
   ok "loaded"
 }
 
@@ -88,10 +92,13 @@ secrets() {
   # never on the command line, never printed (R10.4).
   [ -f "$ENV_FILE" ] || { echo "no $ENV_FILE: run ./setup.sh (or make env) first" >&2; exit 1; }
   local tmp key value
+  for key in SEARXNG_SECRET SANDBOXD_TOKEN; do  # added in L6: an older .env lacks them
+    [ -n "$(env_get "$key")" ] || { echo "$ENV_FILE has no $key: run ./setup.sh once to add it" >&2; exit 1; }
+  done
   tmp=$(mktemp)
   chmod 600 "$tmp"
   for key in POSTGRES_PASSWORD API_POSTGRES_PASSWORD WORKER_POSTGRES_PASSWORD NURIA_SECRET_KEY \
-             OPENAI_API_KEY GRAFANA_ADMIN_PASSWORD; do
+             SEARXNG_SECRET SANDBOXD_TOKEN OPENAI_API_KEY GRAFANA_ADMIN_PASSWORD; do
     value=$(env_get "$key")
     value=${value#\'}; value=${value%\'}; value=${value#\"}; value=${value%\"}
     [ -n "$value" ] && printf '%s=%s\n' "$key" "$value" >> "$tmp"
@@ -128,7 +135,7 @@ deploy() {
   done
   "${HELM[@]}" upgrade --install "$RELEASE" "$CHART" --namespace "$NAMESPACE" \
     --values "$CHART/values-kind.yaml" \
-    --set image.runtime.tag="$TAG" --set image.ui.tag="$TAG" \
+    --set image.runtime.tag="$TAG" --set image.ui.tag="$TAG" --set sandbox.image.tag="$TAG" \
     --set-string config.POSTGRES_DB="$(env_get POSTGRES_DB)" \
     --set-string config.POSTGRES_USER="$(env_get POSTGRES_USER)" \
     --set-string config.API_POSTGRES_USER="$(env_get API_POSTGRES_USER)" \

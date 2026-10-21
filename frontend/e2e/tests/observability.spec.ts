@@ -50,7 +50,7 @@ test("a turn's trace: API and worker spans in Jaeger, opened from “What happen
       services: [...new Set(spans.map((s) => s.service))].sort(),
       run: spans.some((s) => s.name === "run"),
       llm: spans.some((s) => s.name === "llm.call"),
-      tool: spans.some((s) => s.name === "tool:calculator"),
+      tool: spans.some((s) => s.name === "tool:run_python"),
     };
   }, { timeout: 30_000 }).toEqual({ services: ["api", "worker"], run: true, llm: true, tool: true });
 

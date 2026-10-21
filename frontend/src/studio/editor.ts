@@ -16,10 +16,11 @@ type Limits = Record<string, unknown>;
 export type Edit =
   | { kind: "set"; field: "display_name" | "description" | "instructions" | "model"; value: string }
   | { kind: "tool"; name: string; on: boolean }
-  | { kind: "skills"; value: string[] }
+  | { kind: "skills"; value: string[]; always: string[] }
   | { kind: "tool-cap"; name: string; cap: number | null }
   | { kind: "preset"; preset: { max_turns: number; limits: Limits } }
   | { kind: "limit"; field: "max_turns" | "max_tool_calls" | "timeout_s"; value: number }
+  | { kind: "session-turns"; value: number | null }
   | { kind: "protection"; hook: string; point: string; on: boolean; helpers: boolean }
   | { kind: "add-helper"; helper: HelperDocument }
   | { kind: "helper"; index: number; helper: HelperDocument }
@@ -32,8 +33,8 @@ export function edit(doc: AgentDocument, e: Edit): AgentDocument {
       return { ...doc, [e.field]: e.value };
     case "tool":
       return { ...doc, tools: toggleTool(doc.tools ?? [], e.name, e.on) };
-    case "skills":
-      return { ...doc, skills: e.value };
+    case "skills": // "Always use" only for attached skills
+      return { ...doc, skills: e.value, always_skills: e.always.filter((n) => e.value.includes(n)) };
     case "tool-cap":
       return {
         ...doc,
@@ -41,6 +42,8 @@ export function edit(doc: AgentDocument, e: Edit): AgentDocument {
       };
     case "preset":
       return { ...doc, max_turns: e.preset.max_turns, limits: { ...(doc.limits ?? {}), ...e.preset.limits } };
+    case "session-turns":
+      return { ...doc, max_session_turns: e.value };
     case "limit":
       return e.field === "max_turns"
         ? { ...doc, max_turns: e.value }
@@ -100,7 +103,7 @@ export function issuesFor(issues: readonly Issue[], where: string, fields: reado
   return issues.filter((i) => i.where === where && fields.some((f) => (i.field ?? "") === f || (i.field ?? "").startsWith(`${f}.`)));
 }
 
-const SECTION_FIELDS = ["name", "display_name", "description", "instructions", "tools", "max_turns", "limits", "hooks", "temperature", "model", "skills"]; // "model": the Model section
+const SECTION_FIELDS = ["name", "display_name", "description", "instructions", "tools", "max_turns", "limits", "hooks", "temperature", "model", "skills", "always_skills", "max_session_turns"]; // "model": the Model section
 
 /** Issues no section claims: shown at the top so nothing is ever hidden. */
 export function unplaced(issues: readonly Issue[], helperNames: readonly string[]): Issue[] {
@@ -133,8 +136,26 @@ export function newHelper(displayName: string, taken: readonly string[], preset:
     limits: preset.limits,
     tools: [],
     skills: [],
+    always_skills: [],
     hooks: toolHooks,
   };
+}
+
+/** Words in a helper's description that point at a tool (a nudge, never a choice made for you). */
+const TOOL_HINTS: readonly (readonly [string, RegExp])[] = [
+  ["web_search", /\b(search\w*|web|online|internet|look(s|ing)? up|finds?|news|latest|current)\b/i],
+  ["read_webpage", /\b(reads?|pages?|websites?|sites?|articles?|links?|urls?|pdfs?|sources?)\b/i],
+  ["run_python", /\b(calculat\w*|comput\w*|python|code|data|analy\w*|statistic\w*|charts?|numbers?|sums?|totals?|averages?|costs?|prices?)\b/i],
+  ["workspace_files", /\b(files?|csv|spreadsheets?|excel)\b/i],
+  ["save_note", /\b(remember\w*|notes?)\b/i],
+];
+
+/** The tools a helper's description suggests, among those it may use. Searching the web
+ * comes with reading pages: search results are only snippets. */
+export function suggestTools(text: string, allowed: readonly string[]): string[] {
+  const hits = new Set(TOOL_HINTS.filter(([, words]) => words.test(text)).map(([name]) => name));
+  if (hits.has("web_search")) hits.add("read_webpage");
+  return allowed.filter((name) => hits.has(name));
 }
 
 /** The document to show: the draft, else the published version, else an empty shell. */

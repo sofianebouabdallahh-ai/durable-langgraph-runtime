@@ -32,6 +32,7 @@ param(
   [switch]$NonInteractive,
   [switch]$Build,
   [switch]$Observability, [switch]$NoObservability, [switch]$Kubernetes,
+  [switch]$Sandbox, [switch]$NoSandbox,
   [switch]$Chat, [switch]$Stop, [switch]$Update, [switch]$Doctor, [switch]$Reset,
   [string]$To = "", [string]$Restore = ""
 )
@@ -83,6 +84,12 @@ function Get-ProfileArgs {
   $p = Get-EnvValue "COMPOSE_PROFILES"; if (-not $p) { $p = "app" }
   $args = @(); foreach ($x in $p.Split(",")) { $args += "--profile"; $args += $x }; return $args
 }
+# Code sandboxes aren't Compose's: sandboxd starts them, one per turn.
+function Remove-Sandboxes {
+  $ids = & docker ps -aq --filter label=nuria.sandbox=1 2>$null
+  if ($ids) { & docker rm -f @($ids) *> $null }
+}
+
 function Invoke-Compose { param([Parameter(ValueFromRemainingArguments)]$rest)
   & docker compose --file $ComposeFile --env-file $EnvFile @(Get-ProfileArgs) @rest
   if ($LASTEXITCODE -ne 0) { throw "docker compose $rest failed" }
@@ -118,7 +125,7 @@ function Initialize-EnvFile {
     if ($line -match "^([A-Z0-9_]+)=change-me") { Set-EnvValue $Matches[1] (New-Secret); $changed++ }
   }
   # Secrets added by later versions: an existing .env gets them too (never overwritten).
-  foreach ($key in @("NURIA_SECRET_KEY")) {
+  foreach ($key in @("NURIA_SECRET_KEY", "SEARXNG_SECRET", "SANDBOXD_TOKEN")) {
     if (-not (Get-EnvValue $key)) { Set-EnvValue $key (New-Secret); $changed++ }
   }
   if ($changed -gt 0) { Ok "generated $changed local secret(s) (only on this machine, in .env)" }
@@ -232,6 +239,29 @@ function Set-Observability {  # -Observability / -NoObservability; remembered in
   Ok "observability: traces $jaeger, dashboard $grafana, metrics $prometheus"
 }
 
+function Set-Sandbox {  # -Sandbox / -NoSandbox; on by default; remembered in .env
+  $profiles = ((Get-EnvValue COMPOSE_PROFILES) -split "," | Where-Object { $_ -and $_ -ne "sandbox" }) -join ","
+  if (-not $profiles) { $profiles = "app" }
+  if ($NoSandbox -or (-not $Sandbox -and (Get-EnvValue SANDBOX_ENABLED) -eq "false")) {
+    Set-EnvValue COMPOSE_PROFILES $profiles; Set-EnvValue SANDBOXD_URL ""; Set-EnvValue SANDBOX_ENABLED "false"
+    Ok "code tools off (Run Python, the terminal and workspace files aren't offered)"; return
+  }
+  Set-EnvValue COMPOSE_PROFILES "$profiles,sandbox"; Set-EnvValue SANDBOX_ENABLED "true"
+  Set-EnvValue SANDBOXD_URL "http://sandboxd:8070"
+}
+
+function Build-SandboxImage {  # the image sandboxd starts for each run (built here)
+  if (-not (Test-Profile sandbox)) { return }
+  $image = "nuria-sandbox:$((Get-Content VERSION -Raw).Trim())"
+  docker image inspect $image *> $null
+  if ($Build -or $LASTEXITCODE -ne 0) {
+    Say "Building the sandbox image (code runs there, one per conversation turn)..."
+    docker build -q -t $image sandbox | Out-Null
+    if ($LASTEXITCODE -ne 0) { Die "couldn't build the sandbox image." @("Run .\setup.ps1 -NoSandbox to start without the code tools.") }
+  }
+  Set-EnvValue SANDBOX_IMAGE $image
+}
+
 # A checked pg_dump, made and compressed inside the Postgres container and copied out
 # (PowerShell's redirection would re-encode it). $null for a fresh install.
 function Backup-Database {
@@ -249,6 +279,7 @@ function Backup-Database {
 }
 
 function Start-Stack {
+  Build-SandboxImage
   if ($Build) { Say "Building the images (first time: a few minutes)..."; Invoke-Compose build }
   else {
     & docker compose --file $ComposeFile --env-file $EnvFile @(Get-ProfileArgs) pull --quiet --ignore-buildable 2>$null
@@ -269,7 +300,7 @@ function Test-Smoke {
 
 # ------------------------------------------------------------------ actions
 if ($Chat) { Test-Docker; Invoke-Compose run --rm --no-deps api chat; exit 0 }
-if ($Stop) { Test-Docker; Invoke-Compose stop; Ok "stopped (your data is kept)"; exit 0 }
+if ($Stop) { Test-Docker; Invoke-Compose stop; Remove-Sandboxes; Ok "stopped (your data is kept)"; exit 0 }
 if ($Doctor) {
   Test-Docker; $out = "diagnostics-$(Get-Date -Format yyyyMMdd-HHmmss)"; New-Item -ItemType Directory $out | Out-Null
   & docker compose --file $ComposeFile --env-file $EnvFile @(Get-ProfileArgs) run --rm --no-deps -T api doctor --api http://ui:8080/api > "$out/doctor.json" 2>$null
@@ -282,7 +313,7 @@ if ($Doctor) {
 if ($Reset) {
   Test-Docker
   if ($Interactive -and (Read-Answer "This DELETES all conversations, agents and downloaded models. Type 'delete' to confirm") -ne "delete") { Die "cancelled; nothing was deleted." }
-  Invoke-Compose down -v --remove-orphans; Ok "everything deleted (.env kept)"; exit 0
+  Invoke-Compose down -v --remove-orphans; Remove-Sandboxes; Ok "everything deleted (.env kept)"; exit 0
 }
 
 if ($Kubernetes) {
@@ -327,6 +358,7 @@ if ($Update) {
   Write-Host "    If anything fails: .\setup.ps1 -Update -To v$previous$(if ($backup) { "   then: .\setup.ps1 -Restore $backup" })"
 } else { Set-Model }
 Set-Observability
+Set-Sandbox
 Start-Stack; Test-Smoke
 Write-Host ""
 Say "Nuria is ready."

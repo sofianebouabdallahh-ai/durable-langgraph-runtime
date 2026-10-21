@@ -48,6 +48,10 @@ spec:
               valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: NURIA_SECRET_KEY } }
             - name: OPENAI_API_KEY
               valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: OPENAI_API_KEY, optional: true } }
+            {{- if .Values.sandbox.enabled }}
+            - name: SANDBOXD_TOKEN # workers ask sandboxd to run code (L6)
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: SANDBOXD_TOKEN } }
+            {{- end }}
             {{- include "nuria.downwardEnv" . | nindent 12 }}
             - name: WORKER_ID # the lease owner: the pod's name (R2.2)
               valueFrom: { fieldRef: { fieldPath: metadata.name } }

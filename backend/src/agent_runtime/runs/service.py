@@ -25,6 +25,7 @@ from agent_runtime.runs.limits import RunOptions, profile_of, resolve_limits
 from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.state import RunStatus
 from agent_runtime.runs.store import Run, RunRepository, RunTerminal
+from agent_runtime.runs.switches import ensure_on
 from agent_runtime.streaming.bus import EventBus, publish_events
 from agent_runtime.tools.builtin import default_tools
 
@@ -143,6 +144,7 @@ class RunService:
         if self.agents.builtin(graph) is not None:  # an agent: pin its definition (R15.4)
             async with self._pool.connection() as conn:
                 pinned = await self.agents.resolve(conn, graph)
+                await ensure_on(conn, pinned.definition.id)  # its kill switch (L6)
                 bindings = await self.models.bind(conn, pinned.definition)
             prepared = prepare_spec(self.agents.spec_of(pinned), self._settings, input, options)
             agent = (pinned.bundle_hash, pinned.definition.id, pinned.version)

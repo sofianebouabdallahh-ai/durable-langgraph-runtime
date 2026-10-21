@@ -133,6 +133,7 @@ class Run:
     message_id: str | None = None
     interrupt_payload: dict[str, Any] | None = None  # what the run is waiting on (R1.4)
     resume_value: dict[str, Any] | None = None  # the human's decision, for Command(resume=…)
+    waited_s: float = 0.0  # seconds spent waiting for approvals: not counted as working time
     # the run tree (R2.8, R14.6): a root has no parent, root_run_id None and depth 0
     root_run_id: uuid.UUID | None = None
     depth: int = 0
@@ -177,6 +178,7 @@ class Run:
             message_id=row["message_id"],
             interrupt_payload=row["interrupt_payload"],
             resume_value=row["resume_value"],
+            waited_s=row["waited_s"],
             root_run_id=row["root_run_id"],
             depth=row["depth"],
             child_key=row["child_key"],
@@ -235,7 +237,7 @@ _RUN_COLUMNS = """
     input, options, limits, steps, parent_run_id, session_id,
     created_at, started_at, finished_at, cancel_requested, reclaims, releases, message_id,
     interrupt_payload, resume_value, root_run_id, depth, child_key, child_total, child_done,
-    agent_hash, model_bindings, traceparent
+    agent_hash, model_bindings, traceparent, waited_s
 """
 
 
@@ -388,6 +390,13 @@ class RunRepository:
                     started_at  = CASE WHEN %(target)s = 'running'
                                        THEN coalesce(started_at, now()) ELSE started_at END,
                     finished_at = CASE WHEN %(terminal)s THEN now() ELSE NULL END,
+                    -- Time waiting for a person isn't the agent's working time (R1.7):
+                    -- counted when the wait ends, then added to the deadline.
+                    waited_s    = waited_s + CASE
+                                      WHEN status = 'waiting_approval' AND waiting_since IS NOT NULL
+                                      THEN extract(epoch FROM now() - waiting_since) ELSE 0 END,
+                    waiting_since = CASE WHEN %(target)s = 'waiting_approval'
+                                         THEN now() ELSE NULL END,
                     owner            = CASE WHEN %(target)s = 'running' THEN owner END,
                     lease_expires_at = CASE WHEN %(target)s = 'running' THEN lease_expires_at END,
                     -- running → queued is a graceful release (R10.7): counted, but not

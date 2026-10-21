@@ -33,6 +33,7 @@ from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.service import Overloaded, RunService, prepare_spec
 from agent_runtime.runs.state import RunStatus
 from agent_runtime.runs.store import Run, RunRepository
+from agent_runtime.runs.switches import ensure_on
 from agent_runtime.sessions.store import (
     Message,
     NewMessage,
@@ -51,6 +52,14 @@ log = logging.getLogger(__name__)
 
 class DuplicateSend(Exception):
     """Two attempts of one send (same idempotency key) raced; retry to get the turn."""
+
+
+class ChatLimitReached(Exception):
+    """The agent allows this many messages per chat (`max_session_turns`)."""
+
+    def __init__(self, limit: int) -> None:
+        super().__init__(f"This chat has reached its limit of {limit} messages: start a new chat.")
+        self.limit = limit
 
 
 class NotAnAgent(Exception):
@@ -193,8 +202,19 @@ class SessionService:
         async with self._pool.connection() as conn:
             pinned = await self._agents.resolve(conn, session.graph_name,
                                                 draft_of=session.playground_of)  # fmt: skip
+            await ensure_on(conn, pinned.definition.id)  # its kill switch (L6)
             # Its models, bound now: a later change of the default can't move this turn.
             bindings = await self._runs.models.bind(conn, pinned.definition)
+            limit = pinned.definition.frontmatter.max_session_turns
+            if limit is not None:
+                cur = await conn.execute(
+                    "SELECT count(*) AS n FROM session_messages WHERE session_id = %s "
+                    "AND type = 'user'",
+                    (session_id,),
+                )
+                sent = (await cur.fetchone() or {}).get("n", 0)
+                if sent >= limit:
+                    raise ChatLimitReached(limit)
         if script is None and self._settings.model_provider == "scripted":
             script, subagent_scripts = self._demo(pinned.definition, content)
         inp: dict[str, Any] = {"message": content}

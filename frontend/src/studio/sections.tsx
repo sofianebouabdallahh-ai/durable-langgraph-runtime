@@ -18,6 +18,7 @@ import {
   issuesFor,
   newHelper,
   presetOf,
+  suggestTools,
   type PresetName,
 } from "./editor";
 
@@ -119,6 +120,31 @@ export function InstructionsSection({ doc, issues, dispatch, catalog, readOnly, 
   );
 }
 
+/** A helper without tools can only think: say so, and offer what its description asks for. */
+function NoToolsYet({ text, catalog, onAdd }: { text: string; catalog: Catalog; onAdd: (names: string[]) => void }) {
+  const allowed = catalog.tools.filter((t) => t.helpers_allowed).map((t) => t.name);
+  const suggested = suggestTools(text, allowed);
+  const label = (name: string) => catalog.tools.find((t) => t.name === name)?.label ?? name;
+  return (
+    <div className="mb-3 rounded-xl bg-amber-50 px-3 py-2.5 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200" data-testid="helper-no-tools">
+      <p>It can't use any tools yet, so it can only answer from what it already knows.</p>
+      {suggested.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span>Its description suggests:</span>
+          <Button
+            size="sm"
+            onClick={() => {
+              onAdd(suggested);
+            }}
+          >
+            Turn on {suggested.map(label).join(", ")}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToolCards({
   selected,
   onToggle,
@@ -163,7 +189,7 @@ function ToolCards({
                   onChange={(on) => {
                     onToggle(t.name, on);
                   }}
-                  label={`Use ${t.label}`}
+                  label={t.label.startsWith("Use ") ? t.label : `Use ${t.label}`}
                   hideLabel
                 />
               </div>
@@ -318,7 +344,7 @@ function HelperCard({
         </span>
         {issues.length > 0 && <Pill tone="rose">{issues.length} to fix</Pill>}
         {ownModel(helper.model) && <Pill className="hidden max-w-40 truncate sm:inline-flex">{ownModel(helper.model)}</Pill>}
-        <Pill>{(helper.tools ?? []).length} tools</Pill>
+        {(helper.tools ?? []).length ? <Pill>{(helper.tools ?? []).length} tools</Pill> : <Pill tone="amber">No tools</Pill>}
         <ChevronDown aria-hidden className={`size-4 text-stone-400 transition ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
@@ -364,6 +390,15 @@ function HelperCard({
           />
           <div>
             <div className="mb-2 text-sm font-medium">Its tools</div>
+            {!readOnly && (helper.tools ?? []).length === 0 && (
+              <NoToolsYet
+                text={`${helper.description} ${helper.display_name ?? ""}`}
+                catalog={catalog}
+                onAdd={(names) => {
+                  onChange({ ...helper, tools: names.map((name) => ({ name })) });
+                }}
+              />
+            )}
             <ToolCards
               selected={helper.tools ?? []}
               catalog={catalog}
@@ -390,10 +425,11 @@ function HelperCard({
           <SkillPicker
             label="Its skills"
             value={helper.skills ?? []}
+            always={helper.always_skills ?? []}
             readOnly={readOnly}
-            issues={issuesFor(issues, `helpers.${helper.name}`, ["skills"])}
-            onChange={(skills) => {
-              onChange({ ...helper, skills });
+            issues={issuesFor(issues, `helpers.${helper.name}`, ["skills", "always_skills"])}
+            onChange={(skills, always_skills) => {
+              onChange({ ...helper, skills, always_skills });
             }}
           />
           {!readOnly && (
@@ -435,11 +471,12 @@ export function LimitsSection({ doc, issues, dispatch, catalog, readOnly }: Prop
           if (preset) dispatch({ kind: "preset", preset });
         }}
       />
-      {value === "custom" && (
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <p className="mt-4 text-sm font-medium">Limits for one message</p>
+      <p className="text-xs text-stone-500">Pick a preset above, or set the numbers yourself (that makes it Custom).</p>
+      <div className="mt-2 grid gap-3 sm:grid-cols-3">
           {(
             [
-              ["max_turns", "Steps per message", doc.max_turns, catalog.ceilings.max_turns, 1],
+              ["max_turns", "Max turns (steps per message)", doc.max_turns, catalog.ceilings.max_turns, 1],
               ["max_tool_calls", "Tool uses per message", Number(limits.max_tool_calls ?? 0), catalog.ceilings.max_tool_calls, 1],
               ["timeout_s", "Time limit (minutes)", Math.round(Number(limits.timeout_s ?? 60) / 60), Math.floor((catalog.ceilings.timeout_s ?? 600) / 60), 60],
             ] as const
@@ -453,6 +490,7 @@ export function LimitsSection({ doc, issues, dispatch, catalog, readOnly }: Prop
                 value={val}
                 disabled={readOnly}
                 onChange={(e) => {
+                  setCustom(true);
                   dispatch({ kind: "limit", field, value: Math.max(1, Number(e.target.value)) * unit });
                 }}
                 className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 dark:border-stone-700 dark:bg-stone-950"
@@ -460,9 +498,24 @@ export function LimitsSection({ doc, issues, dispatch, catalog, readOnly }: Prop
               <span className="mt-1 block text-xs text-stone-500">Up to {String(max)}</span>
             </label>
           ))}
-        </div>
-      )}
-      <Issues issues={issuesFor(issues, "agent", ["max_turns", "limits"])} />
+      </div>
+      <label className="mt-4 block max-w-xs text-sm">
+        <span className="mb-1 block font-medium">Messages per chat (optional)</span>
+        <input
+          type="number"
+          min={1}
+          value={doc.max_session_turns ?? ""}
+          placeholder="No limit"
+          disabled={readOnly}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            dispatch({ kind: "session-turns", value: e.target.value === "" || n < 1 ? null : Math.floor(n) });
+          }}
+          className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 dark:border-stone-700 dark:bg-stone-950"
+        />
+        <span className="mt-1 block text-xs text-stone-500">After this many messages, a chat with it asks for a new one.</span>
+      </label>
+      <Issues issues={issuesFor(issues, "agent", ["max_turns", "limits", "max_session_turns"])} />
     </Section>
   );
 }

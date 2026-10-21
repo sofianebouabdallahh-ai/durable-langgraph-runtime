@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { type AgentDocument, type Catalog, documentOf, edit, hasHook, issuesFor, newHelper, presetOf, slug, unplaced } from "./editor";
+import { type AgentDocument, type Catalog, documentOf, edit, hasHook, issuesFor, newHelper, presetOf, slug, suggestTools, unplaced } from "./editor";
 
 const doc: AgentDocument = {
   name: "trip-planner",
@@ -99,15 +99,34 @@ describe("ids and documents", () => {
 
 describe("skills in the form", () => {
   it("sets the agent's skills, and a new helper starts with none", () => {
-    const next = edit(doc, { kind: "skills", value: ["trip-planning"] });
+    const next = edit(doc, { kind: "skills", value: ["trip-planning"], always: [] });
     expect(next.skills).toEqual(["trip-planning"]);
     expect(doc.skills).toBeUndefined(); // the reducer is pure
     expect(newHelper("Scout", [], presets.quick ?? { max_turns: 1, limits: {} }, {}).skills).toEqual([]);
+  });
+
+  it("keeps Always use only for skills still attached", () => {
+    const both = edit(doc, { kind: "skills", value: ["trip-planning", "plain-writing"], always: ["trip-planning"] });
+    expect(both.always_skills).toEqual(["trip-planning"]);
+    const removed = edit(both, { kind: "skills", value: ["plain-writing"], always: ["trip-planning"] });
+    expect(removed.always_skills).toEqual([]);
   });
 
   it("places a skill issue in the Skills section, not at the top", () => {
     const issue = { where: "agent", field: "skills", message: "There's no skill called “x”" };
     expect(issuesFor([issue], "agent", ["skills"])).toEqual([issue]);
     expect(unplaced([issue], [])).toEqual([]);
+  });
+});
+
+describe("tools a helper's description suggests", () => {
+  const allowed = ["web_search", "read_webpage", "run_python", "workspace_files", "save_note"];
+  it("finds them from plain words, searching with reading", () => {
+    expect(suggestTools("Searches the web for current ferry times and prices", allowed)).toEqual(["web_search", "read_webpage", "run_python"]);
+    expect(suggestTools("Works out averages from a CSV file", allowed)).toEqual(["run_python", "workspace_files"]);
+  });
+  it("suggests nothing it may not use, or for a writer", () => {
+    expect(suggestTools("Searches the web", ["run_python"])).toEqual([]);
+    expect(suggestTools("Rewrites text in a friendly tone", allowed)).toEqual([]);
   });
 });

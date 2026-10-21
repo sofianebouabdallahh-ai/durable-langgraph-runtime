@@ -194,7 +194,8 @@ async def catalog(request: Request) -> StudioCatalog:
             ToolOption(name=n, label=label, description=desc, risk=risks.get(n, "read"),
                        asks_first=risks.get(n) == "external_side_effect",
                        helpers_allowed=risks.get(n) != "external_side_effect")
-            for n, (label, desc) in TOOLS.items() if n in risks
+            for n, (label, desc) in TOOLS.items()
+            if n in service.offered_tools()
         ],
         protections=[
             ProtectionOption(hook=h, point=point, label=label, description=desc,
@@ -325,6 +326,13 @@ async def archive(agent_id: uuid.UUID, service: StudioDep) -> StudioAgentView:
              response_model=SessionView, summary="A test chat with the draft")  # fmt: skip
 async def test_chat(agent_id: uuid.UUID, service: StudioDep) -> SessionView:
     return SessionView.of(await service.playground(agent_id))
+
+
+@studio.get("/agents/{agent_id}/test-chat", response_model=SessionView | None,
+            summary="The latest test chat still open, if any")  # fmt: skip
+async def last_test_chat(agent_id: uuid.UUID, service: StudioDep) -> SessionView | None:
+    found = await service.last_playground(agent_id)
+    return SessionView.of(found) if found else None
 
 
 @studio.get("/agents/{agent_id}/export", summary="Download as agent.md (or a zipped folder)",

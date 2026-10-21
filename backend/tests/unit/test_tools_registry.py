@@ -33,6 +33,13 @@ def test_default_registry_declares_risk_and_side_effects() -> None:
         # the Studio's builder agents answer through these (CR-006 R17.3)
         "propose_draft": "read",
         "propose_instructions": "read",
+        # the web (L6a)
+        "web_search": "read",
+        "read_webpage": "read",
+        # code, the terminal and files, in the run's sandbox (L6b)
+        "run_python": "execute",
+        "run_shell": "execute",
+        "workspace_files": "execute",
     }
     assert reg.get("wait_subagents").timeout_s == 125  # blocks up to 120 s
     assert reg.get("save_note").side_effect and not reg.get("calculator").side_effect

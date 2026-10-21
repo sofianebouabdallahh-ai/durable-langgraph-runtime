@@ -82,6 +82,8 @@ from agent_runtime.runs.store import (
     RunRepository,
     RunTerminal,
 )
+from agent_runtime.runs.switches import KillSwitchRepository
+from agent_runtime.sandbox import tools as sandbox_tools
 from agent_runtime.sessions.store import SessionRepository
 from agent_runtime.sessions.transcript import TranscriptWriter
 from agent_runtime.sessions.turns import turn_input
@@ -342,6 +344,10 @@ class RunExecutor:
             span.span.set_attribute("run.status", str(ended.status))
             if ended.reason:
                 span.span.set_attribute("run.reason", ended.reason)
+        if ended.status is not RunStatus.RUNNING:
+            # Its sandbox goes with this execution (R13.2): a resume or a reclaim gets a
+            # fresh one; sandboxd sweeps any a crash left behind.
+            await sandbox_tools.release(str(run.id))
         if ended.status.is_terminal and ended.finished_at is not None:
             metrics.run_ended(run.kind, str(ended.status),
                               (ended.finished_at - ended.created_at).total_seconds())  # fmt: skip
@@ -409,9 +415,17 @@ class RunExecutor:
         }
         if run.started_at is None:  # set by the queued → running transition
             raise RuntimeError(f"run {run.id} is running without started_at")
-        deadline = run.started_at.timestamp() + limits.timeout_s
+        # The agent's working time: waiting for a person to approve doesn't count (R1.7).
+        deadline = run.started_at.timestamp() + run.waited_s + limits.timeout_s
         if deadline - time.time() <= 0:
             return await self._fail(fence, FailureReason.TIMEOUT, outbox)
+        if spec.agent is not None:  # switched off just as this turn was sent (L6)
+            async with self._pool.connection() as conn:
+                if await KillSwitchRepository(conn).get(spec.agent.id) is not None:
+                    return await self._end(
+                        fence, RunStatus.CANCELLED, EventType.RUN_CANCELLED,
+                        FailureReason.CANCEL_REQUESTED, outbox,
+                    )  # fmt: skip
         if self._orchestrator is not None:
             # Resume every sub-agent that was mid-task when the run last stopped (a
             # crash, a release, an approval pause) from its own checkpoint (R16.3).
@@ -537,7 +551,7 @@ class RunExecutor:
         """Children + waiting_children in one fenced transaction, or a rejection the
         node sees (R14.6). Children may not outlive their parent's deadline."""
         assert run.started_at is not None
-        remaining = int(run.started_at.timestamp() + limits.timeout_s - time.time())
+        remaining = int(run.started_at.timestamp() + run.waited_s + limits.timeout_s - time.time())
         if remaining < 1:
             return {"rejected": "no time left for children before the run's timeout"}
         try:
@@ -578,7 +592,7 @@ class RunExecutor:
         fm = agent.frontmatter
         inp = AgentInput.model_validate(run.input)
         if agent.subagents:
-            started = run.started_at.timestamp() if run.started_at else time.time()
+            started = (run.started_at.timestamp() + run.waited_s) if run.started_at else time.time()
             self._orchestrator = SubagentOrchestrator(
                 pool=self._pool, fence=fence, bus=self._bus, main=agent,
                 build=lambda sub, cp: subagent_graph(
@@ -731,19 +745,39 @@ class RunExecutor:
     async def _under_lease(
         self, work: Coroutine[Any, Any, Any], fence: Fence, timeout_s: float
     ) -> Any:
-        """Await `work` while heartbeating; stop if the lease is lost or time runs out."""
+        """Await `work` while heartbeating; stop if the lease is lost, time runs out, or
+        the run is stopped. A stop (Stop, the kill switch) cuts off the step in progress,
+        a model call, a tool or a helper, within `cancel_poll_s`: the checks between
+        steps and while tokens stream would leave a long tool call or a model still
+        reading its prompt running for minutes."""
         task = asyncio.ensure_future(work)
         heartbeat = asyncio.create_task(self._heartbeat(fence))
+        stopped = asyncio.create_task(self._watch_cancel(fence.run_id))
         try:
             async with asyncio.timeout(timeout_s):
-                done, _ = await asyncio.wait({task, heartbeat}, return_when=asyncio.FIRST_COMPLETED)
+                done, _ = await asyncio.wait(
+                    {task, heartbeat, stopped}, return_when=asyncio.FIRST_COMPLETED
+                )
             if task in done:
                 return task.result()
+            if stopped in done:
+                raise CancelRequested
             raise LeaseLost(f"heartbeat could not renew the lease at epoch {fence.epoch}")
         finally:
-            for t in (task, heartbeat):
+            for t in (task, heartbeat, stopped):
                 t.cancel()
-            await asyncio.gather(task, heartbeat, return_exceptions=True)
+            await asyncio.gather(task, heartbeat, stopped, return_exceptions=True)
+
+    async def _watch_cancel(self, run_id: uuid.UUID) -> None:
+        """Returns once the run's cancel flag is set (a failed check is retried)."""
+        while True:
+            await asyncio.sleep(self._settings.cancel_poll_s)
+            try:
+                async with self._pool.connection() as conn:
+                    if await RunRepository(conn).is_cancel_requested(run_id):
+                        return
+            except Exception:
+                log.warning("run %s: cancel check failed; retrying", run_id, exc_info=True)
 
     async def _heartbeat(self, fence: Fence) -> None:
         """Returns (ending the run's execution) only when the lease is gone."""

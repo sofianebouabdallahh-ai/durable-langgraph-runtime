@@ -29,8 +29,9 @@ export async function sendMessage(
         }),
       );
     } catch (e) {
+      // A 503 from a restarting replica passes; "every agent is stopped" (the kill switch) doesn't.
       const transient =
-        (e instanceof ApiError && (TRANSIENT.has(e.status) || e.is("duplicate-send"))) || e instanceof TypeError; // TypeError: the connection dropped
+        (e instanceof ApiError && ((TRANSIENT.has(e.status) && !e.is("paused")) || e.is("duplicate-send"))) || e instanceof TypeError; // TypeError: the connection dropped
       if (!transient || attempt >= SEND_ATTEMPTS) throw e;
       await sleep(400 * 2 ** (attempt - 1));
     }

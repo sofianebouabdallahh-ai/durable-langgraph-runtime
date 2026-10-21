@@ -36,6 +36,13 @@ class Finding:
     where: str | None = None  # "SKILL.md, line 4"
 
 
+# The checks' version: bump it whenever they change, and every stored skill is checked
+# again once at the API's start (SkillService.rescan). 1: L3c; 2: handing over
+# credentials, "do not mention this", sentences that name files (L6); 3: one finding per
+# passage when several rules match the same words.
+RULES = 3
+
+
 @dataclass(frozen=True, slots=True)
 class ScanReport:
     findings: tuple[Finding, ...]
@@ -47,7 +54,11 @@ class ScanReport:
         return "review" if self.findings else "clean"
 
     def as_json(self) -> dict[str, Any]:
-        return {"status": self.status, "findings": [asdict(f) for f in self.findings]}
+        return {
+            "status": self.status,
+            "findings": [asdict(f) for f in self.findings],
+            "rules": RULES,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,9 +76,16 @@ INJECTION = [
         r"all|your|system)\b[^.\n]{0,20}\b(instructions?|rules?|prompts?|guidelines?)",
         r"\byou are now\b",
         r"\b(developer|god|jailbreak|dan) mode\b",
-        r"\bdo not (tell|inform|show) the user\b",
-        r"\b(send|post|upload|forward|email|exfiltrate)\b[^.\n]{0,40}\b(to|at)\b[^.\n]{0,20}"
+        r"\b(do not|don't|never)\s+(tell|inform|show|mention|reveal)\b[^.\n]{0,30}"
+        r"\b(the user|anyone|them)\b",
+        # Sending something out: a sentence may name files (".env") on the way.
+        r"\b(send|post|upload|forward|email|exfiltrate)\b[^\n]{0,80}?\b(to|at)\b[^\n]{0,20}"
         r"(https?://|[\w.+-]+@[\w-]+\.)",
+        # Handing over credentials, wherever to (not advice: "never share your API key").
+        r"(?<!never )(?<!not )(?<!n't )"
+        r"\b(send|share|include|collect|copy|give|leak|paste|post|upload|forward|email)\b"
+        r"[^\n]{0,60}?\b(api[ _-]?keys?|access tokens?|passwords?|credentials|private keys?|"
+        r"ssh keys?|session cookies?)\b",
         r"^\s*(system|assistant|developer)\s*:",
         r"</?(system|data|instructions?)\b[^>]*>",
         r"\b(reveal|print|show|output)\b[^.\n]{0,30}\b(system prompt|api keys?|secrets?|"
@@ -127,17 +145,26 @@ def secrets(content: SkillContent, texts: list[_Text]) -> Iterator[Finding]:
 
 def injection(content: SkillContent, texts: list[_Text]) -> Iterator[Finding]:
     for t in texts:
-        for pattern in INJECTION:
-            for m in pattern.finditer(t.text):
-                phrase = " ".join(m.group(0).split())[:80]
-                yield Finding(
-                    "injection",
-                    "review",
-                    f"Tries to steer the agent beyond its "
-                    f"task: “{phrase}”. Agents treat skill text as information, "
-                    "never as rules, but check this is meant.",
-                    f"{t.where}, line {_line(t.text, m.start())}",
-                )
+        # One finding per passage: rules that match the same words (sending keys to an
+        # address is both "sending out" and "handing over credentials") report it once.
+        matches = sorted(
+            (m for pattern in INJECTION for m in pattern.finditer(t.text)),
+            key=lambda m: (m.start(), -m.end()),
+        )
+        end = -1
+        for m in matches:
+            if m.start() < end:
+                continue  # inside a passage already reported
+            end = m.end()
+            phrase = " ".join(m.group(0).split())[:80]
+            yield Finding(
+                "injection",
+                "review",
+                f"Tries to steer the agent beyond its "
+                f"task: “{phrase}”. Agents treat skill text as information, "
+                "never as rules, but check this is meant.",
+                f"{t.where}, line {_line(t.text, m.start())}",
+            )
 
 
 def links(content: SkillContent, texts: list[_Text]) -> Iterator[Finding]:

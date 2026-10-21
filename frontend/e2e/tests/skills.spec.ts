@@ -78,10 +78,11 @@ test("AC43: describe it, give it a skill and a helper, test, publish, chat: no M
 
   await page.getByRole("button", { name: "Start a test chat" }).click();
   const chat = page.getByTestId("test-chat");
-  await chat.getByRole("textbox", { name: "Message" }).fill("What is 12 * 4?");
+  await chat.getByRole("textbox", { name: "Message" }).fill("Search for family hotels in Naxos");
   await chat.getByRole("textbox", { name: "Message" }).press("Enter");
   await expect(chat.getByTestId("tool-card").first()).toContainText("Used a skill", { timeout: 30_000 });
-  await expect(chat.getByTestId("assistant-message").last()).toContainText("48", { timeout: 30_000 });
+  await expect(chat.getByTestId("tool-card").nth(1)).toContainText("Web search", { timeout: 30_000 });
+  await expect(chat.getByTestId("assistant-message").last()).toContainText("web search", { timeout: 30_000 });
   await expect(chat.getByText("Tested", { exact: true })).toBeVisible({ timeout: 15_000 });
 
   await page.getByRole("button", { name: "Publish" }).first().click();
@@ -91,9 +92,9 @@ test("AC43: describe it, give it a skill and a helper, test, publish, chat: no M
 
   await page.getByRole("button", { name: "Chat with it" }).click();
   await expect(page).toHaveURL(/#\/s\//);
-  await page.getByRole("textbox", { name: "Message" }).fill("What is 3 * 3?");
+  await page.getByRole("textbox", { name: "Message" }).fill("Search for ferries to Naxos");
   await page.getByRole("textbox", { name: "Message" }).press("Enter");
-  await expect(page.getByTestId("assistant-message").last()).toContainText("9", { timeout: 30_000 });
+  await expect(page.getByTestId("assistant-message").last()).toContainText("web search", { timeout: 30_000 });
   const sid = decodeURIComponent(new URL(page.url()).hash.slice(4));
   await waitTurnOver(request, sid);
   await expect(page.locator("body")).not.toContainText("---");
@@ -163,7 +164,7 @@ test("a real model drafts the agent, and repairs its first attempt", async ({ pa
   await page.getByRole("dialog").getByRole("button", { name: "Draft it" }).click();
   const draft = page.getByTestId("draft-preview");
   await expect(draft).toContainText("Fake drafted assistant", { timeout: 60_000 });
-  await expect(draft).toContainText("Search"); // "teleport" was refused, then repaired
+  await expect(draft).toContainText("Search the web"); // "teleport" was refused, then repaired
   await expect(draft).toContainText("Fake scout");
 });
 

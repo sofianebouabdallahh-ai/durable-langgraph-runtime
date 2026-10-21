@@ -28,7 +28,7 @@ test("build an agent with a helper, test it, publish it, chat with it", async ({
   await page.getByLabel("Instructions", { exact: true }).fill("You plan trips. Ask your helper to find places. Today is ");
   await page.getByRole("button", { name: "Today's date" }).click();
   await page.getByRole("switch", { name: "Use Search" }).first().click();
-  await page.getByRole("switch", { name: "Use Calculator" }).first().click();
+  await page.getByRole("switch", { name: "Use Read web pages" }).first().click();
 
   await page.getByPlaceholder(/New helper's name/).fill("Place finder");
   await page.getByRole("button", { name: "Add helper" }).click();

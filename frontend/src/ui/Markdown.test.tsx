@@ -40,6 +40,14 @@ describe("Markdown", () => {
     expect(container.querySelector("td")?.textContent).toBe("c");
   });
 
+  it("keeps an answer that is only a number (\"48.\" would be an empty list item)", () => {
+    const { container } = render(<Markdown text={"48."} />);
+    expect(container.textContent).toBe("48.");
+    expect(container.querySelector("ol")).toBeNull();
+    const list = render(<Markdown text={"1. one\n2. two"} />);
+    expect(list.container.querySelectorAll("li")).toHaveLength(2); // real lists stay lists
+  });
+
   it("safeUrl", () => {
     expect(safeUrl(" https://x.y ")).toBe("https://x.y");
     expect(safeUrl("JAVASCRIPT:alert(1)")).toBeNull();

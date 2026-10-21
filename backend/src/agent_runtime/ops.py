@@ -2,8 +2,10 @@
 
 - **smoke** proves the whole system works, the way a user would use it: through the
   API, a session, one chat turn, executed by the workers, with whatever model is
-  configured. The scripted model must also call the calculator through the tool
-  pipeline; a real model must give a non-empty answer. Exit 0 or a reason.
+  configured. The scripted model must also use a tool through the tool pipeline: Run
+  Python in the sandbox when there is one (so a broken sandbox shows here), else the
+  calculator (the hidden `assistant` agent has it); a real model must give a non-empty
+  answer. Exit 0 or a reason.
 - **doctor** collects what a bug report needs (versions, service health, the
   effective configuration) with every secret redacted. Setup adds the services'
   logs and zips it; nothing is ever sent anywhere by this command.
@@ -25,10 +27,19 @@ import httpx
 from agent_runtime.config import Settings
 from agent_runtime.tools.hooks import redact
 
-SCRIPTED_TURN = [
-    {"tool_calls": [{"name": "calculator", "args": {"expression": "6*7"}}]},
-    {"content": "The answer is 42."},
-]
+# The scripted check: (agent, its turn, what the tool must return).
+SANDBOX_CHECK = (
+    "chat",
+    [{"tool_calls": [{"name": "run_python", "args": {"code": "print(6*7)"}}]},
+     {"content": "The answer is 42."}],
+    {"stdout": "42\n"},
+)  # fmt: skip
+CALCULATOR_CHECK = (
+    "assistant",  # a hidden built-in: no sandbox needed, nothing saved
+    [{"tool_calls": [{"name": "calculator", "args": {"expression": "6*7"}}]},
+     {"content": "The answer is 42."}],
+    {"value": 42.0},
+)  # fmt: skip
 REAL_PROMPT = "Reply with one short sentence confirming you are working."
 
 
@@ -66,20 +77,35 @@ async def wait_ready(
 
 
 async def smoke(
-    api: str, settings: Settings, *, timeout_s: float = 180.0, ui: str | None = None
+    api: str,
+    settings: Settings,
+    *,
+    timeout_s: float = 180.0,
+    ui: str | None = None,
+    transport: httpx.AsyncBaseTransport | None = None,  # tests
 ) -> SmokeResult:
     started = time.monotonic()
     scripted = settings.model_provider == "scripted"
+    agent, script, expected = SANDBOX_CHECK if settings.sandboxd_url else CALCULATOR_CHECK
     if ui is not None:
         await check_ui(ui)
-    async with httpx.AsyncClient(base_url=api.rstrip("/"), timeout=30) as client:
+    async with httpx.AsyncClient(
+        base_url=api.rstrip("/"), timeout=30, transport=transport
+    ) as client:
         await wait_ready(client)
-        created = await client.post("/sessions", json={"agent": "chat", "title": "smoke test"})
+        # A default model chosen in the app (Settings → Models) answers instead of setup's:
+        # then it's a real model's check, whatever setup chose.
+        chosen = await client.get("/models/default")
+        if chosen.status_code == 200 and (chosen.json() or {}).get("connection"):
+            scripted = False
+        created = await client.post(
+            "/sessions", json={"agent": agent if scripted else "chat", "title": "smoke test"}
+        )
         _require(created, 201, "create a session")
         sid = created.json()["id"]
         body: dict[str, Any] = {"content": "What is 6*7?" if scripted else REAL_PROMPT}
         if scripted:
-            body["script"] = SCRIPTED_TURN
+            body["script"] = script
         sent = await client.post(f"/sessions/{sid}/messages", json=body)
         _require(sent, 202, "send a message")
         deadline = time.monotonic() + timeout_s
@@ -105,9 +131,11 @@ async def smoke(
     if not answer.strip():
         raise SmokeFailed(f"no answer from the model (messages: {kinds})")
     if scripted:
-        results = [m["content"].get("result") for m in messages if m["type"] == "tool_result"]
-        if results != [{"value": 42.0}]:
-            raise SmokeFailed(f"the calculator didn't run through the tool pipeline: {results}")
+        results = [m["content"].get("result") or {} for m in messages
+                   if m["type"] == "tool_result"]  # fmt: skip
+        if len(results) != 1 or any(results[0].get(k) != v for k, v in expected.items()):
+            what = "Run Python (the sandbox)" if agent == "chat" else "the calculator"
+            raise SmokeFailed(f"{what} didn't run through the tool pipeline: {results}")
     return SmokeResult(sid, time.monotonic() - started, answer, kinds)
 
 

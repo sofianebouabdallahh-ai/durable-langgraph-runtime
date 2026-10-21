@@ -15,7 +15,8 @@ import { Dialog, Segmented, TextArea, TextField } from "../ui/form";
 import { ToolIcon } from "../ui/icons";
 import { Markdown } from "../ui/Markdown";
 import { Avatar, Button, Pill, Spinner } from "../ui/primitives";
-import { agentLabel, limitLines, toolLabel, toolPurpose } from "../ui/words";
+import { AgentPowerButton, OffPill } from "../safety/KillSwitch";
+import { agentLabel, limitLines, toolName, toolPurpose } from "../ui/words";
 
 type Helper = Schemas["HelperView"];
 type Agent = Schemas["AgentView"];
@@ -107,6 +108,7 @@ export function AgentsPage({ go }: { go: (route: Route) => void }) {
               {a.status === "draft" && <Pill tone="sun">Draft</Pill>}
               {a.status === "published" && <Pill tone="green">Published v{a.published?.number}</Pill>}
               {a.status === "changes" && <Pill tone="amber">v{a.published?.number} · unpublished changes</Pill>}
+              <OffPill agent={a.name} />
               <span className="ml-auto text-xs font-medium text-stone-500 group-hover:text-stone-900 dark:group-hover:text-stone-100">Edit →</span>
             </div>
           </a>
@@ -136,12 +138,13 @@ export function AgentsPage({ go }: { go: (route: Route) => void }) {
                   <Users aria-hidden className="size-3" /> {a.helpers.length} helpers
                 </Pill>
               )}
+              <AgentPowerButton agent={a.name} label={a.display_name} className="relative z-10 ml-auto" />
               <button
                 type="button"
                 onClick={() => {
                   setCreating({ copyOf: a });
                 }}
-                className="relative z-10 ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-stone-600 hover:bg-stone-100 hover:text-stone-900 dark:text-stone-300 dark:hover:bg-stone-800"
+                className="relative z-10 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-stone-600 hover:bg-stone-100 hover:text-stone-900 dark:text-stone-300 dark:hover:bg-stone-800"
               >
                 <Copy aria-hidden className="size-3.5" /> Copy
               </button>
@@ -310,7 +313,7 @@ export function DescribeIt({
           <div className="font-display text-lg font-medium">{draft.display_name}</div>
           <p className="mt-0.5 text-sm text-stone-600 dark:text-stone-400">{draft.description}</p>
           <dl className="mt-3 space-y-1.5 text-sm">
-            <Row label="Tools" value={(draft.tools ?? []).map(toolLabel).join(", ") || "none"} />
+            <Row label="Tools" value={(draft.tools ?? []).map(toolName).join(", ") || "none"} />
             <Row label="Helpers" value={(draft.helpers ?? []).map((h) => h.display_name).join(", ") || "none"} />
             <Row label="Skills" value={(draft.skills ?? []).join(", ") || "none"} />
             <Row label="Effort" value={draft.effort} />
@@ -543,7 +546,7 @@ function ToolList({ tools, compact = false }: { tools: Record<string, unknown>[]
       <div className="flex flex-wrap gap-1.5">
         {tools.map((t) => (
           <Pill key={String(t.name)}>
-            <ToolIcon tool={String(t.name)} className="size-3" /> {toolLabel(String(t.name))}
+            <ToolIcon tool={String(t.name)} className="size-3" /> {toolName(String(t.name))}
           </Pill>
         ))}
       </div>
@@ -559,7 +562,7 @@ function ToolList({ tools, compact = false }: { tools: Record<string, unknown>[]
               <ToolIcon tool={name} />
             </span>
             <span className="min-w-0 text-sm">
-              <span className="block font-medium text-stone-800 dark:text-stone-200">{toolLabel(name)}</span>
+              <span className="block font-medium text-stone-800 dark:text-stone-200">{toolName(name)}</span>
               <span className="block text-stone-500">
                 {toolPurpose(name)}
                 {typeof t.max_calls === "number" ? ` · at most ${String(t.max_calls)} per message` : ""}

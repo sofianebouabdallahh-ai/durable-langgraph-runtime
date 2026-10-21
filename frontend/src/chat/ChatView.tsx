@@ -102,7 +102,7 @@ export function ChatView({
           download
           className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-stone-600 hover:bg-stone-100 hover:text-stone-900 dark:text-stone-400 dark:hover:bg-stone-800 dark:hover:text-stone-100"
           data-testid="download-chat"
-          title="Download this chat (Markdown)"
+          title="Download this chat as Markdown: replies, reasoning, every tool call and its result"
         >
           <Download aria-hidden className="size-3.5" /> Download
         </a>
@@ -286,7 +286,7 @@ function renderItems(items: Item[], agent: string, waitingId: string | null, onD
     out.push(
       <StepList key={`steps:${group[0]?.key ?? ""}`}>
         {group.map((s) => (
-          <ToolCard key={s.key} call={s.call} result={s.result} awaitingApproval={s.awaitingApproval} />
+          <ToolCard key={s.key} call={s.call} result={s.result} awaitingApproval={s.awaitingApproval} ended={s.ended} />
         ))}
       </StepList>,
     );

@@ -36,6 +36,7 @@ jobs:
         include:
           - { image: runtime, context: backend }
           - { image: ui, context: frontend }
+          - { image: sandbox, context: sandbox } # where agents' code runs (L6b)
     env:
       IMAGE: ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/${{ matrix.image }}
     runs-on: ubuntu-latest

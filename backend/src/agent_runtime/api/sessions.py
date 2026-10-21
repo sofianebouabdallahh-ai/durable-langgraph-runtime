@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
@@ -28,6 +28,7 @@ from agent_runtime.api.schemas import (
     UpdateSessionRequest,
 )
 from agent_runtime.graphs import UnknownGraph
+from agent_runtime.runs.store import RunRepository
 from agent_runtime.sessions.export import to_markdown
 from agent_runtime.sessions.service import SessionService
 from agent_runtime.streaming.session import SessionStream
@@ -93,7 +94,7 @@ async def list_messages(
     response_class=Response,
     responses={200: {"content": {"text/markdown": {}}}},
 )
-async def export_session(session_id: uuid.UUID, service: SessionsDep) -> Response:
+async def export_session(session_id: uuid.UUID, request: Request, service: SessionsDep) -> Response:
     session = await service.get(session_id)
     messages, after = [], 0
     while page := await service.messages(session_id, after, 500):
@@ -101,9 +102,21 @@ async def export_session(session_id: uuid.UUID, service: SessionsDep) -> Respons
         after = page[-1].seq
         if len(page) < 500:
             break
+    # Each turn's events: what its helpers did (their tasks, steps and endings).
+    events: dict[str, list[dict[str, Any]]] = {}
+    async with request.app.state.pool.connection() as conn:
+        repo = RunRepository(conn)
+        for run_id in dict.fromkeys(m.run_id for m in messages if m.run_id):
+            found, seq = [], 0
+            while batch := await repo.list_events(run_id, after_seq=seq, limit=500):
+                found += [{"type": e.type, "payload": e.payload} for e in batch]
+                seq = batch[-1].seq
+                if len(batch) < 500:
+                    break
+            events[str(run_id)] = found
     name = f"nuria-chat-{session.created_at:%Y%m%d-%H%M}.md"
     return Response(
-        to_markdown(session, messages), media_type="text/markdown; charset=utf-8",
+        to_markdown(session, messages, events), media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )  # fmt: skip
 

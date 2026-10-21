@@ -4,6 +4,7 @@ import { lazy, Suspense, useState } from "react";
 import { useRoute } from "./app/route";
 import { ChatView } from "./chat/ChatView";
 import { Home } from "./chat/Home";
+import { KillSwitchBanner } from "./safety/KillSwitch";
 import { Sidebar } from "./sessions/Sidebar";
 import { Spinner } from "./ui/primitives";
 
@@ -13,6 +14,7 @@ const AgentDetail = lazy(() => import("./agents/AgentsPage").then((m) => ({ defa
 const ModelsPage = lazy(() => import("./settings/ModelsPage").then((m) => ({ default: m.ModelsPage })));
 const PrivacyPage = lazy(() => import("./settings/PrivacyPage").then((m) => ({ default: m.PrivacyPage })));
 const GetStarted = lazy(() => import("./guide/GetStarted").then((m) => ({ default: m.GetStarted })));
+const ToolsPage = lazy(() => import("./settings/ToolsPage").then((m) => ({ default: m.ToolsPage })));
 const SkillsPage = lazy(() => import("./skills/SkillsPage").then((m) => ({ default: m.SkillsPage })));
 const StudioEditor = lazy(() => import("./studio/StudioEditor").then((m) => ({ default: m.StudioEditor })));
 import { Logo } from "./ui/Logo";
@@ -58,6 +60,7 @@ export function App() {
           </button>
           <Logo />
         </div>
+        <KillSwitchBanner />
         <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
           {route.page === "chat" && <ChatView key={route.sessionId} sessionId={route.sessionId} />}
           {route.page === "home" && <Home go={go} />}
@@ -68,6 +71,7 @@ export function App() {
             {route.page === "models" && <ModelsPage />}
             {route.page === "privacy" && <PrivacyPage />}
             {route.page === "skills" && <SkillsPage />}
+            {route.page === "tools" && <ToolsPage />}
             {route.page === "start" && <GetStarted go={go} />}
           </Suspense>
         </div>

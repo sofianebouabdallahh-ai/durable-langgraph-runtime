@@ -24,7 +24,7 @@ test("agents and their helpers, then a chat with one", async ({ page }) => {
   await expect(page.getByText("Up to 40 steps per message")).toBeVisible();
   const helpers = page.getByTestId("agent-helper");
   await expect(helpers).toHaveCount(2);
-  await expect(helpers.filter({ hasText: "researcher" })).toContainText("Search");
+  await expect(helpers.filter({ hasText: "researcher" })).toContainText("Search the web"); // the Studio's names
   await helpers.filter({ hasText: "researcher" }).getByRole("button", { name: "Instructions" }).click();
   await expect(helpers.filter({ hasText: "researcher" })).toContainText("return_result");
   expect(await serious(page)).toEqual([]);
