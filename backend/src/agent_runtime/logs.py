@@ -136,6 +136,8 @@ class OtlpHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         from opentelemetry._logs import LogRecord, SeverityNumber
 
+        if record.name.startswith("opentelemetry"):
+            return  # the exporter's own complaints (collector down) would loop back here
         try:
             line = line_of(record, self._static)
             body = line.pop("msg")

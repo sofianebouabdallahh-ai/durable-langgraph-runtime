@@ -175,6 +175,10 @@ def test_lines_go_to_the_collector_as_otlp_records_with_their_trace() -> None:
                        nested={"a": 1}, level=logging.WARNING)  # fmt: skip
     finally:
         log.removeHandler(handler)
+    exporter_log = logging.getLogger("opentelemetry.exporter.otlp")
+    exporter_log.addHandler(handler)
+    exporter_log.warning("collector unreachable")  # not sent back to the collector
+    exporter_log.removeHandler(handler)
     (got,) = [d.log_record for d in exporter.get_finished_logs()]
     assert got.body == "model call with [REDACTED]"
     assert got.severity_text == "WARNING" and got.severity_number is not None

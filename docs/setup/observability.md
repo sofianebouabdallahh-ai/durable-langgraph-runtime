@@ -11,6 +11,12 @@ One command adds four more things to Nuria running on your machine:
 
 Nothing leaves your machine. Every port is bound to `127.0.0.1`.
 
+## Built in: Activity, who changed what, and ratings
+
+- **Activity** (sidebar): every chat and turn in the last 24 hours, 7 or 30 days; turns and spend per day by agent; each agent's turns, failures, median and slowest times, tokens, cost and ratings; each model and tool; what went wrong, grouped, with the latest example. A turn opens on its own page: its model calls per model and its timeline.
+- **Who changed what** (Activity, top right): every change to agents, skills, models, settings and the kill switch, and every approval, newest first, with what it was before. **Download (CSV)** saves it. Nothing in the app can edit or delete it.
+- **👍 / 👎** under each reply, with an optional reason for 👎. Click it again to take it back. Activity counts them per agent; they're kept with the agent's version, the start of evaluation sets later on.
+
 ## Turn it on
 
 ```bash

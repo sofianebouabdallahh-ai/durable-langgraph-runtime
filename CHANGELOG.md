@@ -4,6 +4,23 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### L7 — Watch it work
+#### Added
+- **Activity** (sidebar), from Nuria's own database, no extra services: right now (running, waiting for you, queued, spend today, agents switched off), totals, turns and spend per day by agent, each agent (turns, failures, median and slowest times, tokens, cost, ratings), each model and tool, what went wrong, the chats, and every turn. A turn opens on its own page with its model calls per model and its timeline. Per-model usage is saved with each step (migration 0019).
+- **Logs you can follow:** every line from the API, the workers, helpers and tools carries the ids it belongs to (request, chat, turn, agent and version, helper, tool call, trace), one line per thing that happened, never message text or tool data, every line through the secret filter. The API's own access log (route, status, time, `X-Request-ID`). Errors in the app's page are written to the API's log.
+- **With `--observability`:** traces in **Tempo** and log lines in **Loki**, linked both ways in Grafana; **Open the trace** and **Its log lines** under each reply; a **Logs** row on the dashboard. The same on Kubernetes.
+- **Who changed what:** an audit trail of changes to agents, skills, models, settings, the kill switch and approvals, written with each change, read-only in the app, downloadable as CSV (migration 0020).
+- **👍 / 👎 on replies**, with an optional reason, counted per agent in Activity.
+- GenAI attribute names on the spans (agent, conversation, model, tokens, tool).
+
+#### Changed
+- **Tempo replaces Jaeger**; traces open in Grafana (port 3001), not on port 16686.
+- Kubernetes: Tempo and Loki run as StatefulSets with volumes; `monitoring.host.jaeger` is gone.
+
+#### Fixed
+- Model calls were counted twice in the metrics when a step was re-run after a crash; an approval's policy decision was recorded twice (again on resume).
+- The kill-switch panel ignored agents switched off one by one.
+
 ### L6 — Real tools
 #### Added
 - **Search the web** (SearXNG in the stack: private, no key; or Tavily / Brave with your key, saved encrypted) and **Read web pages** (pages and PDFs as text, through the page reader, which refuses anything that isn't a public website, after every redirect). **Settings → Tools**: the provider, Save and test, the sites agents may read.
