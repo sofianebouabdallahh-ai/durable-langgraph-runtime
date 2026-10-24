@@ -63,11 +63,13 @@ def render_prompt(
     if isinstance(agent, AgentDefinition) and agent.subagents:
         prompt += helpers_section(agent)
     always, on_demand = split_skills(agent, skills)
-    if always:
-        prompt += always_section(always)
     if on_demand:
         prompt += skills_section(on_demand)
-    return prompt + "\n\n## Data\n" + RULE
+    prompt += "\n\n## Data\n" + RULE
+    # Always-used skills last: a small model follows what it read last. Replaying a real
+    # chat on qwen2.5:7b, a Budget skill was followed 1 time in 6 in the middle of the
+    # prompt, 11 in 14 at the end (still as data).
+    return prompt + always_section(always) if always else prompt
 
 
 def helpers_section(agent: AgentDefinition) -> str:

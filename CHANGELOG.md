@@ -21,8 +21,9 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 
 #### Changed
 - **Skills are followed, not only read:** a skill's text is know-how you chose, so the agent
-  follows its guidance (an "Always use" skill in every answer). It still can't change the
-  agent's task, tools, limits or approvals.
+  follows its guidance (an "Always use" skill in every answer, now placed last in the
+  instructions, where a small model follows it). It still can't change the agent's task,
+  tools, limits or approvals.
 - **Describe your agent fixes what a person would fix:** a tool that doesn't exist is left
   out, and a tool that asks you first moves from a helper to the agent itself; the draft
   lists each fix. MCP tools you switched on can be drafted.
