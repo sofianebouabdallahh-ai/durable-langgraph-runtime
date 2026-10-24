@@ -41,6 +41,12 @@ Action = Literal[
     "default_model.changed",
     "tool_settings.changed",
     "usage_sharing.changed",
+    "mcp_server.added",
+    "mcp_server.changed",
+    "mcp_server.removed",
+    "mcp_tool.enabled",
+    "mcp_tool.disabled",
+    "mcp_tool.approved_change",
 ]
 ACTOR = "local"  # one person per installation, until accounts (P7)
 

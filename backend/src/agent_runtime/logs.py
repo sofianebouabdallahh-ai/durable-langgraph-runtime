@@ -212,5 +212,10 @@ def setup(level: str, fmt: str, component: str | None = None) -> None:
     root = logging.getLogger()
     root.handlers[:] = [handler, *(h for h in root.handlers if isinstance(h, OtlpHandler))]
     root.setLevel(level)
-    for chatty in ("httpx", "httpcore"):  # a line per outgoing request: our own say more
+    for chatty in (
+        "httpx",
+        "httpcore",
+        "httpx2",
+        "mcp",
+    ):  # a line per outgoing request: our own say more
         logging.getLogger(chatty).setLevel(max(logging.WARNING, logging.getLevelName(level)))

@@ -159,6 +159,7 @@ class Settings(AgentSettings):
     model_prices: dict[str, ModelPrice] = Field(
         default_factory=lambda: {"scripted": ModelPrice(input_per_mtok=0, output_per_mtok=0)}
     )
+    mcp_timeout_s: float = Field(default=60.0, gt=0)  # one call to an MCP server (L8)
     model_retry_attempts: int = Field(default=3, ge=1, le=5)  # every attempt is charged
     model_retry_base_s: float = Field(default=1.0, gt=0)
     model_retry_cap_s: float = Field(default=20.0, gt=0)

@@ -22,6 +22,7 @@ from agent_runtime.agents.studio import PublishBlocked
 from agent_runtime.agents.studio_store import AgentNotFound, NameTaken
 from agent_runtime.graphs import UnknownGraph
 from agent_runtime.keys import MasterKeyMissing
+from agent_runtime.mcp.service import McpInvalid, McpNotFound
 from agent_runtime.models.connections import ConnectionInvalid, ConnectionNotFound, ModelUnavailable
 from agent_runtime.runs.limits import LimitAboveCeiling
 from agent_runtime.runs.service import AdmissionPaused, Overloaded
@@ -98,6 +99,15 @@ def install(app: FastAPI) -> None:
     @app.exception_handler(ConnectionInvalid)
     async def _connection_invalid(_: Request, exc: ConnectionInvalid) -> JSONResponse:
         return problem(422, "connection-invalid", "This model connection can't be saved", str(exc))
+
+    # ------------------------------------------------------------- MCP (L8)
+    @app.exception_handler(McpNotFound)
+    async def _mcp_not_found(_: Request, exc: McpNotFound) -> JSONResponse:
+        return problem(404, "mcp-not-found", "MCP server or tool not found", str(exc))
+
+    @app.exception_handler(McpInvalid)
+    async def _mcp_invalid(_: Request, exc: McpInvalid) -> JSONResponse:
+        return problem(422, "mcp-invalid", "This can't be saved", str(exc))
 
     @app.exception_handler(SkillNotFound)
     async def _skill_not_found(_: Request, exc: SkillNotFound) -> JSONResponse:

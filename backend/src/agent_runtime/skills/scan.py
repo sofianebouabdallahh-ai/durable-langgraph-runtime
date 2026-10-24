@@ -125,6 +125,15 @@ def scan(content: SkillContent) -> ScanReport:
     return ScanReport(tuple(findings))
 
 
+def scan_texts(parts: list[tuple[str, str]]) -> ScanReport:
+    """The text checks on other text an agent reads, e.g. an MCP tool's description and
+    schema (L8): (where, text) pairs. Secrets, steering, links, encoding, invisible
+    characters; not the checks about a skill's files and size."""
+    texts = [_Text(where, text) for where, text in parts]
+    checks = (secrets, injection, links, encoded, invisible)
+    return ScanReport(tuple(f for check in checks for f in check(None, texts)))  # type: ignore[arg-type]
+
+
 def _line(text: str, index: int) -> int:
     return text.count("\n", 0, index) + 1
 

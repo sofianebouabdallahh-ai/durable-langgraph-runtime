@@ -14,6 +14,7 @@ dependencies = [
     "langchain-openai>=1.0",
     "langgraph>=1.2.12",
     "langgraph-checkpoint-postgres>=3.1.2",
+    "mcp>=2.3.0,<3",
     "opentelemetry-api>=1.45.0",
     "opentelemetry-exporter-otlp-proto-http>=1.45.0",
     "opentelemetry-instrumentation-fastapi>=0.66b0",
@@ -51,8 +52,9 @@ packages = ["src/agent_runtime"]
 exclude-newer = "2026-09-27T00:00:00Z"
 # Exceptions, one package each, for a security fix newer than the cooldown:
 # certifi 2026.10.19 removes emSign roots with compromised intermediate keys
-# (GHSA-6q48-6c7w-9gw2, critical). Drop an exception once the cooldown passes it.
-exclude-newer-package = { certifi = "2026-10-21T00:00:00Z" }
+# (GHSA-6q48-6c7w-9gw2, critical). mcp 2.3.0 (2026-10-02, the MCP client of L8; its
+# types package ships with it). Drop an exception once the cooldown passes it.
+exclude-newer-package = { certifi = "2026-10-21T00:00:00Z", mcp = "2026-10-03T00:00:00Z", mcp-types = "2026-10-03T00:00:00Z" }
 
 [dependency-groups]
 dev = [
