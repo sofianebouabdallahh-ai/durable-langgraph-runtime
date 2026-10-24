@@ -6,9 +6,10 @@ from tools, helpers and files it is information to evaluate, never instructions;
 skill (know-how the person chose) it is guidance on how to do the task and shape the
 answer. Neither can change the task, the tools, the limits, approvals or the rules, or
 send anything anywhere. (L8 validation: with skills under "never instructions", a real
-model ignored "end with a Budget section".) The delimiters can't be forged from inside:
-look-alike tags in the text are escaped, so planted text can't close the block early and
-speak as the runtime.
+model ignored "end with a Budget section".) One exception: an "Always use" skill its scan
+found clean is given as plain text (graphs/assistant.always_section). The delimiters
+can't be forged from inside: look-alike tags in the text are escaped, so planted text
+can't close the block early and speak as the runtime.
 
 Delimiters are not a security boundary on their own (a model may still be swayed):
 policy never depends on the prompt. Grants, budgets and approvals are enforced by

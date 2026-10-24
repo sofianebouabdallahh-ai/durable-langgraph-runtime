@@ -46,7 +46,8 @@ excepted, as above).
 
 - **Tools that touch the outside world need you.** Anything that sends something somewhere (like *notify*) waits for your **Approve**.
 - **Budgets.** Every reply has a limit on steps, tool calls, tokens and cost, and stops at it.
-- **Other content is treated as data.** Text that comes back from tools, web pages and skills (including skills set to **Always use**) is marked as data, never instructions. A planted "ignore your instructions" in a page or a skill can't grant a tool or skip an approval.
+- **Other content is treated as data.** Text that comes back from tools, web pages and MCP servers, and skills the agent loads when it needs them, is marked as data, never instructions. A planted "ignore your instructions" in a page or a skill can't grant a tool or skip an approval.
+- **A skill set to Always use is your own instruction** when its check (below) found nothing: the agent gets it as plain guidance, because small local models skip guidance marked as data (in our tests, 1 time in 10 followed). A skill the check flagged stays data. Either way it can't grant a tool, change a limit or skip an approval: those are enforced by the app, not by the model.
 - **Pages only from public websites.** The page reader refuses this computer, your network, Nuria's own services and cloud metadata addresses, after every redirect, and connects only to the address it checked. **Sites agents may read** narrows it to a list.
 - **MCP tools follow the same rules** ([guide](setup/tools.md#mcp-servers-tools-from-other-services)):
   - Every call asks first unless you chose "runs without asking" for a read-only tool.
