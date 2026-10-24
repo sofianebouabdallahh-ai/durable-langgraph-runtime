@@ -108,3 +108,25 @@ async def test_removing_a_server_switches_its_tools_off(
     assert all(s.id != added.id for s, _ in await service.servers())
     _, tools = await service.server(added.id)
     assert tools == []  # an archived server's tools aren't listed
+
+
+async def test_changing_a_server_needs_a_new_test_and_never_logs_the_token(
+    service: McpService, served_mcp: ServedMcp, pool: Pool
+) -> None:
+    added = await service.add(display_name="To change", url=served_mcp.url, token="old-token-1")
+    server, _ = await service.test(added.id)
+    assert server.status == "failed"  # the wrong token
+    changed = await service.change(added.id, token=MCP_TOKEN, display_name="Changed")
+    assert changed.status == "untested" and changed.display_name == "Changed"
+    assert changed.key_fingerprint != added.key_fingerprint
+    server, tools = await service.test(added.id)
+    assert server.status == "ready" and tools
+    unchanged = await service.change(added.id)  # nothing given: nothing changes
+    assert unchanged.key_fingerprint == changed.key_fingerprint
+    with pytest.raises(McpInvalid):
+        await service.change(added.id, url="file:///etc/passwd")
+    async with pool.connection() as conn:
+        trail = await AuditLog(conn).list(action="mcp_server.changed", target_id=added.name)
+    (entry,) = trail
+    assert entry.before["key"] == "set" and entry.before["key_fingerprint"] == added.key_fingerprint  # type: ignore[index]
+    assert "old-token-1" not in str(entry.before) and MCP_TOKEN not in str(entry.after)
