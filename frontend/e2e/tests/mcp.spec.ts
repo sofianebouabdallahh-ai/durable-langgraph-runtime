@@ -38,14 +38,22 @@ async function fakeModel(request: APIRequestContext) {
   await request.put("/api/models/default", { data: { connection_id: connection.id, model: "fake-a" } });
 }
 
-async function addServer(page: Page, name: string): Promise<void> {
+/** The add form: open already when there's no server yet, else behind "Add a server". */
+async function addForm(page: Page) {
   await page.goto("/#/settings/tools");
   const section = page.getByTestId("mcp-servers");
   const form = section.getByTestId("mcp-add");
-  if (!(await form.isVisible())) await section.getByTestId("mcp-add-open").click();
+  const open = section.getByTestId("mcp-add-open");
+  await expect(form.or(open)).toBeVisible();
+  if (await open.isVisible()) await open.click();
+  return form;
+}
+
+async function addServer(page: Page, name: string, token = TOKEN): Promise<void> {
+  const form = await addForm(page);
   await form.getByLabel("Name").fill(name);
   await form.getByLabel("Address").fill(`${FAKE}/mcp/`);
-  await form.getByLabel("Token (optional)").fill(TOKEN);
+  await form.getByLabel("Token (optional)").fill(token);
   await form.getByRole("button", { name: "Add and test" }).click();
 }
 
@@ -70,10 +78,12 @@ test("SC1: add a server, switch a tool on, and an agent uses it", async ({ page,
   );
   expect(serious).toEqual([]);
 
-  // The Studio offers it, under its server; a test chat uses it.
+  // The Studio offers it, under its server; a test chat uses it. (Names are never reused,
+  // even after a server is removed: read this one's.)
+  const name = await server.getAttribute("data-name");
   await newBlankAgent(page, `Ferry planner ${Date.now().toString(36)}`);
   await page.getByLabel("What is it for?").fill("Plans ferry trips with up-to-date facts.");
-  const option = page.locator('[data-testid^="tool-option-mcp__travel__lookup"]');
+  const option = page.getByTestId(`tool-option-mcp__${name ?? ""}__lookup`);
   await expect(option).toContainText("Travel · MCP");
   await option.getByRole("switch").click();
   await expect(page.getByTestId("save-state")).toHaveText(/Saved/, { timeout: 15_000 });
@@ -81,13 +91,13 @@ test("SC1: add a server, switch a tool on, and an agent uses it", async ({ page,
   const chat = page.getByTestId("test-chat");
   await chat.getByRole("textbox", { name: "Message" }).fill("ferries to naxos");
   await chat.getByRole("textbox", { name: "Message" }).press("Enter");
-  await expect(chat.getByTestId("tool-card").first()).toContainText("Lookup (travel)", { timeout: 30_000 });
+  await expect(chat.getByTestId("tool-card").first()).toContainText("Lookup (travel", { timeout: 30_000 });
   await expect(chat.getByTestId("assistant-message").last()).toContainText(FACT, { timeout: 30_000 });
 
   // Who changed what: the server and the tool.
   await page.goto("/#/activity/audit");
   await expect(page.getByTestId("audit-row").filter({ hasText: "Added an MCP server" }).first()).toBeVisible();
-  await expect(page.getByTestId("audit-row").filter({ hasText: "Switched on an MCP tool" }).first()).toContainText("mcp__travel__lookup");
+  await expect(page.getByTestId("audit-row").filter({ hasText: "Switched on an MCP tool" }).first()).toContainText(`mcp__${name ?? ""}__lookup`);
 });
 
 test("SC3: the server changes a tool; it waits for you to look", async ({ page, request }) => {
@@ -105,8 +115,9 @@ test("SC3: the server changes a tool; it waits for you to look", async ({ page, 
   await expect(notice).toContainText("Was: Looks up a travel fact about a topic.");
   await expect(lookup.getByTestId("mcp-findings")).toContainText("steer"); // the new description hides an instruction
 
+  const name = await server.getAttribute("data-name");
   const catalog = (await (await request.get("/api/studio/catalog")).json()) as { tools: { name: string }[] };
-  expect(catalog.tools.map((t) => t.name)).not.toContain("mcp__travel__lookup"); // not offered meanwhile
+  expect(catalog.tools.map((t) => t.name)).not.toContain(`mcp__${name ?? ""}__lookup`); // not offered meanwhile
 
   await notice.getByRole("button", { name: "It's fine: use the new version" }).click();
   await expect(lookup.getByTestId("mcp-changed")).toHaveCount(0);
@@ -114,14 +125,7 @@ test("SC3: the server changes a tool; it waits for you to look", async ({ page, 
 });
 
 test("a wrong token is said plainly", async ({ page }) => {
-  await page.goto("/#/settings/tools");
-  const section = page.getByTestId("mcp-servers");
-  const form = section.getByTestId("mcp-add");
-  if (!(await form.isVisible())) await section.getByTestId("mcp-add-open").click();
-  await form.getByLabel("Name").fill("Locked");
-  await form.getByLabel("Address").fill(`${FAKE}/mcp/`);
-  await form.getByLabel("Token (optional)").fill("not-the-token");
-  await form.getByRole("button", { name: "Add and test" }).click();
+  await addServer(page, "Locked", "not-the-token");
   const server = page.getByTestId("mcp-server").filter({ hasText: "Locked" });
   await expect(server).toContainText("Not working");
   await expect(server.getByTestId("mcp-status")).toContainText("refused the token");

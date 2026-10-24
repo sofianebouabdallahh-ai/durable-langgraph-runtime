@@ -48,6 +48,14 @@ excepted, as above).
 - **Budgets.** Every reply has a limit on steps, tool calls, tokens and cost, and stops at it.
 - **Other content is treated as data.** Text that comes back from tools, web pages and skills (including skills set to **Always use**) is marked as data, never instructions. A planted "ignore your instructions" in a page or a skill can't grant a tool or skip an approval.
 - **Pages only from public websites.** The page reader refuses this computer, your network, Nuria's own services and cloud metadata addresses, after every redirect, and connects only to the address it checked. **Sites agents may read** narrows it to a list.
+- **MCP tools follow the same rules** ([guide](setup/tools.md#mcp-servers-tools-from-other-services)):
+  - Every call asks first unless you chose "runs without asking" for a read-only tool.
+  - Results are treated as data, and descriptions are checked when the server is tested.
+  - A tool a server changed is blocked until you look; published agents keep the version
+    they were published with.
+  - Server tokens are stored encrypted, like model keys, and never shown, logged or put in
+    the audit trail (a fingerprint only).
+  - Nuria refuses its own services and cloud metadata addresses as MCP servers.
 - **Code runs in a sandbox**, never in Nuria's own containers: no network, no keys, no files of yours, limits on CPU, memory, processes and time, a fresh one per turn.
 - **Skills are checked when saved, and again when the checks improve.** A skill that hands over keys or tries to steer the agent is flagged, and attaching it asks you first. Skills with scripts are kept, but their scripts never run.
 - **You can stop them.** **Stop** ends a reply at once (the tool or code it's running too); **Turn off** stops one agent everywhere, and **Stop all agents** every agent, until you turn them back on.

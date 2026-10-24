@@ -4,6 +4,21 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### L8 — Tools from anywhere (MCP)
+#### Added
+- **MCP servers** (Settings → Tools):
+  - add a remote server by its address, with a token if it needs one (encrypted);
+  - Nuria tests it, lists and checks its tools, and you switch on the ones agents may use;
+  - a tool asks you first unless you choose "runs without asking" for a read-only one.
+- **MCP tools in the Studio,** under their server's name.
+  - Published agents lock each tool's definition (migration 0021).
+  - A tool its server changed is blocked until you approve the change.
+  - A tool switched off stops at once.
+- **Every MCP call goes through the tool pipeline:** approvals, budgets, results as data,
+  audit and traces. A tool that asks first isn't re-sent after a crash.
+- **Audit:** adding, changing and removing servers, and switching tools on, off or
+  approving a change.
+
 ### L7 — Watch it work
 #### Added
 - **Activity** (sidebar), from Nuria's own database, no extra services: right now (running, waiting for you, queued, spend today, agents switched off), totals, turns and spend per day by agent, each agent (turns, failures, median and slowest times, tokens, cost, ratings), each model and tool, what went wrong, the chats, and every turn. A turn opens on its own page with its model calls per model and its timeline. Per-model usage is saved with each step (migration 0019).

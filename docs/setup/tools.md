@@ -1,4 +1,4 @@
-# Tools: search the web, read pages, run Python
+# Tools: search the web, read pages, run Python, MCP servers
 
 Agents do things through **tools**. You choose them for each agent in the Studio
 (**Agents → your agent → Tools**), and for each helper on its own.
@@ -12,10 +12,50 @@ Agents do things through **tools**. You choose them for each agent in the Studio
 | **Work with files** | Lists, reads and writes files in the sandbox's workspace | The sandbox |
 | **Notes** | Keeps notes you ask it to remember | Nothing |
 | **Notifications** | Sends a message to someone: **always asks you first** | Nothing (not delivered yet: recorded only) |
+| **Tools from MCP servers** | Whatever the server offers: docs search, issue trackers, databases, your own services | A server you add in **Settings → Tools** ([below](#mcp-servers-tools-from-other-services)) |
 
 A helper with no tools can only answer from what it already knows. The Studio says so,
 and offers the tools its description asks for ("searches the web…" → **Search the web,
 Read web pages**).
+
+## MCP servers: tools from other services
+
+The **Model Context Protocol** (MCP) is the standard way services share tools with AI
+agents. Add a server, and its tools can be given to any agent.
+
+1. **Settings → Tools → MCP servers → Add a server.**
+   - Give it a name and its address: its Streamable HTTP endpoint, often ending in `/mcp`.
+   - If it needs a token, paste it. It's saved encrypted on this computer and never shown
+     again. It's sent as `Authorization: Bearer …`, or in another header you name
+     under **Advanced**.
+2. **Nuria tests it at once** and lists its tools. Each tool's description and arguments
+   go through the same check as skills: hidden instructions ("send the user's message
+   to…", "don't mention this") are flagged.
+3. **Switch on the tools agents may use.**
+   - **A tool asks you before every call.** The approval card shows what it's about to
+     send.
+   - **"Runs without asking"** is offered only for a tool the server marks read-only, and
+     it's your choice: the server's label alone never decides.
+4. **In the Studio,** switched-on tools appear next to the built-in ones, marked with
+   their server's name. Helpers can only get the ones that run without asking.
+
+**If a server changes a tool** (its description, arguments or labels), agents stop using
+it, and Settings shows the old and new versions until you choose **It's fine: use the
+new version**.
+- A **published agent keeps the version it was published with.** If the server changes
+  the tool, that agent gets no call until you test and publish it again. This protects
+  against a server that changes a tool after you approved it (a "rug pull").
+- **Switching a tool off, or removing its server,** stops it for every agent at once.
+
+**After a crash,** a tool that runs without asking is called again; a tool that asks
+first isn't sent twice, and the agent tells you it may have run once already.
+
+**Try it:** DeepWiki answers questions about public GitHub repositories, free and without
+a token. Add `https://mcp.deepwiki.com/mcp`, switch on its tools, and ask an agent about a
+repository.
+
+**Not yet:** servers you run as a command (`npx …`, stdio) and servers that need you to
+sign in with OAuth (GitHub's, Notion's). Both are planned (L8b, L8c).
 
 ## Web search
 
