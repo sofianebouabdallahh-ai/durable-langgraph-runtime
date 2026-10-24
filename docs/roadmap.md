@@ -2,7 +2,7 @@
 
 The delivery plan for **Durable, Distributed Runtime for LangGraph Agents**: what we build, in what order, and how we know each part is done.
 
-**Where we are (2026-10-18):** the runtime core is done (phases 0–6). In the local release, L1 (one-command setup) and **L2 (the chat UI, now called _Nuria_)** are merged: milestone **M1** is reached. L3a (agents and helpers), L3b (your own model) and **L3c (skills and "describe your agent") are merged**. **M2** is declared once 2–3 non-technical testers pass the [tester script](setup/tester-script.md). L4 is in two slices ([plan](plans/phase-L4.md)): **L4a (observability) and L4b (local Kubernetes) are done** ([L4a](progress/phase-L4a.md), [L4b](progress/phase-L4b.md)). **L5 is merged** ([summary](progress/phase-L5.md)): **v0.1.0** is ready to tag. **Next: L3d, a guided "Get started"** ([plan](plans/phase-L3d.md)), shipped as v0.1.1. **M3** is declared once 5–10 external testers have installed it and their feedback is collected.
+**Where we are (2026-10-24):** the runtime core (phases 0–6) and the local release through **L8 are done**: one-command setup, the Nuria chat, the Agent Studio (agents, helpers, your own model, skills, a guided first agent), dashboards and local Kubernetes, real tools in a sandbox, Activity and logs, and tools from MCP servers. **v0.2.0 is the first public release** ([changelog](../CHANGELOG.md)). Milestones **M2** and **M3** are declared once testers have installed it and their feedback is collected ([tester script](setup/tester-script.md)). **Next:** L8b (OAuth sign-in for MCP servers) and L8c (local MCP servers in the sandbox).
 
 **Sources of truth for scope**
 - Base spec: [`Project_4_Detailed_Requirements_K8s.pdf`](requirements/Project_4_Detailed_Requirements_K8s.pdf). Requirements are `R<section>.<n>`; acceptance criteria are `AC<n>`.
@@ -58,7 +58,7 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 | **L3d** | **Getting started: a guided first agent** (v0.1.1) | ✅ Done ([plan](plans/phase-L3d.md), [summary](progress/phase-L3d.md)) | ~8–11 h |
 | **L6** | **Real tools**: web search, page reading, Run Python and a terminal in a sandbox, on Compose and Kubernetes; the kill switch | ✅ Done ([plan](plans/phase-L6.md), [summary](progress/phase-L6.md)) | ~19–24 h |
 | **L7** | **Watch it work**: the Activity page, logs across the API and the agent (one id finds every line), Tempo and Loki linked in Grafana, who changed what, 👍 / 👎 on replies | ✅ Done ([plan](plans/phase-L7.md), [summary](progress/phase-L7.md)) | ~35–40 h |
-| **L8** | **Tools from anywhere (MCP)**: add remote MCP servers (token or header), choose their tools, give them to agents through the same approvals, budgets and pinning as built-in tools. L8b: OAuth sign-in; L8c: local servers in the sandbox | 🚧 Built, in review ([plan](plans/phase-L8.md), [summary](progress/phase-L8.md)) | ~25–28 h |
+| **L8** | **Tools from anywhere (MCP)**: add remote MCP servers (token or header), choose their tools, give them to agents through the same approvals, budgets and pinning as built-in tools. L8b: OAuth sign-in; L8c: local servers in the sandbox | ✅ Done ([plan](plans/phase-L8.md), [summary](progress/phase-L8.md)) | ~25–28 h |
 | P7–P12 | Hosted beta → M4 | After the feedback | ~160–200 h |
 | P13–P16 | Sandboxes, research agent, evals, AKS | After the beta opens | ~65–90 h |
 

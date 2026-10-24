@@ -4,6 +4,10 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-24
+
+The first public release: tools from MCP servers, real tools (web search, reading pages, Python in a sandbox), Activity and logs, a guided first agent, and what a real local model taught us.
+
 ### L8 — Tools from anywhere (MCP)
 #### Added
 - **MCP servers** (Settings → Tools):

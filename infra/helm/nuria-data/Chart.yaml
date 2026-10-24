@@ -2,5 +2,5 @@ apiVersion: v2
 name: nuria-data
 description: Postgres and Redis for Nuria on a local cluster (kind). In the cloud these are managed services and this chart is not installed.
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.2.0
+appVersion: "0.2.0"
