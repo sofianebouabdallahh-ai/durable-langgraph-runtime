@@ -57,7 +57,7 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 | **L5** | **Release v0.1 & feedback loop → M3** | ✅ Done ([plan](plans/phase-L5.md), [summary](progress/phase-L5.md)); M3 after the testers | ~10–14 h |
 | **L3d** | **Getting started: a guided first agent** (v0.1.1) | ✅ Done ([plan](plans/phase-L3d.md), [summary](progress/phase-L3d.md)) | ~8–11 h |
 | **L6** | **Real tools**: web search, page reading, Run Python and a terminal in a sandbox, on Compose and Kubernetes; the kill switch | ✅ Done ([plan](plans/phase-L6.md), [summary](progress/phase-L6.md)) | ~19–24 h |
-| **L7** | **Watch it work**: the Activity page, logs across the API and the agent (one id finds every line), Tempo and Loki linked in Grafana, who changed what, 👍 / 👎 on replies | ✅ Built ([plan](plans/phase-L7.md), [summary](progress/phase-L7.md)); merge pending | ~35–40 h |
+| **L7** | **Watch it work**: the Activity page, logs across the API and the agent (one id finds every line), Tempo and Loki linked in Grafana, who changed what, 👍 / 👎 on replies | ✅ Done ([plan](plans/phase-L7.md), [summary](progress/phase-L7.md)) | ~35–40 h |
 | P7–P12 | Hosted beta → M4 | After the feedback | ~160–200 h |
 | P13–P16 | Sandboxes, research agent, evals, AKS | After the beta opens | ~65–90 h |
 
