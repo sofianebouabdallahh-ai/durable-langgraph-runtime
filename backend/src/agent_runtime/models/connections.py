@@ -47,16 +47,16 @@ from agent_runtime.keys import (
 from agent_runtime.models.provider import (
     ModelProvider,
     OpenAICompatibleProvider,
+    call_timeout_s,
     configured_provider,
+    is_local,
 )
 from agent_runtime.redaction import redact
 
 Kind = Literal["ollama", "openai", "azure_foundry", "compatible"]
 Status = Literal["untested", "ready", "failed"]
 WORKSPACE = "local"
-TEST_TIMEOUT_S = 30.0
-LOCAL_TEST_TIMEOUT_S = 120.0
-RUN_TIMEOUT_S = 60.0  # a model call in a run (R14.5)
+TEST_TIMEOUT_S = 30.0  # a cloud model's test; a local one's gets the local call limit
 OLLAMA_PROBES = (
     "http://host.docker.internal:11434",  # the app on the host (macOS, Windows)
     "http://ollama:11434",  # the Compose `llm` profile
@@ -416,8 +416,9 @@ class ConnectionService:
         tool calling at once (agents need tools). The outcome is saved."""
         connection = await self.get(cid)
         started = time.monotonic()
-        # A local model's first call loads it into memory: on a CPU that takes a while.
-        timeout = LOCAL_TEST_TIMEOUT_S if connection.kind == "ollama" else TEST_TIMEOUT_S
+        # A local model's first call loads it into memory: on a busy laptop, minutes.
+        local = connection.kind == "ollama" or is_local(connection.base_url)
+        timeout = self._settings.local_model_timeout_s if local else TEST_TIMEOUT_S
         try:
             provider = self.provider(connection, model, timeout_s=timeout)
             result = await asyncio.wait_for(_ping(provider), timeout)
@@ -615,8 +616,10 @@ class ModelRouter:
             cache_key = (str(connection.id), connection.updated_at.isoformat(), binding["model"])
             if cache_key not in self._providers:
                 self._providers[cache_key] = self._service.provider(
-                    connection, binding["model"], timeout_s=RUN_TIMEOUT_S
-                )
+                    connection, binding["model"],
+                    timeout_s=call_timeout_s(connection.kind, connection.base_url,
+                                             self._settings),
+                )  # fmt: skip
             out[model] = self._providers[cache_key]
         return out
 

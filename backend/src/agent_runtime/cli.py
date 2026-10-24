@@ -305,7 +305,10 @@ def _smoke(args: argparse.Namespace) -> int:
 
     settings = get_settings()
     try:
-        result = asyncio.run(smoke(args.api, settings, timeout_s=args.timeout, ui=args.ui))
+        result = asyncio.run(smoke(
+            args.api, settings, timeout_s=args.timeout, ui=args.ui,
+            progress=lambda note: print(note, file=sys.stderr, flush=True),
+        ))  # fmt: skip
     except SmokeFailed as exc:
         print(f"smoke test FAILED: {exc}", file=sys.stderr)
         return 1

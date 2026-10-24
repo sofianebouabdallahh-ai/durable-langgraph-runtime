@@ -152,3 +152,29 @@ async def test_a_default_model_chosen_in_the_app_gets_the_real_models_check() ->
     done = await smoke("http://api", settings, transport=httpx.MockTransport(handle))
     assert done.answer == "I'm working."
     assert sent[0]["agent"] == "chat" and sent[1] == {"content": REAL_PROMPT}
+
+
+async def test_a_slow_first_answer_says_so_instead_of_looking_stuck() -> None:
+    """A local model's first answer loads it into memory: the check notes it's waiting."""
+    from agent_runtime.config import Settings
+    from agent_runtime.ops import smoke
+
+    polls = iter([{"active_run_id": "r1"}] * 3 + [{"active_run_id": None}])
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == "POST":
+            return httpx.Response(201 if path == "/sessions" else 202, json={"id": "s1"})
+        if path == "/sessions/s1" and request.method == "GET":
+            return httpx.Response(200, json={"active_run_status": "running", **next(polls)})
+        if path.endswith("/messages"):
+            return httpx.Response(200, json={"messages": [
+                {"type": "assistant", "content": {"text": "Ready."}}]})  # fmt: skip
+        return httpx.Response(200, json={})
+
+    notes: list[str] = []
+    settings = Settings(postgres_password="pw", model_provider="ollama")  # type: ignore[arg-type]
+    done = await smoke("http://api", settings, transport=httpx.MockTransport(handle),
+                       progress=notes.append, progress_every_s=0.4)  # fmt: skip
+    assert done.answer == "Ready."
+    assert notes and all("still waiting for the model's first answer" in n for n in notes)

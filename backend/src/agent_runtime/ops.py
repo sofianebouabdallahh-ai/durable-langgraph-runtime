@@ -18,6 +18,7 @@ import json
 import platform
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from importlib import metadata
 from typing import Any
@@ -83,6 +84,8 @@ async def smoke(
     timeout_s: float = 180.0,
     ui: str | None = None,
     transport: httpx.AsyncBaseTransport | None = None,  # tests
+    progress: Callable[[str], None] | None = None,
+    progress_every_s: float = 30.0,
 ) -> SmokeResult:
     started = time.monotonic()
     scripted = settings.model_provider == "scripted"
@@ -108,7 +111,8 @@ async def smoke(
             body["script"] = script
         sent = await client.post(f"/sessions/{sid}/messages", json=body)
         _require(sent, 202, "send a message")
-        deadline = time.monotonic() + timeout_s
+        sent_at = time.monotonic()
+        deadline, next_note = sent_at + timeout_s, sent_at + progress_every_s
         while True:  # the turn is done once the session has no active run
             session = (await client.get(f"/sessions/{sid}")).json()
             if session["active_run_id"] is None:
@@ -118,6 +122,12 @@ async def smoke(
                     f"the turn didn't finish within {timeout_s:.0f}s (status "
                     f"{session['active_run_status']}): are the workers running?"
                 )
+            if progress is not None and time.monotonic() >= next_note:
+                # A local model's first answer loads it into memory: minutes, not a hang.
+                progress(f"  … still waiting for the model's first answer "
+                         f"({time.monotonic() - sent_at:.0f}s; a local model loads into "
+                         "memory first)")  # fmt: skip
+                next_note += progress_every_s
             await asyncio.sleep(0.5)
         messages = (await client.get(f"/sessions/{sid}/messages")).json()["messages"]
         # Setup's check isn't a conversation of the user's: keep it out of the chat list.
