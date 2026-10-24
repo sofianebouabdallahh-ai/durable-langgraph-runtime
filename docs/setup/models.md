@@ -28,7 +28,7 @@ Setup still asks for one model to start with (see [Without the app](#without-the
 
 **A local model's first answer is slow.** Ollama loads the model into memory on its first request, and unloads it after 5 idle minutes. So the first answer after a break can take a minute or more on a busy laptop; the next ones are quick. Nuria gives a local model (Ollama, or any model on this machine or your network) 5 minutes per call (`LOCAL_MODEL_TIMEOUT_S`), against 1 minute for a cloud one (`MODEL_TIMEOUT_S`). To keep a model loaded longer, set `OLLAMA_KEEP_ALIVE` (e.g. `1h`) where Ollama runs.
 
-**Make a local model fast enough to use.** Measured on a MacBook (Apple silicon, 16 GB) with `qwen3:8b`:
+**Make a local model fast enough to use.** Measured on a MacBook (Apple silicon, 16 GB) with `qwen2.5:7b`:
 
 | Where Ollama runs | Speed | A chat turn with tools |
 |---|---|---|
