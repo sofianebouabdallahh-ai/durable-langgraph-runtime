@@ -294,7 +294,7 @@ function Start-Stack {
 }
 function Test-Smoke {
   Say "Checking a real chat turn end to end..."
-  try { Invoke-Compose run --rm --no-deps -T api smoke --api http://ui:8080/api --ui http://ui:8080 --timeout 300 } catch { Die "the smoke test failed (above)." @("Diagnostics: .\setup.ps1 -Doctor") }
+  try { Invoke-Compose run --rm --no-deps -T api smoke --api http://ui:8080/api --ui http://ui:8080 --timeout 600 } catch { Die "the smoke test failed (above)." @("Diagnostics: .\setup.ps1 -Doctor") }
 }
 
 # ------------------------------------------------------------------ actions

@@ -24,7 +24,9 @@ Setup still asks for one model to start with (see [Without the app](#without-the
 | This model isn't available there | A typo in the model name, or (Foundry) a deployment name that doesn't exist |
 | This model doesn't use tools | It chats, but agents can't work with it: pick a bigger model |
 | Couldn't reach … | Wrong address, or the service isn't running |
-| Didn't answer in time | Too slow (30 s; 120 s for Ollama, whose first call loads the model) |
+| Didn't answer in time | Too slow (30 s for a cloud model; 5 minutes for a local one, whose first call loads it into memory) |
+
+**A local model's first answer is slow.** Ollama loads the model into memory on its first request, and unloads it after 5 idle minutes. So the first answer after a break can take a minute or more on a busy laptop; the next ones are quick. Nuria gives a local model (Ollama, or any model on this machine or your network) 5 minutes per call (`LOCAL_MODEL_TIMEOUT_S`), against 1 minute for a cloud one (`MODEL_TIMEOUT_S`). To keep a model loaded longer, set `OLLAMA_KEEP_ALIVE` (e.g. `1h`) where Ollama runs.
 
 A card per connection then shows its status, its models, and **Test** (try another model), **Edit** and **Remove**.
 

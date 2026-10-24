@@ -18,11 +18,13 @@ call: R14.5 (4 096).
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import cache
 from typing import TYPE_CHECKING, Any, Literal, Protocol
+from urllib.parse import urlparse
 
 from langchain_core.language_models import BaseChatModel
 from pydantic import SecretStr
@@ -169,6 +171,29 @@ def _hashed(text: str, dim: int = EMBED_DIM) -> list[float]:
 
 ProviderFactory = Callable[[], ModelProvider]
 
+# Where a model runs on this machine (or the stack's own Ollama), as the containers see it.
+LOCAL_HOSTS = frozenset({"localhost", "host.docker.internal", "ollama"})
+
+
+def is_local(base_url: str) -> bool:
+    """A model on this machine or this network (Ollama, LM Studio, vLLM at home), rather
+    than a cloud service: by the address it's reached at."""
+    url = urlparse(base_url)
+    host = (url.hostname or "").lower()
+    if host in LOCAL_HOSTS or host.endswith(".local") or url.port == 11434:
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private or ip.is_link_local
+
+
+def call_timeout_s(kind: str, base_url: str, settings: Settings) -> float:
+    """One model call's time limit: longer for a local model (see Settings)."""
+    local = kind == "ollama" or is_local(base_url)
+    return settings.local_model_timeout_s if local else settings.model_timeout_s
+
 
 def provider_from(
     name: ProviderName,
@@ -179,6 +204,7 @@ def provider_from(
     role_models: dict[str, str],
     scripted_streaming: bool = False,
     stream_delay_s: float = 0.0,
+    timeout_s: float = 60.0,
 ) -> ModelProvider:
     """Build the configured provider. Role models override the provider's defaults."""
     if name == "scripted":
@@ -187,8 +213,10 @@ def provider_from(
     if name == "openai":
         if not openai_api_key:
             raise ValueError("MODEL_PROVIDER=openai needs OPENAI_API_KEY")
-        return OpenAICompatibleProvider("openai", openai_base_url, openai_api_key, models)
-    return OpenAICompatibleProvider("ollama", ollama_base_url, SecretStr("ollama"), models)
+        return OpenAICompatibleProvider("openai", openai_base_url, openai_api_key, models,
+                                        timeout_s=timeout_s)  # fmt: skip
+    return OpenAICompatibleProvider("ollama", ollama_base_url, SecretStr("ollama"), models,
+                                    timeout_s=timeout_s)  # fmt: skip
 
 
 _PROVIDERS: dict[tuple[object, ...], ModelProvider] = {}
@@ -203,10 +231,13 @@ def configured_provider(settings: Settings) -> ModelProvider:
            tuple(sorted(roles.items())), settings.scripted_streaming,
            settings.scripted_stream_delay_s)  # fmt: skip
     if key not in _PROVIDERS:
+        base_url = (settings.ollama_base_url if settings.model_provider == "ollama"
+                    else settings.openai_base_url)  # fmt: skip
         _PROVIDERS[key] = provider_from(
             settings.model_provider, openai_api_key=settings.openai_api_key,
             openai_base_url=settings.openai_base_url, ollama_base_url=settings.ollama_base_url,
             role_models=roles, scripted_streaming=settings.scripted_streaming,
             stream_delay_s=settings.scripted_stream_delay_s,
+            timeout_s=call_timeout_s(settings.model_provider, base_url, settings),
         )  # fmt: skip
     return _PROVIDERS[key]

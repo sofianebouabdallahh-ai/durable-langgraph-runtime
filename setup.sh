@@ -352,7 +352,8 @@ start_stack() {
 smoke() {
   say "Checking a real chat turn end to end…"
   # Through the UI's proxy, as a browser would: the page, then a turn via /api.
-  compose run --rm --no-deps -T api smoke --api http://ui:8080/api --ui http://ui:8080 --timeout 300 \
+  # 10 minutes: a local model's first answer loads it into memory (minutes on a busy laptop).
+  compose run --rm --no-deps -T api smoke --api http://ui:8080/api --ui http://ui:8080 --timeout 600 \
     || die "the smoke test failed (above)." "Diagnostics: ./setup.sh --doctor"
 }
 

@@ -19,6 +19,9 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - **Audit:** adding, changing and removing servers, and switching tools on, off or
   approving a change.
 
+### Fixed
+- **A first install with a local model could fail its check**, and a first message after a break could fail: loading the model into memory took longer than a model call's 60 s limit. A local model (Ollama, or one on this machine or network) now gets 5 minutes per call (`LOCAL_MODEL_TIMEOUT_S`); setup's check waits up to 10 minutes and says it's waiting.
+
 ### L7 — Watch it work
 #### Added
 - **Activity** (sidebar), from Nuria's own database, no extra services: right now (running, waiting for you, queued, spend today, agents switched off), totals, turns and spend per day by agent, each agent (turns, failures, median and slowest times, tokens, cost, ratings), each model and tool, what went wrong, the chats, and every turn. A turn opens on its own page with its model calls per model and its timeline. Per-model usage is saved with each step (migration 0019).
