@@ -2,8 +2,8 @@ import asyncio
 
 import pytest
 
+from agent_runtime.redaction import REDACTED, redact
 from agent_runtime.tools.hooks import (
-    REDACTED,
     Ask,
     Continue,
     Deny,
@@ -13,7 +13,6 @@ from agent_runtime.tools.hooks import (
     ToolHookInput,
     UnknownHook,
     default_hooks,
-    redact,
     run_hooks,
 )
 

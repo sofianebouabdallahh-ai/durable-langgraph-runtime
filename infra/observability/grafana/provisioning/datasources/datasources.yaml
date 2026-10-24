@@ -1,7 +1,7 @@
-# Grafana data sources, provisioned from files (phase L4a).
-# Traces are not a Grafana data source: Jaeger 2.21 serves only its v3 query API, which
-# Grafana's Jaeger plugin doesn't call. The dashboard links to Jaeger's own UI instead,
-# and so does "Open the trace" in Nuria.
+# Grafana data sources, provisioned from files (phases L4a, L7b).
+# Traces (Tempo) and logs (Loki) link both ways: a span opens its log lines (same
+# trace_id), and a log line opens its trace. `$$` is a literal `$` here: Grafana expands
+# environment variables in provisioning files.
 apiVersion: 1
 datasources:
   - name: Prometheus
@@ -12,3 +12,37 @@ datasources:
     isDefault: true
     jsonData:
       timeInterval: 5s
+
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false
+      lokiSearch:
+        datasourceUid: loki
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"
+        customQuery: true
+        query: '{service_name=~".+"} | trace_id="$${__trace.traceId}"'
+
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        - name: Trace
+          datasourceUid: tempo
+          matcherType: label # trace_id is structured metadata, not text in the line
+          matcherRegex: trace_id
+          url: "$${__value.raw}"
+          urlDisplayLabel: Open the trace

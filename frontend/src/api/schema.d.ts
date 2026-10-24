@@ -21,6 +21,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What all agents have been doing */
+        get: operations["activity_activity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/activity/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Chats in range */
+        get: operations["sessions_activity_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/activity/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Turns, newest first */
+        get: operations["turns_activity_turns_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/activity/turns/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One turn */
+        get: operations["turn_activity_turns__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/cancel-all": {
         parameters: {
             query?: never;
@@ -120,6 +188,57 @@ export interface paths {
         get: operations["get_agent_agents__name__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Who changed what */
+        get: operations["audit_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/audit.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The trail as a CSV file */
+        get: operations["audit_csv_audit_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/client-errors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Log an error from the browser */
+        post: operations["client_error_client_errors_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -457,6 +576,25 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A reply's rating */
+        get: operations["get_feedback_runs__run_id__feedback_get"];
+        /** Rate a reply */
+        put: operations["put_feedback_runs__run_id__feedback_put"];
+        post?: never;
+        /** Take a rating back */
+        delete: operations["delete_feedback_runs__run_id__feedback_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1108,7 +1246,7 @@ export interface components {
             model_provider: string;
             /**
              * Trace Ui Url
-             * @description Trace viewer: a run's trace is at {trace_ui_url}/trace/{trace_id}
+             * @description Grafana: a run's trace (Tempo) and its log lines (Loki) open in Explore
              */
             trace_ui_url?: string | null;
             /**
@@ -1119,6 +1257,26 @@ export interface components {
             tracing: boolean;
             /** Version */
             version: string | null;
+        };
+        /** ActivityView */
+        ActivityView: {
+            /** Agents */
+            agents: components["schemas"]["AgentRow"][];
+            /** Days */
+            days: components["schemas"]["Day"][];
+            /** Errors */
+            errors: components["schemas"]["ErrorRow"][];
+            /** Models */
+            models: components["schemas"]["ModelRow"][];
+            now: components["schemas"]["Now"];
+            /**
+             * Range
+             * @enum {string}
+             */
+            range: "24h" | "7d" | "30d";
+            /** Tools */
+            tools: components["schemas"]["ToolRow"][];
+            totals: components["schemas"]["Totals"];
         };
         /** AddConnection */
         AddConnection: {
@@ -1218,6 +1376,38 @@ export interface components {
             /** Tools */
             tools?: components["schemas"]["ToolChoice"][];
         };
+        /** AgentRow */
+        AgentRow: {
+            /** Agent */
+            agent: string;
+            /** Cost */
+            cost: number;
+            /**
+             * Disliked
+             * @description Replies given 👎
+             */
+            disliked: number;
+            /** Failed */
+            failed: number;
+            /** Last Turn */
+            last_turn: string | null;
+            /**
+             * Liked
+             * @description Replies given 👍
+             */
+            liked: number;
+            /**
+             * P50 S
+             * @description Median turn time
+             */
+            p50_s: number | null;
+            /** P95 S */
+            p95_s: number | null;
+            /** Tokens */
+            tokens: number;
+            /** Turns */
+            turns: number;
+        };
         /** AgentView */
         AgentView: {
             /**
@@ -1300,6 +1490,15 @@ export interface components {
             /** Reason */
             reason?: string | null;
         };
+        /** Approvals */
+        Approvals: {
+            /** Approved */
+            approved: number;
+            /** Asked */
+            asked: number;
+            /** Rejected */
+            rejected: number;
+        };
         /** AssistStarted */
         AssistStarted: {
             /**
@@ -1332,6 +1531,66 @@ export interface components {
              * @enum {string}
              */
             status: "working" | "done" | "failed";
+        };
+        /** AuditRow */
+        AuditRow: {
+            /**
+             * Action
+             * @description e.g. agent.published, kill_switch.on
+             */
+            action: string;
+            /** Actor */
+            actor: string;
+            /** After */
+            after: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Before */
+            before: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Request Id */
+            request_id: string | null;
+            /** Target Id */
+            target_id: string | null;
+            /** Target Type */
+            target_type: string;
+            /** Trace Id */
+            trace_id: string | null;
+        };
+        /** ClientError */
+        ClientError: {
+            /**
+             * Failed Request Id
+             * @description The X-Request-ID of the API call that failed
+             */
+            failed_request_id?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "error" | "unhandledrejection" | "render";
+            /** Message */
+            message: string;
+            /**
+             * Route
+             * @description e.g. #/activity
+             */
+            route?: string | null;
+            /** Stack */
+            stack?: string | null;
+            /** Version */
+            version?: string | null;
         };
         /** ConnectionView */
         ConnectionView: {
@@ -1436,6 +1695,27 @@ export interface components {
             agent: string;
             /** Title */
             title?: string | null;
+        };
+        /** Day */
+        Day: {
+            /**
+             * By Agent
+             * @description Turns per agent that day
+             */
+            by_agent: {
+                [key: string]: number;
+            };
+            /** Cost */
+            cost: number;
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Failed */
+            failed: number;
+            /** Turns */
+            turns: number;
         };
         /** DefaultModel */
         DefaultModel: {
@@ -1551,6 +1831,28 @@ export interface components {
             /** Instructions */
             instructions?: string | null;
         };
+        /** ErrorRow */
+        ErrorRow: {
+            /** Agent */
+            agent: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Count */
+            count: number;
+            /** Reason */
+            reason: string | null;
+            /**
+             * Run Id
+             * Format: uuid
+             * @description The latest failed turn
+             */
+            run_id: string;
+            /** Session Id */
+            session_id: string | null;
+        };
         /** EventView */
         EventView: {
             /** Epoch */
@@ -1578,6 +1880,43 @@ export interface components {
              * @description Pass as `after_seq` to fetch the next page
              */
             next_after_seq: number;
+        };
+        /** FeedbackIn */
+        FeedbackIn: {
+            /**
+             * Rating
+             * @enum {string}
+             */
+            rating: "up" | "down";
+            /**
+             * Reason
+             * @description What was wrong (or right)
+             */
+            reason?: string | null;
+        };
+        /** FeedbackView */
+        FeedbackView: {
+            /** Agent */
+            agent: string | null;
+            /** Agent Version */
+            agent_version: number | null;
+            /**
+             * Rating
+             * @enum {string}
+             */
+            rating: "up" | "down";
+            /** Reason */
+            reason: string | null;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** FileView */
         FileView: {
@@ -1805,6 +2144,39 @@ export interface components {
             /** Next After Seq */
             next_after_seq: number | null;
         };
+        /** ModelRow */
+        ModelRow: {
+            /**
+             * Avg Ms
+             * @description Average time per call
+             */
+            avg_ms: number | null;
+            /** Calls */
+            calls: number;
+            /** Cost */
+            cost: number;
+            /** Model */
+            model: string;
+            /** Tokens In */
+            tokens_in: number;
+            /** Tokens Out */
+            tokens_out: number;
+        };
+        /** ModelUsage */
+        ModelUsage: {
+            /** Calls */
+            calls: number;
+            /** Cost */
+            cost: number;
+            /** Duration Ms */
+            duration_ms: number;
+            /** Model */
+            model: string;
+            /** Tokens In */
+            tokens_in: number;
+            /** Tokens Out */
+            tokens_out: number;
+        };
         /** NewSkill */
         NewSkill: {
             /** Description */
@@ -1820,6 +2192,19 @@ export interface components {
             instructions: string;
             /** Name */
             name: string;
+        };
+        /** Now */
+        Now: {
+            /** Queued */
+            queued: number;
+            /** Running */
+            running: number;
+            /** Spend Today */
+            spend_today: number;
+            /** Waiting */
+            waiting: components["schemas"]["Waiting"][];
+            /** Waiting Approval */
+            waiting_approval: number;
         };
         /** OllamaView */
         OllamaView: {
@@ -2082,6 +2467,45 @@ export interface components {
                     [key: string]: unknown;
                 }[];
             } | null;
+        };
+        /** SessionRow */
+        SessionRow: {
+            /** Agent */
+            agent: string | null;
+            /** Cost */
+            cost: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Failed */
+            failed: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Last Activity At
+             * Format: date-time
+             */
+            last_activity_at: string;
+            /** Messages */
+            messages: number;
+            /** Status */
+            status: string;
+            /** Test */
+            test: boolean;
+            /** Title */
+            title: string | null;
+            /** Tokens */
+            tokens: number;
+            /**
+             * Turns
+             * @description Turns in range
+             */
+            turns: number;
         };
         /** SessionView */
         SessionView: {
@@ -2446,6 +2870,19 @@ export interface components {
             /** Risk */
             risk: string;
         };
+        /** ToolRow */
+        ToolRow: {
+            /** Cached */
+            cached: number;
+            /** Calls */
+            calls: number;
+            /** Failed */
+            failed: number;
+            /** P95 Ms */
+            p95_ms: number | null;
+            /** Tool */
+            tool: string | null;
+        };
         /** ToolSettingsUpdate */
         ToolSettingsUpdate: {
             /** Api Key */
@@ -2490,6 +2927,26 @@ export interface components {
              */
             web_allowlist: string[];
         };
+        /** Totals */
+        Totals: {
+            approvals: components["schemas"]["Approvals"];
+            /** Chats */
+            chats: number;
+            /** Cost */
+            cost: number;
+            /** Failed */
+            failed: number;
+            /** Helpers */
+            helpers: number;
+            /** Model Calls */
+            model_calls: number;
+            /** Tokens */
+            tokens: number;
+            /** Tool Calls */
+            tool_calls: number;
+            /** Turns */
+            turns: number;
+        };
         /** Tried */
         Tried: {
             /**
@@ -2519,6 +2976,107 @@ export interface components {
             run_id: string;
             /** Seq */
             seq: number;
+        };
+        /** TurnDetail */
+        TurnDetail: {
+            /** Agent */
+            agent: string | null;
+            /** Agent Version */
+            agent_version: number | null;
+            /** Cost */
+            cost: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Duration S */
+            duration_s: number | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Model Calls */
+            model_calls: number;
+            /** Models */
+            models: string[];
+            /**
+             * Rating
+             * @description 👍 1, 👎 -1, or not rated
+             */
+            rating?: number | null;
+            /** Reason */
+            reason: string | null;
+            /** Reclaims */
+            reclaims: number;
+            /** Session Id */
+            session_id: string | null;
+            /** Session Title */
+            session_title: string | null;
+            /** Status */
+            status: string;
+            /** Steps */
+            steps: number;
+            /** Test */
+            test: boolean | null;
+            /** Tokens */
+            tokens: number;
+            /** Tool Calls */
+            tool_calls: number;
+            /**
+             * Usage
+             * @description Its model calls, per model
+             */
+            usage: components["schemas"]["ModelUsage"][];
+        };
+        /** TurnRow */
+        TurnRow: {
+            /** Agent */
+            agent: string | null;
+            /** Agent Version */
+            agent_version: number | null;
+            /** Cost */
+            cost: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Duration S */
+            duration_s: number | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Model Calls */
+            model_calls: number;
+            /** Models */
+            models: string[];
+            /**
+             * Rating
+             * @description 👍 1, 👎 -1, or not rated
+             */
+            rating?: number | null;
+            /** Reason */
+            reason: string | null;
+            /** Reclaims */
+            reclaims: number;
+            /** Session Id */
+            session_id: string | null;
+            /** Session Title */
+            session_title: string | null;
+            /** Status */
+            status: string;
+            /** Steps */
+            steps: number;
+            /** Test */
+            test: boolean | null;
+            /** Tokens */
+            tokens: number;
+            /** Tool Calls */
+            tool_calls: number;
         };
         /** UpdateSessionRequest */
         UpdateSessionRequest: {
@@ -2562,6 +3120,22 @@ export interface components {
              */
             state: "draft" | "published" | "archived";
         };
+        /** Waiting */
+        Waiting: {
+            /** Agent */
+            agent: string | null;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /** Session Id */
+            session_id: string | null;
+            /** Since */
+            since: string | null;
+            /** Tool */
+            tool: string | null;
+        };
         /** Warning */
         Warning: {
             /** Field */
@@ -2594,6 +3168,154 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AboutView"];
+                };
+            };
+        };
+    };
+    activity_activity_get: {
+        parameters: {
+            query?: {
+                /** @description 24h, 7d or 30d */
+                range?: "24h" | "7d" | "30d";
+                /** @description One agent (its name); all by default */
+                agent?: string | null;
+                /** @description Count test chats from the Studio too */
+                include_tests?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sessions_activity_sessions_get: {
+        parameters: {
+            query?: {
+                /** @description 24h, 7d or 30d */
+                range?: "24h" | "7d" | "30d";
+                /** @description One agent (its name); all by default */
+                agent?: string | null;
+                /** @description Count test chats from the Studio too */
+                include_tests?: boolean;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionRow"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    turns_activity_turns_get: {
+        parameters: {
+            query?: {
+                /** @description 24h, 7d or 30d */
+                range?: "24h" | "7d" | "30d";
+                /** @description One agent (its name); all by default */
+                agent?: string | null;
+                /** @description Count test chats from the Studio too */
+                include_tests?: boolean;
+                /** @description e.g. failed */
+                status?: string | null;
+                /** @description e.g. timeout */
+                reason?: string | null;
+                session_id?: string | null;
+                /** @description Page: created_at < */
+                before?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TurnRow"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    turn_activity_turns__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TurnDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2731,6 +3453,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audit_audit_get: {
+        parameters: {
+            query?: {
+                /** @description e.g. agent.published */
+                action?: string | null;
+                /** @description e.g. agent */
+                target_type?: string | null;
+                target_id?: string | null;
+                /** @description Page: at < */
+                before?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditRow"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audit_csv_audit_csv_get: {
+        parameters: {
+            query?: {
+                /** @description e.g. agent.published */
+                action?: string | null;
+                /** @description e.g. agent */
+                target_type?: string | null;
+                target_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    client_error_client_errors_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientError"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -3389,6 +4215,101 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["EventsPage"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_feedback_runs__run_id__feedback_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackView"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_feedback_runs__run_id__feedback_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedbackIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_feedback_runs__run_id__feedback_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

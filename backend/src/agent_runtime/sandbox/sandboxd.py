@@ -33,6 +33,7 @@ from typing import Annotated, Any
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from agent_runtime import logs
 from agent_runtime.sandbox.backend import Backend, Limits
 
 log = logging.getLogger(__name__)
@@ -101,7 +102,9 @@ def create_app(
                 if s.epoch != epoch or s.state == "gone":
                     await sandboxes.remove(s.id)  # an old epoch's, or a stopped one
             # Starting (another sandboxd replica's): create() waits for that one.
-            return await sandboxes.create(run, epoch, image, limits)
+            created = await sandboxes.create(run, epoch, image, limits)
+            logs.event(log, f"sandbox created for run {run}", run_id=run, epoch=epoch)
+            return created
 
     async def sweep() -> None:
         while True:
@@ -112,6 +115,9 @@ def create_app(
                     age = now - s.created
                     if age > MAX_AGE_S or (s.state == "gone" and age > SWEEP_EVERY_S):
                         await sandboxes.remove(s.id)
+                        logs.event(
+                            log, "sandbox swept", why="too old" if age > MAX_AGE_S else "stopped"
+                        )
             except Exception:
                 log.warning("sandbox sweep failed", exc_info=True)
 
@@ -154,8 +160,11 @@ def create_app(
 
     @app.delete("/sandboxes/{run}", status_code=204, dependencies=[Depends(authorised)])
     async def delete(run: str) -> None:
-        for s in await sandboxes.sandboxes(valid(run)):
+        gone = await sandboxes.sandboxes(valid(run))
+        for s in gone:
             await sandboxes.remove(s.id)
         locks.pop(run, None)
+        if gone:
+            logs.event(log, f"sandbox removed for run {run}", run_id=run)
 
     return app

@@ -15,7 +15,7 @@
   .\setup.ps1 -Model ollama
   .\setup.ps1 -Port 3100
   .\setup.ps1 -NonInteractive -Model scripted
-  .\setup.ps1 -Observability     (also traces, metrics and a Grafana dashboard; -NoObservability: off)
+  .\setup.ps1 -Observability     (also traces, logs and metrics, in Grafana; -NoObservability: off)
   .\setup.ps1 -Kubernetes        (on a local Kubernetes cluster with kind; needs Git Bash or WSL for infra/kind/cluster.sh)
   .\setup.ps1 -Update [-To v0.2.0]    (back up, then move to the newest or that release)
   .\setup.ps1 -Restore backups\nuria-….sql.gz   (put a backup back; replaces today's data)
@@ -226,17 +226,16 @@ function Set-Observability {  # -Observability / -NoObservability; remembered in
   if ($NoObservability) {
     Set-EnvValue COMPOSE_PROFILES $profiles; Set-EnvValue OTEL_ENDPOINT ""
     Set-EnvValue TRACE_UI_URL ""; Set-EnvValue DASHBOARD_URL ""
-    Ok "observability off (traces and metrics stop being collected)"; return
+    Ok "observability off (traces, logs and metrics stop being collected)"; return
   }
   if (-not $Observability -and -not (Test-Profile observability)) { return }
   Set-EnvValue COMPOSE_PROFILES "$profiles,observability"
   Set-EnvValue OTEL_ENDPOINT "http://otel-collector:4318"
-  $jaeger = Select-Port jaeger 16686 JAEGER_PORT 16686 0
   $grafana = Select-Port grafana 3000 GRAFANA_PORT 3001 0
   $prometheus = Select-Port prometheus 9090 PROMETHEUS_PORT 9090 0
-  Set-EnvValue TRACE_UI_URL "http://localhost:$jaeger"
+  Set-EnvValue TRACE_UI_URL "http://localhost:$grafana"  # Grafana: traces (Tempo) and logs (Loki)
   Set-EnvValue DASHBOARD_URL "http://localhost:$grafana/d/nuria"
-  Ok "observability: traces $jaeger, dashboard $grafana, metrics $prometheus"
+  Ok "observability: Grafana $grafana (dashboard, traces, logs), metrics $prometheus"
 }
 
 function Set-Sandbox {  # -Sandbox / -NoSandbox; on by default; remembered in .env
@@ -369,7 +368,7 @@ Write-Host "    Stop / start again:  .\setup.ps1 -Stop  /  .\setup.ps1"
 Write-Host "    Something wrong?     .\setup.ps1 -Doctor   (a report you can attach to an issue)"
 if (Test-Profile observability) {
   Write-Host "    Dashboard:           $(Get-EnvValue DASHBOARD_URL)"
-  Write-Host "    Traces:              $(Get-EnvValue TRACE_UI_URL)   (or 'Open the trace' under a reply's 'What happened?')"
+  Write-Host "    Traces and logs:     $(Get-EnvValue TRACE_UI_URL)/explore   (or 'Open the trace' under a reply's 'What happened?')"
   Write-Host "    Metrics:             http://localhost:$(Get-EnvValue PROMETHEUS_PORT)"
 }
 if (-not $NonInteractive -and -not $NoBrowser) { Start-Process "http://localhost:$script:UiPortChosen" }

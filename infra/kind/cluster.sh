@@ -140,7 +140,7 @@ deploy() {
     --set-string config.POSTGRES_USER="$(env_get POSTGRES_USER)" \
     --set-string config.API_POSTGRES_USER="$(env_get API_POSTGRES_USER)" \
     --set-string config.WORKER_POSTGRES_USER="$(env_get WORKER_POSTGRES_USER)" \
-    --set-string monitoring.traceUiUrl="http://jaeger.localhost:$K8S_PORT" \
+    --set-string monitoring.traceUiUrl="http://grafana.localhost:$K8S_PORT" \
     --set-string monitoring.dashboardUrl="http://grafana.localhost:$K8S_PORT/d/nuria" \
     ${model[@]+"${model[@]}"} ${HELM_ARGS:-} --wait --timeout 10m >/dev/null
   ok "deployed: http://localhost:$K8S_PORT"
@@ -171,7 +171,7 @@ case "${1:-}" in
   all) up; build; load; secrets; deploy; smoke
        echo; say "Nuria runs on Kubernetes: http://localhost:$K8S_PORT"
        echo "    Dashboard: http://grafana.localhost:$K8S_PORT/d/nuria"
-       echo "    Traces:    http://jaeger.localhost:$K8S_PORT"
+       echo "    Traces and logs: http://grafana.localhost:$K8S_PORT/explore"
        echo "    Pods:      infra/kind/cluster.sh status" ;;
   *) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

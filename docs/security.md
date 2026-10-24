@@ -15,7 +15,7 @@ Nuria runs entirely on your computer, in Docker.
 | sandboxd *(on unless `--no-sandbox`)* | Starts the code sandboxes. The only part with the Docker socket, so it runs as root, alone, and answers only the workers' token | Inside Docker only |
 | A sandbox per turn that runs code | Python and shell commands. **No network**, read-only, non-root, all capabilities dropped, CPU, memory, process and time limits; removed when the turn ends | Nothing: no network at all |
 | *Optional:* Ollama | A local model | `127.0.0.1` |
-| *Optional:* Jaeger, Prometheus, Grafana (`--observability`) | Traces, metrics, dashboards | `127.0.0.1` |
+| *Optional:* OpenTelemetry Collector, Tempo, Loki, Prometheus, Grafana (`--observability`) | Traces, log lines (redacted at the source and again in the collector), metrics, dashboards | `127.0.0.1` (Grafana and Prometheus); the rest inside the Compose network |
 
 The containers run as ordinary users, not root, on a read-only filesystem (sandboxd
 excepted, as above).
@@ -39,6 +39,8 @@ excepted, as above).
 - **Local passwords** for Postgres and Grafana, SearXNG's secret and sandboxd's token are generated for this machine at setup, and kept only in `.env`. The sandboxes never see any of them.
 - **`.env` holds the secrets.** It's readable only by you, and never part of a backup or a diagnostics file. Keep it safe: anyone with `.env` and a backup can open your saved keys.
 - **Diagnostics** (`./setup.sh --doctor`) remove every password and key before writing the file.
+- **Logs never hold content or keys.** Each line says what happened and its numbers (a tool call, its status and time), never message text, tool arguments or results; every line also goes through the secret filter, and the collector drops well-known secret fields a second time. Errors in the app's page are written to the API's log on this computer, nowhere else.
+- **Who changed what** (Activity → Who changed what) records every change to agents, skills, models, settings, the kill switch and approvals, with what it was before. The app can add to it and read it, never edit or delete it. A key appears there only as "set", with a short fingerprint.
 
 ## What agents can do
 

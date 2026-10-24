@@ -21,8 +21,8 @@ from dataclasses import asdict, dataclass
 from typing import Any, Literal
 from urllib.parse import urlparse
 
+from agent_runtime.redaction import SECRET_PATTERNS
 from agent_runtime.skills.spec import SKILL_FILE, WARN_TOKENS, SkillContent, estimate_tokens
-from agent_runtime.tools.hooks import SECRET_PATTERNS
 
 Severity = Literal["block", "review"]
 Status = Literal["clean", "review", "blocked"]

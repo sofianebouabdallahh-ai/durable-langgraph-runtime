@@ -25,7 +25,7 @@ from typing import Any
 import httpx
 
 from agent_runtime.config import Settings
-from agent_runtime.tools.hooks import redact
+from agent_runtime.redaction import redact
 
 # The scripted check: (agent, its turn, what the tool must return).
 SANDBOX_CHECK = (

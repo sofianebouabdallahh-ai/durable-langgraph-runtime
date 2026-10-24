@@ -1,6 +1,6 @@
 /** The sidebar: Nuria, navigation, and the chats by recency. */
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Bot, Boxes, Compass, MessageSquare, MessageSquareHeart, Plus, Search, Shield, Wrench } from "lucide-react";
+import { Activity, BookOpen, Bot, Boxes, Compass, MessageSquare, MessageSquareHeart, Plus, Search, Shield, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { api, unwrap, type SessionView } from "../api/client";
@@ -60,6 +60,9 @@ export function Sidebar({ route, onNavigate }: { route: Route; onNavigate: () =>
         <GuideLink active={route.page === "start"} onNavigate={onNavigate} />
         <NavLink to={{ page: "agents" }} active={route.page === "agents" || route.page === "agent" || route.page === "studio"} onNavigate={onNavigate} icon={<Bot aria-hidden className="size-4" />}>
           Agents
+        </NavLink>
+        <NavLink to={{ page: "activity" }} active={route.page === "activity" || route.page === "turn" || route.page === "audit"} onNavigate={onNavigate} icon={<Activity aria-hidden className="size-4" />}>
+          Activity
         </NavLink>
         <NavLink to={{ page: "skills" }} active={route.page === "skills"} onNavigate={onNavigate} icon={<BookOpen aria-hidden className="size-4" />}>
           Skills

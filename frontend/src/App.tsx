@@ -16,6 +16,9 @@ const PrivacyPage = lazy(() => import("./settings/PrivacyPage").then((m) => ({ d
 const GetStarted = lazy(() => import("./guide/GetStarted").then((m) => ({ default: m.GetStarted })));
 const ToolsPage = lazy(() => import("./settings/ToolsPage").then((m) => ({ default: m.ToolsPage })));
 const SkillsPage = lazy(() => import("./skills/SkillsPage").then((m) => ({ default: m.SkillsPage })));
+const ActivityPage = lazy(() => import("./activity/ActivityPage").then((m) => ({ default: m.ActivityPage })));
+const AuditPage = lazy(() => import("./activity/AuditPage").then((m) => ({ default: m.AuditPage })));
+const TurnDetail = lazy(() => import("./activity/TurnDetail").then((m) => ({ default: m.TurnDetail })));
 const StudioEditor = lazy(() => import("./studio/StudioEditor").then((m) => ({ default: m.StudioEditor })));
 import { Logo } from "./ui/Logo";
 
@@ -73,6 +76,9 @@ export function App() {
             {route.page === "skills" && <SkillsPage />}
             {route.page === "tools" && <ToolsPage />}
             {route.page === "start" && <GetStarted go={go} />}
+            {route.page === "activity" && <ActivityPage />}
+            {route.page === "turn" && <TurnDetail key={route.runId} runId={route.runId} />}
+            {route.page === "audit" && <AuditPage />}
           </Suspense>
         </div>
       </main>

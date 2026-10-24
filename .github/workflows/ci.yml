@@ -136,6 +136,12 @@ jobs:
         working-directory: .
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Room for the stack's images and volumes (the runner's unused toolchains go)
+        # With L7's Tempo and Loki the runner's disk passed 90%, and Loki refused writes.
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h / | tail -1
       - name: setup.ps1 parses and passes PSScriptAnalyzer (Windows path; not run here)
         shell: pwsh
         run: |

@@ -15,8 +15,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from agent_runtime import logs
 from agent_runtime.admin import AdminRepository
 from agent_runtime.agents.resolver import AgentResolver, Resolved
+from agent_runtime.audit import AuditLog
 from agent_runtime.config import AgentSettings, Settings
 from agent_runtime.db import Pool
 from agent_runtime.graphs import GraphRegistry, GraphSpec
@@ -277,13 +279,16 @@ class RunService:
     ) -> Run:
         """R1.4: approve (re-queue with the decision) or reject (cancelled: rejected).
         No live worker is needed. Raises NotWaitingForApproval (→ 409)."""
-        async with self._pool.connection() as conn:
+        async with self._pool.connection() as conn, conn.transaction():
             repo = RunRepository(conn)
             run = await repo.decide_approval(
                 run_id, decision=decision, edits=edits, reason=reason,
                 decided_by="local",  # an authenticated principal once auth exists (roadmap)
             )  # fmt: skip
+            await AuditLog(conn).record("approval.decided", "run", run_id, after={
+                "decision": decision, "reason": reason, "edited": bool(edits)})  # fmt: skip
         await publish_events(self._bus, repo.emitted)
+        logs.event(log, f"approval decided: {decision}", run_id=str(run_id), decision=decision)
         if run.status is RunStatus.QUEUED and self._relay is not None:
             await self._relay.enqueue(run.id)
         return run

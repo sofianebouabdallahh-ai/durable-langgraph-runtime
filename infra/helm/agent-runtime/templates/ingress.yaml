@@ -33,13 +33,5 @@ spec:
             pathType: Prefix
             backend: { service: { name: {{ include "nuria.fullname" $ }}-grafana, port: { number: 3000 } } }
     {{- end }}
-    {{- with .Values.monitoring.host.jaeger }}
-    - host: {{ . }}
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend: { service: { name: {{ include "nuria.fullname" $ }}-jaeger, port: { number: 16686 } } }
-    {{- end }}
     {{- end }}
 {{- end }}

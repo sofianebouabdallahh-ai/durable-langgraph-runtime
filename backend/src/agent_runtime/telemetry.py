@@ -1,4 +1,4 @@
-"""Tracing and run-scoped logs (R2.7, R7.1).
+"""Tracing (R2.7, R7.1); logs are agent_runtime.logs.
 
     API request ──► traceparent stored on the run (Postgres) ──► any worker, any time:
 
@@ -9,7 +9,8 @@
 
 Patterns:
 - Facade: the rest of the runtime calls `configure`, `current_traceparent`,
-  `run_span`, `child_span` and `bind_run`; only this module touches OpenTelemetry.
+  `run_span` and `child_span`; only this module (and the log formatter) touches
+  OpenTelemetry.
 - Null Object: with no `OTEL_EXPORTER_OTLP_ENDPOINT`, no SDK is installed. The
   OpenTelemetry API is then a no-op: spans are non-recording, `current_traceparent`
   returns None, and nothing is exported (L4a SC4).
@@ -27,14 +28,11 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
-import json
 import logging
 import os
 import socket
-import sys
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from typing import Any
 
 from langgraph.errors import GraphBubbleUp
@@ -42,9 +40,12 @@ from opentelemetry import context as otel_context
 from opentelemetry import propagate, trace
 from opentelemetry.trace import Span, Status, StatusCode
 
+from agent_runtime import logs
+
 TRACER = "agent_runtime"
 _configured = False
 _provider: trace.TracerProvider | None = None  # ours, once configured (or a test's)
+_log_provider: Any = None  # the OTLP log pipeline, once configured
 log = logging.getLogger(__name__)
 
 # Kubernetes resource attributes, passed in by the Downward API (L4b) when present.
@@ -77,15 +78,33 @@ def configure(service: str, endpoint: str, instance: str | None = None) -> bool:
         "service.instance.id": instance or f"{socket.gethostname()}:{os.getpid()}",
     }
     attrs |= {k: v for k, env in _K8S_ENV.items() if (v := os.environ.get(env))}
-    provider = TracerProvider(resource=Resource.create(attrs))
+    resource = Resource.create(attrs)
+    provider = TracerProvider(resource=resource)
     exporter = OTLPSpanExporter(endpoint=endpoint.rstrip("/") + "/v1/traces")
     # Export every second (not the default 5 s): a worker killed mid-run loses only
     # the spans of its last second; the run itself is reclaimed in the same trace.
     provider.add_span_processor(BatchSpanProcessor(exporter, schedule_delay_millis=1000))
     trace.set_tracer_provider(provider)
     use_provider(provider)
+    _ship_logs(endpoint, resource, service)
     _configured = True
     return True
+
+
+def _ship_logs(endpoint: str, resource: Any, service: str) -> None:
+    """Log lines go to the collector too (phase L7b), with the same resource, so Loki
+    files them under the same service as the traces."""
+    from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+    from opentelemetry.sdk._logs import LoggerProvider
+    from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+
+    global _log_provider
+    _log_provider = LoggerProvider(resource=resource)
+    exporter = OTLPLogExporter(endpoint=endpoint.rstrip("/") + "/v1/logs")
+    _log_provider.add_log_record_processor(
+        BatchLogRecordProcessor(exporter, schedule_delay_millis=1000)
+    )
+    logs.ship(_log_provider, service)
 
 
 def use_provider(provider: trace.TracerProvider | None) -> None:
@@ -99,10 +118,11 @@ def enabled() -> bool:
 
 
 def shutdown() -> None:
-    """Flush buffered spans (a worker draining, an API stopping)."""
-    shutdown_ = getattr(_provider, "shutdown", None)
-    if _configured and shutdown_ is not None:
-        shutdown_()
+    """Flush buffered spans and log lines (a worker draining, an API stopping)."""
+    for provider in (_provider, _log_provider):
+        shutdown_ = getattr(provider, "shutdown", None)
+        if _configured and shutdown_ is not None:
+            shutdown_()
 
 
 def tracer() -> trace.Tracer:
@@ -244,70 +264,3 @@ def run_trace_id() -> str | None:
     if rt is not None:
         return _hex_trace_id(rt.span)
     return _hex_trace_id(trace.get_current_span())
-
-
-# -------------------------------------------------------------------- logs
-
-_log_run: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
-    "log_run", default=None
-)
-
-
-@contextlib.contextmanager
-def bind_run(run_id: Any, epoch: int, trace_id: str | None = None) -> Iterator[None]:
-    """Every log line in this context (and tasks it starts) names the run (R7.1)."""
-    token = _log_run.set({"run_id": str(run_id), "epoch": epoch, "trace_id": trace_id})
-    try:
-        yield
-    finally:
-        _log_run.reset(token)
-
-
-class JsonFormatter(logging.Formatter):
-    """One JSON object per line: ts, level, logger, msg, and the run's context."""
-
-    def __init__(self, component: str | None = None) -> None:
-        super().__init__()
-        self._static = {"component": component} if component else {}
-        if pod := os.environ.get("POD_NAME"):
-            self._static["pod"] = pod
-
-    def format(self, record: logging.LogRecord) -> str:
-        line: dict[str, Any] = {
-            "ts": datetime.fromtimestamp(record.created, UTC).isoformat(timespec="milliseconds"),
-            "level": record.levelname,
-            "logger": record.name,
-            "msg": record.getMessage(),
-            **self._static,
-        }
-        if run := _log_run.get():
-            line |= {k: v for k, v in run.items() if v is not None}
-        if "trace_id" not in line and (tid := _hex_trace_id(trace.get_current_span())):
-            line["trace_id"] = tid
-        if record.exc_info:
-            line["exc"] = self.formatException(record.exc_info)
-        return json.dumps(line, default=str, ensure_ascii=False)
-
-
-class ProbeFilter(logging.Filter):
-    """Drops access-log lines for probes and scrapes (every few seconds, per replica)."""
-
-    PATHS = (" /healthz ", " /readyz ", " /metrics ")
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        message = record.getMessage()
-        return not any(p in message for p in self.PATHS)
-
-
-def setup_logging(level: str, fmt: str, component: str | None = None) -> None:
-    access = logging.getLogger("uvicorn.access")
-    if not any(isinstance(f, ProbeFilter) for f in access.filters):
-        access.addFilter(ProbeFilter())
-    handler = logging.StreamHandler(sys.stderr)
-    if fmt == "json":
-        handler.setFormatter(JsonFormatter(component))
-    else:
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-    root = logging.getLogger()
-    root.handlers[:] = [handler]
-    root.setLevel(level)

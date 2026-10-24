@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from agent_runtime import usage
+from agent_runtime.audit import AuditLog
 from agent_runtime.config import Settings
 from agent_runtime.db import Pool
 
@@ -47,6 +48,11 @@ async def get_telemetry(request: Request) -> TelemetryView:
 )
 async def set_telemetry(body: TelemetryUpdate, request: Request) -> TelemetryView:
     pool: Pool = request.app.state.pool
-    async with pool.connection() as conn:
+    async with pool.connection() as conn, conn.transaction():
+        was = await usage.sharing(conn)
         await usage.set_sharing(conn, body.sharing)
+        await AuditLog(conn).record(
+            "usage_sharing.changed", "setting", "usage_sharing",
+            before={"sharing": was}, after={"sharing": body.sharing},
+        )  # fmt: skip
     return await _view(request)

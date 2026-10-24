@@ -37,13 +37,16 @@ export class ApiError extends Error {
   readonly problemType: string | undefined;
   /** The problem's extensions (e.g. a skill's `issues` or its `scan` report). */
   readonly extra: Record<string, unknown>;
+  /** The API's X-Request-ID for this call: finds its log lines. */
+  readonly requestId: string | null;
 
-  constructor(status: number, problem: Problem | undefined) {
+  constructor(status: number, problem: Problem | undefined, requestId: string | null = null) {
     super(problem?.detail ?? problem?.title ?? `request failed (HTTP ${status})`);
     this.name = "ApiError";
     this.status = status;
     this.problemType = problem?.type;
     this.extra = { ...(problem ?? {}) };
+    this.requestId = requestId;
   }
 
   /** e.g. `turn-active`, `session-archived`, from the problem's type URI. */
@@ -58,7 +61,7 @@ export async function unwrap<T>(
 ): Promise<T> {
   const { data, error, response } = await call;
   if (!response.ok || data === undefined) {
-    throw new ApiError(response.status, isProblem(error) ? error : undefined);
+    throw new ApiError(response.status, isProblem(error) ? error : undefined, response.headers.get("x-request-id"));
   }
   return data;
 }

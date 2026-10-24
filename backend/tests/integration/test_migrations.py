@@ -34,6 +34,9 @@ TABLES = {
     "tool_settings",
     "kill_switches",
     "skill_scans",
+    "run_model_usage",
+    "audit_events",
+    "reply_feedback",
 }
 
 

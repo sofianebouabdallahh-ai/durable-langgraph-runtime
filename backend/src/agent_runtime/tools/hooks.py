@@ -16,11 +16,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any, Literal
+
+from agent_runtime.redaction import redact
 
 log = logging.getLogger(__name__)
 
@@ -217,29 +218,6 @@ async def run_observers(specs: list[HookSpec], inp: Any) -> list[Any]:
 
 
 # ------------------------------------------------------------- built-in hooks
-
-SECRET_PATTERNS = [
-    re.compile(r"sk-[A-Za-z0-9_\-]{20,}"),  # OpenAI-style API keys
-    re.compile(r"AKIA[0-9A-Z]{16}"),  # AWS access key ids
-    re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}"),  # GitHub tokens
-    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"),
-    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9_\-.=]{16,}"),
-    re.compile(r"(?<=://)[^/\s:@]+:[^/\s@]+(?=@)"),  # user:password in URLs
-]
-REDACTED = "[REDACTED]"
-
-
-def redact(value: Any) -> Any:
-    """Recursively replace secret-looking substrings."""
-    if isinstance(value, str):
-        for pattern in SECRET_PATTERNS:
-            value = pattern.sub(REDACTED, value)
-        return value
-    if isinstance(value, dict):
-        return {k: redact(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [redact(v) for v in value]
-    return value
 
 
 def default_hooks() -> HookRegistry:

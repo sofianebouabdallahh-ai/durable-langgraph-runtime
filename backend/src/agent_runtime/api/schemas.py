@@ -177,7 +177,7 @@ class AboutView(BaseModel):
     tracing: bool = Field(default=False, description="Traces are exported (--observability)")
     trace_ui_url: str | None = Field(
         default=None,
-        description="Trace viewer: a run's trace is at {trace_ui_url}/trace/{trace_id}",
+        description="Grafana: a run's trace (Tempo) and its log lines (Loki) open in Explore",
     )
     dashboard_url: str | None = Field(default=None, description="The Grafana dashboard")
 

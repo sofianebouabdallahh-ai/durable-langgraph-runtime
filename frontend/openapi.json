@@ -46,7 +46,7 @@
                 "type": "null"
               }
             ],
-            "description": "Trace viewer: a run's trace is at {trace_ui_url}/trace/{trace_id}",
+            "description": "Grafana: a run's trace (Tempo) and its log lines (Loki) open in Explore",
             "title": "Trace Ui Url"
           },
           "tracing": {
@@ -74,6 +74,72 @@
           "chat_model"
         ],
         "title": "AboutView",
+        "type": "object"
+      },
+      "ActivityView": {
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentRow"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/Day"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorRow"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelRow"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "now": {
+            "$ref": "#/components/schemas/Now"
+          },
+          "range": {
+            "enum": [
+              "24h",
+              "7d",
+              "30d"
+            ],
+            "title": "Range",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/ToolRow"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/Totals"
+          }
+        },
+        "required": [
+          "range",
+          "now",
+          "totals",
+          "days",
+          "agents",
+          "models",
+          "tools",
+          "errors"
+        ],
+        "title": "ActivityView",
         "type": "object"
       },
       "AddConnection": {
@@ -309,6 +375,89 @@
         "title": "AgentDocument",
         "type": "object"
       },
+      "AgentRow": {
+        "properties": {
+          "agent": {
+            "title": "Agent",
+            "type": "string"
+          },
+          "cost": {
+            "title": "Cost",
+            "type": "number"
+          },
+          "disliked": {
+            "description": "Replies given \ud83d\udc4e",
+            "title": "Disliked",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "last_turn": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Turn"
+          },
+          "liked": {
+            "description": "Replies given \ud83d\udc4d",
+            "title": "Liked",
+            "type": "integer"
+          },
+          "p50_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Median turn time",
+            "title": "P50 S"
+          },
+          "p95_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 S"
+          },
+          "tokens": {
+            "title": "Tokens",
+            "type": "integer"
+          },
+          "turns": {
+            "title": "Turns",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agent",
+          "turns",
+          "failed",
+          "p50_s",
+          "p95_s",
+          "tokens",
+          "cost",
+          "last_turn",
+          "liked",
+          "disliked"
+        ],
+        "title": "AgentRow",
+        "type": "object"
+      },
       "AgentView": {
         "properties": {
           "agent_id": {
@@ -494,6 +643,29 @@
         "title": "ApprovalRequest",
         "type": "object"
       },
+      "Approvals": {
+        "properties": {
+          "approved": {
+            "title": "Approved",
+            "type": "integer"
+          },
+          "asked": {
+            "title": "Asked",
+            "type": "integer"
+          },
+          "rejected": {
+            "title": "Rejected",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asked",
+          "approved",
+          "rejected"
+        ],
+        "title": "Approvals",
+        "type": "object"
+      },
       "AssistStarted": {
         "properties": {
           "run_id": {
@@ -560,6 +732,178 @@
           "problem"
         ],
         "title": "AssistView",
+        "type": "object"
+      },
+      "AuditRow": {
+        "properties": {
+          "action": {
+            "description": "e.g. agent.published, kill_switch.on",
+            "title": "Action",
+            "type": "string"
+          },
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          },
+          "target_type": {
+            "title": "Target Type",
+            "type": "string"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "id",
+          "at",
+          "actor",
+          "action",
+          "target_type",
+          "target_id",
+          "before",
+          "after",
+          "request_id",
+          "trace_id"
+        ],
+        "title": "AuditRow",
+        "type": "object"
+      },
+      "ClientError": {
+        "properties": {
+          "failed_request_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The X-Request-ID of the API call that failed",
+            "title": "Failed Request Id"
+          },
+          "kind": {
+            "enum": [
+              "error",
+              "unhandledrejection",
+              "render"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 2000,
+            "title": "Message",
+            "type": "string"
+          },
+          "route": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "e.g. #/activity",
+            "title": "Route"
+          },
+          "stack": {
+            "anyOf": [
+              {
+                "maxLength": 8000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stack"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "kind",
+          "message"
+        ],
+        "title": "ClientError",
         "type": "object"
       },
       "ConnectionView": {
@@ -796,6 +1140,44 @@
           "agent"
         ],
         "title": "CreateSessionRequest",
+        "type": "object"
+      },
+      "Day": {
+        "properties": {
+          "by_agent": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Turns per agent that day",
+            "title": "By Agent",
+            "type": "object"
+          },
+          "cost": {
+            "title": "Cost",
+            "type": "number"
+          },
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "turns": {
+            "title": "Turns",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "turns",
+          "failed",
+          "cost",
+          "by_agent"
+        ],
+        "title": "Day",
         "type": "object"
       },
       "DefaultModel": {
@@ -1101,6 +1483,62 @@
         "title": "EditSkill",
         "type": "object"
       },
+      "ErrorRow": {
+        "properties": {
+          "agent": {
+            "title": "Agent",
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "run_id": {
+            "description": "The latest failed turn",
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "required": [
+          "reason",
+          "agent",
+          "count",
+          "run_id",
+          "session_id",
+          "at"
+        ],
+        "title": "ErrorRow",
+        "type": "object"
+      },
       "EventView": {
         "properties": {
           "epoch": {
@@ -1156,6 +1594,101 @@
           "next_after_seq"
         ],
         "title": "EventsPage",
+        "type": "object"
+      },
+      "FeedbackIn": {
+        "properties": {
+          "rating": {
+            "enum": [
+              "up",
+              "down"
+            ],
+            "title": "Rating",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What was wrong (or right)",
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "rating"
+        ],
+        "title": "FeedbackIn",
+        "type": "object"
+      },
+      "FeedbackView": {
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent"
+          },
+          "agent_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Version"
+          },
+          "rating": {
+            "enum": [
+              "up",
+              "down"
+            ],
+            "title": "Rating",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "rating",
+          "reason",
+          "agent",
+          "agent_version",
+          "updated_at"
+        ],
+        "title": "FeedbackView",
         "type": "object"
       },
       "FileView": {
@@ -1685,6 +2218,90 @@
         "title": "MessagesPage",
         "type": "object"
       },
+      "ModelRow": {
+        "properties": {
+          "avg_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Average time per call",
+            "title": "Avg Ms"
+          },
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "cost": {
+            "title": "Cost",
+            "type": "number"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "tokens_in": {
+            "title": "Tokens In",
+            "type": "integer"
+          },
+          "tokens_out": {
+            "title": "Tokens Out",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "model",
+          "calls",
+          "tokens_in",
+          "tokens_out",
+          "cost",
+          "avg_ms"
+        ],
+        "title": "ModelRow",
+        "type": "object"
+      },
+      "ModelUsage": {
+        "properties": {
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "cost": {
+            "title": "Cost",
+            "type": "number"
+          },
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "tokens_in": {
+            "title": "Tokens In",
+            "type": "integer"
+          },
+          "tokens_out": {
+            "title": "Tokens Out",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "model",
+          "calls",
+          "tokens_in",
+          "tokens_out",
+          "cost",
+          "duration_ms"
+        ],
+        "title": "ModelUsage",
+        "type": "object"
+      },
       "NewSkill": {
         "additionalProperties": false,
         "properties": {
@@ -1721,6 +2338,42 @@
           "instructions"
         ],
         "title": "NewSkill",
+        "type": "object"
+      },
+      "Now": {
+        "properties": {
+          "queued": {
+            "title": "Queued",
+            "type": "integer"
+          },
+          "running": {
+            "title": "Running",
+            "type": "integer"
+          },
+          "spend_today": {
+            "title": "Spend Today",
+            "type": "number"
+          },
+          "waiting": {
+            "items": {
+              "$ref": "#/components/schemas/Waiting"
+            },
+            "title": "Waiting",
+            "type": "array"
+          },
+          "waiting_approval": {
+            "title": "Waiting Approval",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "running",
+          "waiting_approval",
+          "queued",
+          "spend_today",
+          "waiting"
+        ],
+        "title": "Now",
         "type": "object"
       },
       "OllamaView": {
@@ -2400,6 +3053,92 @@
           "content"
         ],
         "title": "SendMessageRequest",
+        "type": "object"
+      },
+      "SessionRow": {
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent"
+          },
+          "cost": {
+            "title": "Cost",
+            "type": "number"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_activity_at": {
+            "format": "date-time",
+            "title": "Last Activity At",
+            "type": "string"
+          },
+          "messages": {
+            "title": "Messages",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "test": {
+            "title": "Test",
+            "type": "boolean"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "tokens": {
+            "title": "Tokens",
+            "type": "integer"
+          },
+          "turns": {
+            "description": "Turns in range",
+            "title": "Turns",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "agent",
+          "status",
+          "messages",
+          "turns",
+          "failed",
+          "tokens",
+          "cost",
+          "created_at",
+          "last_activity_at",
+          "test"
+        ],
+        "title": "SessionRow",
         "type": "object"
       },
       "SessionView": {
@@ -3242,6 +3981,53 @@
         "title": "ToolOption",
         "type": "object"
       },
+      "ToolRow": {
+        "properties": {
+          "cached": {
+            "title": "Cached",
+            "type": "integer"
+          },
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "p95_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Ms"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool"
+          }
+        },
+        "required": [
+          "tool",
+          "calls",
+          "failed",
+          "cached",
+          "p95_ms"
+        ],
+        "title": "ToolRow",
+        "type": "object"
+      },
       "ToolSettingsUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -3382,6 +4168,58 @@
         "title": "ToolSettingsView",
         "type": "object"
       },
+      "Totals": {
+        "properties": {
+          "approvals": {
+            "$ref": "#/components/schemas/Approvals"
+          },
+          "chats": {
+            "title": "Chats",
+            "type": "integer"
+          },
+          "cost": {
+            "title": "Cost",
+            "type": "number"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "helpers": {
+            "title": "Helpers",
+            "type": "integer"
+          },
+          "model_calls": {
+            "title": "Model Calls",
+            "type": "integer"
+          },
+          "tokens": {
+            "title": "Tokens",
+            "type": "integer"
+          },
+          "tool_calls": {
+            "title": "Tool Calls",
+            "type": "integer"
+          },
+          "turns": {
+            "title": "Turns",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "turns",
+          "failed",
+          "chats",
+          "tokens",
+          "cost",
+          "tool_calls",
+          "model_calls",
+          "helpers",
+          "approvals"
+        ],
+        "title": "Totals",
+        "type": "object"
+      },
       "Tried": {
         "properties": {
           "chatted": {
@@ -3425,6 +4263,335 @@
           "run_id"
         ],
         "title": "TurnAccepted",
+        "type": "object"
+      },
+      "TurnDetail": {
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent"
+          },
+          "agent_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Version"
+          },
+          "cost": {
+            "title": "Cost",
+            "type": "number"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "model_calls": {
+            "title": "Model Calls",
+            "type": "integer"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "\ud83d\udc4d 1, \ud83d\udc4e -1, or not rated",
+            "title": "Rating"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "reclaims": {
+            "title": "Reclaims",
+            "type": "integer"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "session_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Title"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "steps": {
+            "title": "Steps",
+            "type": "integer"
+          },
+          "test": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test"
+          },
+          "tokens": {
+            "title": "Tokens",
+            "type": "integer"
+          },
+          "tool_calls": {
+            "title": "Tool Calls",
+            "type": "integer"
+          },
+          "usage": {
+            "description": "Its model calls, per model",
+            "items": {
+              "$ref": "#/components/schemas/ModelUsage"
+            },
+            "title": "Usage",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "agent",
+          "agent_version",
+          "status",
+          "reason",
+          "session_id",
+          "session_title",
+          "test",
+          "steps",
+          "model_calls",
+          "tool_calls",
+          "tokens",
+          "cost",
+          "duration_s",
+          "reclaims",
+          "models",
+          "usage"
+        ],
+        "title": "TurnDetail",
+        "type": "object"
+      },
+      "TurnRow": {
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent"
+          },
+          "agent_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Version"
+          },
+          "cost": {
+            "title": "Cost",
+            "type": "number"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "model_calls": {
+            "title": "Model Calls",
+            "type": "integer"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "\ud83d\udc4d 1, \ud83d\udc4e -1, or not rated",
+            "title": "Rating"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "reclaims": {
+            "title": "Reclaims",
+            "type": "integer"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "session_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Title"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "steps": {
+            "title": "Steps",
+            "type": "integer"
+          },
+          "test": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test"
+          },
+          "tokens": {
+            "title": "Tokens",
+            "type": "integer"
+          },
+          "tool_calls": {
+            "title": "Tool Calls",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "agent",
+          "agent_version",
+          "status",
+          "reason",
+          "session_id",
+          "session_title",
+          "test",
+          "steps",
+          "model_calls",
+          "tool_calls",
+          "tokens",
+          "cost",
+          "duration_s",
+          "reclaims",
+          "models"
+        ],
+        "title": "TurnRow",
         "type": "object"
       },
       "UpdateSessionRequest": {
@@ -3554,6 +4721,70 @@
         "title": "VersionView",
         "type": "object"
       },
+      "Waiting": {
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool"
+          }
+        },
+        "required": [
+          "run_id",
+          "session_id",
+          "agent",
+          "tool",
+          "since"
+        ],
+        "title": "Waiting",
+        "type": "object"
+      },
       "Warning": {
         "properties": {
           "field": {
@@ -3599,6 +4830,393 @@
         "summary": "Version and model, for the UI",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/activity": {
+      "get": {
+        "operationId": "activity_activity_get",
+        "parameters": [
+          {
+            "description": "24h, 7d or 30d",
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "7d",
+              "description": "24h, 7d or 30d",
+              "enum": [
+                "24h",
+                "7d",
+                "30d"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          },
+          {
+            "description": "One agent (its name); all by default",
+            "in": "query",
+            "name": "agent",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One agent (its name); all by default",
+              "title": "Agent"
+            }
+          },
+          {
+            "description": "Count test chats from the Studio too",
+            "in": "query",
+            "name": "include_tests",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Count test chats from the Studio too",
+              "title": "Include Tests",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "What all agents have been doing",
+        "tags": [
+          "activity"
+        ]
+      }
+    },
+    "/activity/sessions": {
+      "get": {
+        "operationId": "sessions_activity_sessions_get",
+        "parameters": [
+          {
+            "description": "24h, 7d or 30d",
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "7d",
+              "description": "24h, 7d or 30d",
+              "enum": [
+                "24h",
+                "7d",
+                "30d"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          },
+          {
+            "description": "One agent (its name); all by default",
+            "in": "query",
+            "name": "agent",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One agent (its name); all by default",
+              "title": "Agent"
+            }
+          },
+          {
+            "description": "Count test chats from the Studio too",
+            "in": "query",
+            "name": "include_tests",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Count test chats from the Studio too",
+              "title": "Include Tests",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SessionRow"
+                  },
+                  "title": "Response Sessions Activity Sessions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Chats in range",
+        "tags": [
+          "activity"
+        ]
+      }
+    },
+    "/activity/turns": {
+      "get": {
+        "operationId": "turns_activity_turns_get",
+        "parameters": [
+          {
+            "description": "24h, 7d or 30d",
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "7d",
+              "description": "24h, 7d or 30d",
+              "enum": [
+                "24h",
+                "7d",
+                "30d"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          },
+          {
+            "description": "One agent (its name); all by default",
+            "in": "query",
+            "name": "agent",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One agent (its name); all by default",
+              "title": "Agent"
+            }
+          },
+          {
+            "description": "Count test chats from the Studio too",
+            "in": "query",
+            "name": "include_tests",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Count test chats from the Studio too",
+              "title": "Include Tests",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "e.g. failed",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "e.g. failed",
+              "title": "Status"
+            }
+          },
+          {
+            "description": "e.g. timeout",
+            "in": "query",
+            "name": "reason",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "e.g. timeout",
+              "title": "Reason"
+            }
+          },
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Session Id"
+            }
+          },
+          {
+            "description": "Page: created_at <",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page: created_at <",
+              "title": "Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TurnRow"
+                  },
+                  "title": "Response Turns Activity Turns Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Turns, newest first",
+        "tags": [
+          "activity"
+        ]
+      }
+    },
+    "/activity/turns/{run_id}": {
+      "get": {
+        "operationId": "turn_activity_turns__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One turn",
+        "tags": [
+          "activity"
         ]
       }
     },
@@ -3775,6 +5393,249 @@
         "summary": "One agent, with its prompt",
         "tags": [
           "agents"
+        ]
+      }
+    },
+    "/audit": {
+      "get": {
+        "operationId": "audit_audit_get",
+        "parameters": [
+          {
+            "description": "e.g. agent.published",
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 60,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "e.g. agent.published",
+              "title": "Action"
+            }
+          },
+          {
+            "description": "e.g. agent",
+            "in": "query",
+            "name": "target_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 60,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "e.g. agent",
+              "title": "Target Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Id"
+            }
+          },
+          {
+            "description": "Page: at <",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page: at <",
+              "title": "Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AuditRow"
+                  },
+                  "title": "Response Audit Audit Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Who changed what",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/audit.csv": {
+      "get": {
+        "operationId": "audit_csv_audit_csv_get",
+        "parameters": [
+          {
+            "description": "e.g. agent.published",
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 60,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "e.g. agent.published",
+              "title": "Action"
+            }
+          },
+          {
+            "description": "e.g. agent",
+            "in": "query",
+            "name": "target_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 60,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "e.g. agent",
+              "title": "Target Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "The trail as a CSV file",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/client-errors": {
+      "post": {
+        "operationId": "client_error_client_errors_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientError"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Log an error from the browser",
+        "tags": [
+          "telemetry"
         ]
       }
     },
@@ -4635,6 +6496,142 @@
         "summary": "Replay persisted events",
         "tags": [
           "runs"
+        ]
+      }
+    },
+    "/runs/{run_id}/feedback": {
+      "delete": {
+        "operationId": "delete_feedback_runs__run_id__feedback_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Take a rating back",
+        "tags": [
+          "audit"
+        ]
+      },
+      "get": {
+        "operationId": "get_feedback_runs__run_id__feedback_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/FeedbackView"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Feedback Runs  Run Id  Feedback Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "A reply's rating",
+        "tags": [
+          "audit"
+        ]
+      },
+      "put": {
+        "operationId": "put_feedback_runs__run_id__feedback_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rate a reply",
+        "tags": [
+          "audit"
         ]
       }
     },

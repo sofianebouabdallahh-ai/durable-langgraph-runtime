@@ -58,3 +58,26 @@
   scrollbar-width: thin;
   scrollbar-color: var(--color-stone-300) transparent;
 }
+
+/* Chart colours (the Activity page): the validated categorical palette, by entity in a
+   fixed order, stepped for each mode; "other" and the meter's track are neutral. */
+:root {
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-other: #a8a29e;
+  --series-track: #e7e5e4;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-other: #78716c;
+    --series-track: #292524;
+  }
+}

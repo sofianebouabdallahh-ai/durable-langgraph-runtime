@@ -152,15 +152,17 @@ export function Segmented<T extends string>({
   options,
   onChange,
   label,
+  compact = false,
 }: {
   value: T;
   options: readonly { value: T; label: string; hint?: string }[];
   onChange: (value: T) => void;
   label: string;
+  compact?: boolean; // one row at every width (short labels, no hints)
 }) {
-  const columns = options.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-4";
+  const columns = compact ? "grid-cols-3" : `grid-cols-2 ${options.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-4"}`;
   return (
-    <div role="radiogroup" aria-label={label} className={`grid grid-cols-2 gap-2 ${columns}`}>
+    <div role="radiogroup" aria-label={label} className={`grid gap-2 ${columns}`}>
       {options.map((o) => (
         <button
           key={o.value}

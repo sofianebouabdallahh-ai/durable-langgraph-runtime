@@ -9,6 +9,8 @@
  *   #/settings/tools   what the tools use (web search, sites)    #/settings/privacy  usage counts (opt-in)
  *   #/skills      the skill library
  *   #/start       Getting started: a guided first agent
+ *   #/activity    what all agents have been doing    #/activity/turns/<id>  one turn
+ *   #/activity/audit   who changed what
  */
 import { useCallback, useSyncExternalStore } from "react";
 
@@ -22,7 +24,10 @@ export type Route =
   | { page: "tools" }
   | { page: "privacy" }
   | { page: "skills" }
-  | { page: "start" };
+  | { page: "start" }
+  | { page: "activity" }
+  | { page: "turn"; runId: string }
+  | { page: "audit" };
 
 export function parse(hash: string): Route {
   const [, kind, id] = hash.replace(/^#/, "").split("/");
@@ -34,6 +39,11 @@ export function parse(hash: string): Route {
   if (kind === "settings" && id === "privacy") return { page: "privacy" };
   if (kind === "skills") return { page: "skills" };
   if (kind === "start") return { page: "start" };
+  if (kind === "activity" && id === "audit") return { page: "audit" };
+  if (kind === "activity") {
+    const runId = hash.replace(/^#/, "").split("/")[3];
+    return runId ? { page: "turn", runId: decodeURIComponent(runId) } : { page: "activity" };
+  }
   return { page: "home" };
 }
 
@@ -59,6 +69,12 @@ export function href(route: Route): string {
       return "#/skills";
     case "start":
       return "#/start";
+    case "activity":
+      return "#/activity";
+    case "turn":
+      return `#/activity/turns/${encodeURIComponent(route.runId)}`;
+    case "audit":
+      return "#/activity/audit";
   }
 }
 

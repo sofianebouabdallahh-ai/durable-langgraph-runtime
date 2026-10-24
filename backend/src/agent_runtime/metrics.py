@@ -88,7 +88,8 @@ LEASES = Gauge("runtime_active_leases", "Runs held by a worker right now")
 WAITING = Gauge("runtime_runs_waiting", "Runs paused", ["on"])
 SESSIONS = Gauge("runtime_active_sessions", "Chat sessions not archived")
 COST_TODAY = Gauge("runtime_cost_today_usd", "Spend since midnight UTC (R14.8)")
-PAUSED = Gauge("runtime_kill_switch", "1 while the kill switch is on (R14.18)")
+PAUSED = Gauge("runtime_kill_switch", "1 while every agent is switched off (R14.18)")
+AGENTS_OFF = Gauge("runtime_agents_switched_off", "Agents switched off one by one (L6)")
 SUBSCRIBERS = Gauge("runtime_stream_subscribers", "Open live streams on this replica")
 INFLIGHT = Gauge("runtime_worker_inflight", "Runs in flight in this worker")
 WORKER_LOOP = Gauge("runtime_worker_loop_timestamp_seconds", "Last tick of the worker's loop")
@@ -160,8 +161,8 @@ def _observe(type_: str, p: dict[str, Any]) -> None:
 # ------------------------------------------------------------ direct hooks
 
 
-def llm_usage(model: str, tokens_in: int, tokens_out: int, cost: float) -> None:
-    LLM_CALLS.labels(model).inc()
+def llm_usage(model: str, tokens_in: int, tokens_out: int, cost: float, calls: int = 1) -> None:
+    LLM_CALLS.labels(model).inc(calls)
     LLM_TOKENS.labels(model, "in").inc(tokens_in)
     LLM_TOKENS.labels(model, "out").inc(tokens_out)
     LLM_COST.labels(model).inc(cost)  # also 0: a free model still shows as $0
@@ -233,6 +234,8 @@ class StatePoller:
             sessions = await cur.fetchone()
             cur = await conn.execute("SELECT paused FROM admin_state LIMIT 1")
             admin = await cur.fetchone()
+            cur = await conn.execute("SELECT count(*) AS n FROM kill_switches")
+            switched = await cur.fetchone()
         if row is not None:
             QUEUE_DEPTH.set(row["queued"])
             LEASES.set(row["running"])
@@ -242,6 +245,7 @@ class StatePoller:
         if sessions is not None:
             SESSIONS.set(sessions["n"])
         PAUSED.set(1 if admin is not None and admin["paused"] else 0)
+        AGENTS_OFF.set(switched["n"] if switched is not None else 0)
         if self._queue is not None:
             PENDING.set(await self._queue.pending_count())
 

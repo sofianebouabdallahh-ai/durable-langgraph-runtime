@@ -20,6 +20,9 @@ const TOOLS: Record<string, string> = {
   read_skill_file: "Read a skill's file",
 };
 
+/** Tools whose card title already says what happened ("Ran Python"): no "Used" before it. */
+const SAYS_WHAT_IT_DID = new Set(["save_note", "read_webpage", "run_python", "load_skill", "read_skill_file"]);
+
 /** An agent's display name. The general assistant is Nuria herself. */
 export function agentLabel(name: string | null | undefined): string {
   if (!name || name === "chat") return "Nuria";
@@ -109,6 +112,25 @@ export function errorText(reason: string, budgetLimited: boolean): string {
   return `Something went wrong (${reason}).`;
 }
 
+/** Why a turn failed, in a few words (the Activity page's lists). */
+export function failureReason(reason: string | null | undefined): string {
+  if (!reason) return "Failed";
+  if (reason.startsWith("budget:")) return `Reached its limit (${reason.slice(7).replace("_", " ")})`;
+  const words: Record<string, string> = {
+    timeout: "Took too long",
+    step_limit: "Too many steps",
+    cancel_requested: "Stopped",
+    error: "An error",
+    loop_detected: "Went round in circles",
+    max_reclaims: "Kept crashing",
+    children_failed: "Its helpers failed",
+    depth_limit: "Too many helpers deep",
+    rejected: "Rejected",
+    turn_denied: "Refused by a protection",
+  };
+  return words[reason] ?? reason;
+}
+
 /** Why an action waits for a person, without the policy's vocabulary. */
 export function approvalReason(reason: string | null): string {
   if (reason?.includes("external")) return "It reaches outside this chat (real people or systems), so it waits for your OK.";
@@ -142,8 +164,11 @@ export function eventLine(type: string, payload: Record<string, unknown>): strin
       return "Your message was queued";
     case "run.started":
       return `A worker picked it up${worker}`;
-    case "tool.called":
-      return `Used ${toolLabel(text(payload.tool) || "a tool")}`;
+    case "tool.called": {
+      const tool = text(payload.tool);
+      if (!tool) return "Used a tool";
+      return SAYS_WHAT_IT_DID.has(tool) ? toolLabel(tool) : `Used ${toolLabel(tool)}`;
+    }
     case "tool.completed":
       return payload.cached === true ? "…reused the earlier result (no second side effect)" : null;
     case "interrupt.raised":

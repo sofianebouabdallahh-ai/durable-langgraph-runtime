@@ -19,7 +19,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from prometheus_client import REGISTRY
 
-from agent_runtime import metrics, telemetry
+from agent_runtime import logs, metrics, telemetry
 from agent_runtime.api.app import create_app
 from agent_runtime.config import Settings
 from agent_runtime.db import Pool
@@ -222,7 +222,7 @@ async def test_every_log_line_during_a_run_carries_its_context(
     """SC5: JSON lines with run_id, epoch and trace_id."""
     out = io.StringIO()
     handler = logging.StreamHandler(out)
-    handler.setFormatter(telemetry.JsonFormatter("worker"))
+    handler.setFormatter(logs.JsonFormatter("worker"))
     logger = logging.getLogger("agent_runtime")
     logger.addHandler(handler)
     previous = logger.level
@@ -318,6 +318,19 @@ async def test_state_gauges_read_postgres_and_redis(
     assert sample("runtime_queue_depth") == depth >= 1
     assert sample("runtime_kill_switch") == 0
     assert sample("runtime_queue_pending") == await queue.pending_count()
+    # One agent switched off counts too (L7): the gauge reads the per-agent switches.
+    async with pool.connection() as conn:
+        before = (
+            await (await conn.execute("SELECT count(*) AS n FROM kill_switches")).fetchone()
+            or {"n": 0}
+        )["n"]
+        await conn.execute("INSERT INTO kill_switches (agent) VALUES ('gauge-test')")
+    try:
+        await metrics.StatePoller(pool, queue).poll()
+        assert sample("runtime_agents_switched_off") == before + 1
+    finally:
+        async with pool.connection() as conn:
+            await conn.execute("DELETE FROM kill_switches WHERE agent = 'gauge-test'")
 
 
 async def test_api_serves_metrics_about_and_the_runs_trace_id(

@@ -16,13 +16,18 @@ Pattern: a Facade over the admission pause, the switches table and run cancellat
 
 from __future__ import annotations
 
+import logging
 import uuid
 
+from agent_runtime import logs
 from agent_runtime.admin import AdminRepository
+from agent_runtime.audit import AuditLog
 from agent_runtime.db import Pool
 from agent_runtime.runs.service import RunService
 from agent_runtime.runs.store import RunTerminal
 from agent_runtime.runs.switches import KillSwitchRepository, KillSwitchState
+
+log = logging.getLogger(__name__)
 
 UNFINISHED = "status NOT IN ('completed', 'failed', 'cancelled')"
 
@@ -47,6 +52,8 @@ class KillSwitch:
         """Switch `agent` (None: every agent) off and cancel its unfinished runs now.
         Returns how many runs were cancelled (their descendants go with them)."""
         async with self._pool.connection() as conn, conn.transaction():
+            await AuditLog(conn).record("kill_switch.on", "agent", agent or "*",
+                                        after={"reason": reason})  # fmt: skip
             if agent is None:
                 await AdminRepository(conn).set_paused(True, reason or "every agent stopped")
                 cur = await conn.execute(
@@ -67,12 +74,16 @@ class KillSwitch:
                 cancelled += 1
             except RunTerminal:
                 pass  # it finished meanwhile
+        logs.event(log, f"kill switch on: {agent or 'every agent'}", agent=agent,
+                   cancelled=cancelled, level=logging.WARNING)  # fmt: skip
         return cancelled
 
     async def resume(self, agent: str | None) -> None:
         """Switch `agent` (None: every agent) back on. Nothing cancelled comes back."""
-        async with self._pool.connection() as conn:
+        async with self._pool.connection() as conn, conn.transaction():
             if agent is None:
                 await AdminRepository(conn).set_paused(False)
             else:
                 await KillSwitchRepository(conn).release(agent)
+            await AuditLog(conn).record("kill_switch.off", "agent", agent or "*")
+        logs.event(log, f"kill switch off: {agent or 'every agent'}", agent=agent)

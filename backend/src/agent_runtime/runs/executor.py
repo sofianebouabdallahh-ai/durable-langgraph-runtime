@@ -47,7 +47,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphRecursionError
 from langgraph.types import Command, interrupt
 
-from agent_runtime import metrics, telemetry
+from agent_runtime import genai, logs, metrics, telemetry
 from agent_runtime.agents.resolver import AgentResolver
 from agent_runtime.checkpointing import FencedCheckpointer
 from agent_runtime.config import Settings
@@ -59,6 +59,7 @@ from agent_runtime.models.connections import ModelRouter
 from agent_runtime.models.provider import ModelProvider, configured_provider
 from agent_runtime.models.retry import CircuitOpen, ModelCaller, breaker_for
 from agent_runtime.models.scripted import ScriptTurn
+from agent_runtime.redaction import redact
 from agent_runtime.runs.events import EventType
 from agent_runtime.runs.fanout import (
     ChildResult,
@@ -98,11 +99,10 @@ from agent_runtime.tools.hooks import (
     Summary,
     TurnEndInput,
     default_hooks,
-    redact,
     run_observers,
 )
 from agent_runtime.tools.invocations import BudgetExceeded, LoopDetected
-from agent_runtime.tools.middleware import RunContext, TurnDenied, TurnInfo
+from agent_runtime.tools.middleware import RunContext, TurnDenied, TurnInfo, UsageRecorder
 from agent_runtime.tools.pipeline import Grant, ToolPipeline, ToolRunContext
 from agent_runtime.tools.policy import RiskClassPolicy, ToolPolicy
 from agent_runtime.tools.spec import ToolRegistry
@@ -333,15 +333,30 @@ class RunExecutor:
         }  # fmt: skip
         if run.session_id is not None:
             attributes["session.id"] = str(run.session_id)
+        attributes |= genai.agent(run.agent_name, run.agent_version, run.session_id)
         with telemetry.run_span(run.traceparent, attributes) as span:
             self._trace = span
-            with telemetry.bind_run(run.id, fence.epoch, telemetry.run_trace_id()):
-                log.info("run %s: executing %s (%s)", run.id, run.graph_name,
-                         "reclaimed" if lease.reclaimed else "started")  # fmt: skip
+            with logs.bind(
+                run_id=str(run.id), epoch=fence.epoch, trace_id=telemetry.run_trace_id(),
+                session_id=str(run.session_id) if run.session_id else None,
+                agent=run.agent_name, agent_version=run.agent_version, kind=run.kind,
+                worker=self.owner,
+            ):  # fmt: skip
+                logs.event(log, f"run {run.id}: executing {run.graph_name}",
+                           how="reclaimed" if lease.reclaimed else "started",
+                           reclaims=lease.reclaims or None, depth=run.depth or None)  # fmt: skip
+                t0 = time.monotonic()
                 ended = await self._drive(run, fence)
-                log.info("run %s: %s%s", run.id, ended.status,
-                         f" ({ended.reason})" if ended.reason else "")  # fmt: skip
-            span.span.set_attribute("run.status", str(ended.status))
+                logs.event(
+                    log, f"run {run.id}: {ended.status}", status=str(ended.status),
+                    reason=ended.reason, steps=ended.steps, tokens=ended.tokens,
+                    cost=round(ended.cost, 6), duration_ms=round((time.monotonic() - t0) * 1000),
+                    level=logging.WARNING if ended.status is RunStatus.FAILED else logging.INFO,
+                )  # fmt: skip
+            span.span.set_attributes({
+                "run.status": str(ended.status), "run.steps": ended.steps,
+                "run.tokens": ended.tokens, "run.cost_usd": ended.cost,
+            })  # fmt: skip
             if ended.reason:
                 span.span.set_attribute("run.reason", ended.reason)
         if ended.status is not RunStatus.RUNNING:
@@ -661,17 +676,15 @@ class RunExecutor:
                                 window_s=s.breaker_window_s, open_s=s.breaker_open_s),
         )  # fmt: skip
 
-    def _usage_recorder(self, outbox: Outbox) -> Callable[[str, int, int], float]:
+    def _usage_recorder(self, outbox: Outbox) -> UsageRecorder:
         prices = self._settings.model_prices
 
-        def record(model: str, tokens_in: int, tokens_out: int) -> float:
+        def record(model: str, tokens_in: int, tokens_out: int, seconds: float = 0.0) -> float:
             price = prices.get(model)
             cost = price.cost(tokens_in, tokens_out) if price else 0.0
             outbox.add_usage(tokens_in + tokens_out, cost)
-            # Counted when the response arrives: a step lost to a crash and re-run is
-            # counted twice here, as it was paid for twice (the budget counts it once).
-            metrics.llm_usage(model, tokens_in, tokens_out, cost)
-            return cost
+            outbox.add_model_call(model, tokens_in, tokens_out, cost, round(seconds * 1000))
+            return cost  # the metrics count it when the step commits (Outbox)
 
         return record
 
@@ -907,7 +920,9 @@ class RunExecutor:
                 fence=fence, payload=value,
             )  # fmt: skip
 
-        return await self._fenced_then_publish(fence, work)
+        paused = await self._fenced_then_publish(fence, work)
+        logs.event(log, "approval asked", interrupt=value.get("type"), tool=value.get("tool"))
+        return paused
 
     async def _release(self, fence: Fence, outbox: Outbox, *, reason: str = "draining") -> Run:
         """Graceful hand-off (R10.7): back to `queued`, lease cleared, not a reclaim."""

@@ -180,8 +180,9 @@ spec:
 {{- end }}
 {{- if .Values.monitoring.enabled }}
 ---
-# Monitoring: the collector takes spans from the API and workers and sends them to
-# Jaeger; Prometheus scrapes; Grafana reads Prometheus; the UIs from the Ingress.
+# Monitoring: the collector takes spans and log lines from the API and workers and sends
+# them to Tempo and Loki; Prometheus scrapes; Grafana reads all three; the UI from the
+# Ingress.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -190,7 +191,7 @@ metadata:
 spec:
   podSelector:
     matchExpressions:
-      - { key: app.kubernetes.io/name, operator: In, values: [otel-collector, jaeger, prometheus, grafana, kube-state-metrics] }
+      - { key: app.kubernetes.io/name, operator: In, values: [otel-collector, tempo, loki, prometheus, grafana, kube-state-metrics] }
   policyTypes: [Ingress, Egress]
   ingress:
     - from:

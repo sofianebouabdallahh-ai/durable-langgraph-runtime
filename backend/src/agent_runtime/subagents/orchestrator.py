@@ -43,7 +43,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.pregel import Pregel
 
-from agent_runtime import telemetry
+from agent_runtime import logs, telemetry
 from agent_runtime.agents.schema import AgentDefinition, SubAgentDefinition
 from agent_runtime.checkpointing import FencedCheckpointer
 from agent_runtime.db import Conn, Pool
@@ -343,18 +343,27 @@ class SubagentOrchestrator:
     def _start(self, inv: Invocation) -> None:
         # An empty context: the task must not inherit the main graph's run (measured).
         # Its span hangs below the node that spawned it (or the run, on recovery).
+        # Its log lines carry the run's ids, taken over explicitly for the same reason
+        # (not the spawning tool call's: the helper isn't part of it).
         parent = telemetry.parent_context()
+        fields = logs.fields(without=("tool", "tool_call_id"))
         self._tasks[inv.handle] = asyncio.create_task(
-            self._run(inv, parent), name=f"subagent:{inv.agent}", context=contextvars.Context()
-        )
+            self._run(inv, parent, fields), name=f"subagent:{inv.agent}",
+            context=contextvars.Context(),
+        )  # fmt: skip
 
-    async def _run(self, inv: Invocation, parent: Any = None) -> None:
+    async def _run(
+        self, inv: Invocation, parent: Any = None, fields: dict[str, Any] | None = None
+    ) -> None:
         attrs = {"subagent.handle": str(inv.handle), "subagent.name": inv.name,
                  "worker": self.worker or ""}  # fmt: skip
+        run = {"run_id": str(self.run_id), "epoch": self.fence.epoch,
+               "trace_id": telemetry.run_trace_id()}  # fmt: skip
         with (
             telemetry.child_span(f"subagent:{inv.name}", attrs, current=True, parent=parent),
-            telemetry.bind_run(self.run_id, self.fence.epoch, telemetry.run_trace_id()),
+            logs.bind(**{**run, **(fields or {})}, helper=inv.name, helper_handle=str(inv.handle)),
         ):
+            logs.event(log, f"helper {inv.name} started")
             await self._run_traced(inv)
 
     async def _run_traced(self, inv: Invocation) -> None:
@@ -486,6 +495,8 @@ class SubagentOrchestrator:
                         await outbox.flush(repo.runs)  # what its last, unfinished step staged
                     await repo.finish(self.fence, handle, status, result)
             await self.announce(repo.emitted)
+            logs.event(log, f"helper {handle} {status}", status=status,
+                       reason=result.get("reason"))  # fmt: skip
         except FencedError:
             log.info("sub-agent %s: not finished here (fenced off)", handle)
 

@@ -12,13 +12,12 @@
     "from": "now-30m",
     "to": "now"
   },
-  "description": "Nuria at work: runs, models, tools, helpers, guardrails and processes (R7.2).",
+  "description": "Nuria at work: runs, models, tools, helpers, guardrails, processes and logs (R7.2, L7b).",
   "links": [
     {
-      "title": "Traces (Jaeger)",
+      "title": "Traces and logs (Explore)",
       "type": "link",
-      "url": "http://localhost:16686/search?service=worker",
-      "targetBlank": true,
+      "url": "/explore",
       "icon": "external link"
     }
   ],
@@ -476,7 +475,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "R14.18: admission and claiming stopped",
+      "description": "Every agent switched off (R14.18: admission and claiming stopped), and how many agents are switched off one by one.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -491,7 +490,18 @@
           },
           "expr": "max(runtime_kill_switch)",
           "refId": "A",
-          "instant": true
+          "instant": true,
+          "legendFormat": "every agent"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(runtime_agents_switched_off)",
+          "refId": "B",
+          "instant": true,
+          "legendFormat": "agents off"
         }
       ],
       "options": {
@@ -502,7 +512,7 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "value"
+        "textMode": "value_and_name"
       },
       "fieldConfig": {
         "defaults": {
@@ -511,21 +521,6 @@
           "color": {
             "mode": "thresholds"
           },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "off",
-                  "color": "green"
-                },
-                "1": {
-                  "text": "ON",
-                  "color": "red"
-                }
-              }
-            }
-          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -540,7 +535,58 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "off",
+                        "color": "green"
+                      },
+                      "1": {
+                        "text": "ON",
+                        "color": "red"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
       }
     },
     {
@@ -1329,6 +1375,120 @@
         },
         "overrides": []
       }
+    },
+    {
+      "type": "row",
+      "title": "Logs",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 61
+      },
+      "panels": [],
+      "id": 31
+    },
+    {
+      "type": "timeseries",
+      "title": "Warnings and errors, by service",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "Log lines at WARNING or above, per service (Loki). Click a point, then Explore, to read them.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 62
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "legendFormat": "{{service_name}}",
+          "expr": "sum by (service_name) (count_over_time({service_name=~\".+\"} | severity_text=~\"WARNING|ERROR|CRITICAL\" [$__auto]))"
+        }
+      ],
+      "id": 32
+    },
+    {
+      "type": "logs",
+      "title": "Turns that failed",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "The line each failed turn ended with: why, and its trace (open a line, then Open the trace).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 62
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{service_name=\"worker\"} | status=\"failed\""
+        }
+      ],
+      "id": 33
+    },
+    {
+      "type": "logs",
+      "title": "Errors in the app's page",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "Errors from the browser (component=ui), sent to the API and logged there.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 70
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{service_name=\"api\"} | component=\"ui\""
+        }
+      ],
+      "id": 34
     }
   ]
 }
