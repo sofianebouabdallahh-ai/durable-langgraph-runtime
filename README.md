@@ -6,12 +6,12 @@
 
 Under the hood, a runtime that runs LangGraph agents across a pool of workers and makes them survive what distributed systems throw at them: crashed workers, paused "zombie" workers, restarts, human approvals that take hours, node drains and rolling upgrades. It survives all of these without losing or duplicating work.
 
-> **Status: v0.1.0, the first release for testers.** Clone, run `./setup.sh`, and chat in your browser; kill a worker or an API replica mid-reply and watch nothing get lost. Build your own agents with helpers and skills, bring your own model, watch it all work in traces and dashboards (`--observability`), or run it on a local Kubernetes cluster (`--kubernetes`). Updates keep your data (`./setup.sh --update`, with a backup first). **Testing for us?** See the [tester guide](docs/setup/testers.md); feedback is two clicks from the app. [Roadmap](docs/roadmap.md) · [phase summaries](docs/progress/) · [changelog](CHANGELOG.md).
+> **Status: v0.2.0, the first public release.** Clone, run `./setup.sh`, and chat in your browser, with a free local model (Ollama) or your own key; kill a worker or an API replica mid-reply and watch nothing get lost. Build your own agents with helpers and skills, give them real tools (web search, reading pages, Python in a sandbox) and tools from **MCP servers**, follow every turn in **Activity**, traces and logs (`--observability`), or run it on a local Kubernetes cluster (`--kubernetes`). Updates keep your data (`./setup.sh --update`, with a backup first). **Testing for us?** See the [tester guide](docs/setup/testers.md); feedback is two clicks from the app. [Roadmap](docs/roadmap.md) · [phase summaries](docs/progress/) · [changelog](CHANGELOG.md).
 
 ## Try it (only Docker needed)
 
 ```bash
-git clone --branch v0.1.0 https://github.com/sofianebouabdallahh-ai/durable-langgraph-runtime.git nuria
+git clone --branch v0.2.0 https://github.com/sofianebouabdallahh-ai/durable-langgraph-runtime.git nuria
 cd nuria
 ./setup.sh            # Windows: .\setup.ps1
 ```
@@ -59,8 +59,8 @@ A monorepo with one folder per deliverable ([ADR-0001](docs/adr/0001-repository-
 | Path | What |
 |---|---|
 | [`backend/`](backend/) | Python service: `src/agent_runtime` package, Alembic `migrations/`, `tests/{unit,integration}` |
-| [`frontend/`](frontend/) | React + TypeScript UI (phase 11) |
-| [`infra/`](infra/) | How it runs: `compose/` now; sandbox image, observability, kind, k8s and Helm later |
+| [`frontend/`](frontend/) | Nuria, the React + TypeScript UI |
+| [`infra/`](infra/) | How it runs: Docker Compose, the observability stack, kind and the Helm charts |
 | [`docs/`](docs/) | `requirements/` (spec + change requests), `adr/`, `progress/` (phase summaries), `roadmap.md` |
 | `Makefile` | The single entry point. Run `make` from the root |
 
@@ -80,7 +80,7 @@ Run `make hooks` once after cloning: the pre-commit hooks block secrets from bei
 
 ## Security posture
 
-Everything runs on your computer, reachable from this machine only (`127.0.0.1`); containers run as non-root on read-only filesystems. Model keys are stored encrypted; nothing is sent anywhere without your click, except your messages to the model you chose. Tools that reach the outside world wait for your approval, every reply has budgets, and text from tools is treated as data, never instructions. Skills with scripts are kept but never run (no sandbox yet: [CR-002](docs/requirements/CR-002-run-sandboxes.md)). **Details, and how to delete everything:** [docs/security.md](docs/security.md).
+Everything runs on your computer, reachable from this machine only (`127.0.0.1`); containers run as non-root on read-only filesystems. Model keys are stored encrypted; nothing is sent anywhere without your click, except your messages to the model you chose. Tools that reach the outside world wait for your approval, every reply has budgets, and text from tools is treated as data, never instructions. Python runs in a disposable sandbox with no network and no secrets; skills with scripts are kept but their scripts never run. MCP servers' tokens are encrypted, their tools ask you first, and a tool that changes behind your back is blocked until you approve. **Details, and how to delete everything:** [docs/security.md](docs/security.md).
 
 ## License
 

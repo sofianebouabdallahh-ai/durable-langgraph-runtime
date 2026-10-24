@@ -7,7 +7,7 @@ Thank you for trying Nuria. This is its first release (**0.1**). It runs on your
 You need **Docker** and nothing else: [macOS](macos.md) · [Windows](windows.md) · [Linux](linux.md).
 
 ```bash
-git clone --branch v0.1.0 https://github.com/sofianebouabdallahh-ai/durable-langgraph-runtime.git nuria
+git clone --branch v0.2.0 https://github.com/sofianebouabdallahh-ai/durable-langgraph-runtime.git nuria
 cd nuria
 ./setup.sh            # Windows (PowerShell): .\setup.ps1
 ```
