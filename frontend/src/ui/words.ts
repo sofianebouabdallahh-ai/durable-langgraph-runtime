@@ -49,7 +49,17 @@ export function toolName(tool: string): string {
 
 /** What a tool did, as a chat card's title. */
 export function toolLabel(tool: string): string {
-  return TOOLS[tool] ?? tool.replaceAll("_", " ").replace(/^\w/, (c) => c.toUpperCase());
+  const mcp = mcpTool(tool);
+  if (mcp) return `${humanize(mcp.tool)} (${mcp.server.replaceAll("_", " ")})`;
+  return TOOLS[tool] ?? humanize(tool);
+}
+
+const humanize = (name: string) => name.replaceAll("_", " ").replace(/^\w/, (c) => c.toUpperCase());
+
+/** An MCP tool's name (`mcp__<server>__<tool>`, L8), split; null for a built-in tool. */
+export function mcpTool(name: string): { server: string; tool: string } | null {
+  const parts = name.split("__");
+  return parts.length >= 3 && parts[0] === "mcp" ? { server: parts[1] ?? "", tool: parts.slice(2).join("__") } : null;
 }
 
 /** What a tool does, in a few words (the Agents page). */
