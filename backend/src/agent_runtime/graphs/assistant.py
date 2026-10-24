@@ -140,7 +140,7 @@ def _bindable(spec: ToolSpec, description: str | None = None) -> BaseTool:
         coroutine=never,
         name=spec.name,
         description=description or spec.description,
-        args_schema=spec.args_model,
+        args_schema=dict(spec.input_schema) if spec.input_schema is not None else spec.args_model,
     )
 
 
@@ -230,6 +230,7 @@ def agent_spec(
         to_output=to_output,
         agent=agent,
         skills=skills or {},
+        tools=tools,
     )
 
 

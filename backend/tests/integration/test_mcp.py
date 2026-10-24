@@ -5,53 +5,20 @@ Against a real MCP server over HTTP (the fake one in devtools, served in this pr
 
 from __future__ import annotations
 
-import asyncio
-import socket
-from collections.abc import AsyncIterator
-from dataclasses import dataclass
-
 import httpx
 import pytest
-import uvicorn
 
 from agent_runtime.audit import AuditLog
 from agent_runtime.config import Settings
 from agent_runtime.db import Pool
-from agent_runtime.devtools.fake_mcp import FACT, FakeMcp, create_app
+from agent_runtime.devtools.fake_mcp import FACT
 from agent_runtime.mcp.client import call_tool
 from agent_runtime.mcp.service import McpInvalid, McpService, split_name, tool_name
+from tests.integration.conftest import MCP_TOKEN, ServedMcp
 
 pytestmark = pytest.mark.integration
 
-TOKEN = "fixture-token-" + "q" * 20
-
-
-@dataclass
-class Served:
-    url: str
-    admin: str
-    fake: FakeMcp
-
-
-def free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
-
-
-@pytest.fixture
-async def served() -> AsyncIterator[Served]:
-    app, fake = create_app(token=TOKEN)
-    port = free_port()
-    server = uvicorn.Server(uvicorn.Config(app, port=port, log_level="warning", lifespan="on"))
-    task = asyncio.create_task(server.serve())
-    while not server.started:  # noqa: ASYNC110 — uvicorn offers no "started" event
-        await asyncio.sleep(0.05)
-    try:
-        yield Served(f"http://127.0.0.1:{port}/mcp/", f"http://127.0.0.1:{port}/admin", fake)
-    finally:
-        server.should_exit = True
-        await task
+TOKEN = MCP_TOKEN
 
 
 @pytest.fixture
@@ -60,9 +27,9 @@ def service(pool: Pool, test_settings: Settings) -> McpService:
 
 
 async def test_add_test_and_switch_on_tools(
-    service: McpService, served: Served, pool: Pool
+    service: McpService, served_mcp: ServedMcp, pool: Pool
 ) -> None:
-    added = await service.add(display_name="Travel facts", url=served.url, token=TOKEN)
+    added = await service.add(display_name="Travel facts", url=served_mcp.url, token=TOKEN)
     assert added.name == "travel_facts" and added.has_token and added.status == "untested"
     server, tools = await service.test(added.id)
     assert server.status == "ready" and server.protocol_version == "2026-07-28"
@@ -98,14 +65,14 @@ async def test_add_test_and_switch_on_tools(
 
 
 async def test_a_changed_tool_is_blocked_until_approved(
-    service: McpService, served: Served
+    service: McpService, served_mcp: ServedMcp
 ) -> None:
     """Rug-pull protection: the server changes a tool after it was switched on."""
-    added = await service.add(display_name="Changing", url=served.url, token=TOKEN)
+    added = await service.add(display_name="Changing", url=served_mcp.url, token=TOKEN)
     await service.test(added.id)
     approved = await service.set_tool(added.id, "lookup", enabled=True)
     async with httpx.AsyncClient() as admin:
-        await admin.post(f"{served.admin}/change")
+        await admin.post(f"{served_mcp.admin}/change")
     _, tools = await service.test(added.id)
     lookup = next(t for t in tools if t.name == "lookup")
     assert lookup.changed and not lookup.usable
@@ -117,12 +84,12 @@ async def test_a_changed_tool_is_blocked_until_approved(
     assert again.usable and again.digest == lookup.latest_digest
 
 
-async def test_what_goes_wrong_is_said_plainly(service: McpService, served: Served) -> None:
-    wrong = await service.add(display_name="Wrong token", url=served.url, token="nope")
+async def test_what_goes_wrong_is_said_plainly(service: McpService, served_mcp: ServedMcp) -> None:
+    wrong = await service.add(display_name="Wrong token", url=served_mcp.url, token="nope")
     server, tools = await service.test(wrong.id)
     assert server.status == "failed" and "refused the token" in (server.status_detail or "")
     assert tools == []
-    path = await service.add(display_name="Wrong path", url=served.url.replace("/mcp/", "/x/"),
+    path = await service.add(display_name="Wrong path", url=served_mcp.url.replace("/mcp/", "/x/"),
                              token=TOKEN)  # fmt: skip
     server, _ = await service.test(path.id)
     assert "check the path" in (server.status_detail or "")
@@ -132,9 +99,9 @@ async def test_what_goes_wrong_is_said_plainly(service: McpService, served: Serv
 
 
 async def test_removing_a_server_switches_its_tools_off(
-    service: McpService, served: Served
+    service: McpService, served_mcp: ServedMcp
 ) -> None:
-    added = await service.add(display_name="Gone soon", url=served.url, token=TOKEN)
+    added = await service.add(display_name="Gone soon", url=served_mcp.url, token=TOKEN)
     await service.test(added.id)
     await service.set_tool(added.id, "lookup", enabled=True)
     await service.remove(added.id)

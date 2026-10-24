@@ -7,6 +7,8 @@
   approved (switched on); `latest` and `latest_digest` what the server offered when last
   asked. They differ when the server changed the tool: it is then blocked until someone
   looks again ("rug pull" protection). New tools start switched off.
+- `agent_versions.mcp_lock`: the MCP tools a published version uses, with the definitions
+  approved when it was published; frozen afterwards like `skill_lock` (the AC47 trigger).
 
 Additive only (expand step).
 
@@ -23,6 +25,45 @@ revision: str = "0021"
 down_revision: str | None = "0020"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+
+FROZEN = """
+                NEW.document IS DISTINCT FROM OLD.document
+                OR NEW.bundle_hash IS DISTINCT FROM OLD.bundle_hash
+                OR NEW.number <> OLD.number OR NEW.agent_id <> OLD.agent_id
+                OR NEW.published_at IS DISTINCT FROM OLD.published_at
+                OR NEW.changelog IS DISTINCT FROM OLD.changelog
+                OR NEW.skill_lock IS DISTINCT FROM OLD.skill_lock{extra}
+"""
+
+
+def _immutable(extra: str) -> str:
+    """The AC47 trigger function (migrations 0010, 0012), with the frozen columns given."""
+    return f"""
+        CREATE OR REPLACE FUNCTION agent_version_immutable() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+            IF TG_OP = 'DELETE' THEN
+                IF OLD.state <> 'draft' THEN
+                    RAISE EXCEPTION 'agent version %/% is %: it cannot be deleted',
+                        OLD.agent_id, OLD.number, OLD.state USING ERRCODE = 'check_violation';
+                END IF;
+                RETURN OLD;
+            END IF;
+            IF OLD.state <> 'draft' AND ({FROZEN.format(extra=extra)}) THEN
+                RAISE EXCEPTION 'agent version %/% is %: its content cannot change',
+                    OLD.agent_id, OLD.number, OLD.state USING ERRCODE = 'check_violation';
+            END IF;
+            IF NOT (OLD.state = NEW.state
+                    OR (OLD.state = 'draft' AND NEW.state = 'published')
+                    OR (OLD.state = 'published' AND NEW.state = 'archived')) THEN
+                RAISE EXCEPTION 'agent version %/%: % → % is not allowed',
+                    OLD.agent_id, OLD.number, OLD.state, NEW.state
+                    USING ERRCODE = 'check_violation';
+            END IF;
+            RETURN NEW;
+        END $$
+    """
 
 
 def upgrade() -> None:
@@ -72,11 +113,15 @@ def upgrade() -> None:
             CHECK (NOT enabled OR (definition IS NOT NULL AND digest IS NOT NULL))
         )
     """)
+    op.execute("ALTER TABLE agent_versions ADD COLUMN mcp_lock jsonb")
+    op.execute(_immutable("\n                OR NEW.mcp_lock IS DISTINCT FROM OLD.mcp_lock"))
     # People manage servers through the API; workers read them to call the tools.
     op.execute("GRANT SELECT, INSERT, UPDATE ON mcp_servers, mcp_tools TO app_api")
     op.execute("GRANT SELECT ON mcp_servers, mcp_tools TO app_worker")
 
 
 def downgrade() -> None:
+    op.execute(_immutable(""))
+    op.execute("ALTER TABLE agent_versions DROP COLUMN IF EXISTS mcp_lock")
     op.execute("DROP TABLE IF EXISTS mcp_tools")
     op.execute("DROP TABLE IF EXISTS mcp_servers")

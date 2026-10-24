@@ -180,6 +180,7 @@ class SubagentOrchestrator:
         usage_recorder: Callable[[Outbox], Callable[[str, int, int], float]] | None = None,
         chat_model: Callable[[str, float, list[ScriptTurn]], Callable[[int], Any]] | None = None,
         skills: Mapping[str, tuple[Any, ...]] | None = None,  # by helper name (R17.4)
+        settings: Any = None,  # the run's: passed on to tools that need them (MCP, L8)
     ) -> None:
         self.pool = pool
         self.fence = fence
@@ -199,6 +200,7 @@ class SubagentOrchestrator:
         self._model_caller = model_caller
         self._usage_recorder = usage_recorder
         self._chat_model = chat_model
+        self._settings = settings
         self._tasks: dict[uuid.UUID, asyncio.Task[None]] = {}
         self._sem = asyncio.Semaphore(self.limits.max_parallel)
         self.wrap_up = False  # the soft limit was reached (R16.8)
@@ -443,6 +445,7 @@ class SubagentOrchestrator:
             approvals=False,
             subagent=runtime,
             extra_charge=runtime.charge_tool,
+            settings=self._settings,
         )
         pipeline = ToolPipeline(self._tools, self._policy, interrupt=_no_interrupt)
         extras: dict[str, Any] = {}

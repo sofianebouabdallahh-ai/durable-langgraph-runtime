@@ -606,15 +606,16 @@ class RunExecutor:
         agent = spec.agent
         fm = agent.frontmatter
         inp = AgentInput.model_validate(run.input)
+        registry = spec.tools or self._tools  # the built-in tools, plus its MCP tools (L8)
         if agent.subagents:
             started = (run.started_at.timestamp() + run.waited_s) if run.started_at else time.time()
             self._orchestrator = SubagentOrchestrator(
                 pool=self._pool, fence=fence, bus=self._bus, main=agent,
                 build=lambda sub, cp: subagent_graph(
-                    sub, self._tools, cp, spec.skills.get(sub.frontmatter.name, ())
+                    sub, registry, cp, spec.skills.get(sub.frontmatter.name, ())
                 ),
                 skills=spec.skills,
-                tools=self._tools, hooks=self._hooks, policy=self._policy,
+                tools=registry, hooks=self._hooks, policy=self._policy,
                 run_limits=limits, deadline=started + limits.timeout_s,
                 scripts=inp.subagent_scripts,
                 limits=SubagentLimits(
@@ -626,6 +627,7 @@ class RunExecutor:
                 model_caller=self._model_caller,
                 usage_recorder=self._usage_recorder,
                 chat_model=self._chat_model,
+                settings=self._settings,
             )  # fmt: skip
         caps = {t.name: t.max_calls for t in fm.tools}
         tools = ToolRunContext(
@@ -639,8 +641,9 @@ class RunExecutor:
             orchestrator=self._orchestrator,
             simulate_side_effects=self._test_chat,
             skills={s.name: s for s in spec.skills.get(MAIN, ())},  # its own only (R16.7)
+            settings=self._settings,
         )
-        pipeline = ToolPipeline(self._tools, self._policy, interrupt=interrupt)
+        pipeline = ToolPipeline(registry, self._policy, interrupt=interrupt)
         turn = TurnInfo(
             run_id=run.id, session_id=run.session_id, agent=agent.id, message=inp.message,
             session_start=[self._hooks.get(h) for h in fm.hooks.session_start],

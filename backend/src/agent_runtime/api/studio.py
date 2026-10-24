@@ -33,6 +33,8 @@ from agent_runtime.agents.studio import (
 )
 from agent_runtime.agents.studio_store import AgentNotFound, Version
 from agent_runtime.api.schemas import SessionView
+from agent_runtime.mcp import tools as mcp_tools
+from agent_runtime.mcp.service import McpStore
 from agent_runtime.runs.store import RunNotFound
 
 studio = APIRouter(prefix="/studio", tags=["studio"])
@@ -57,6 +59,7 @@ class ToolOption(BaseModel):
     risk: str
     asks_first: bool = Field(description="Needs a person's approval before it runs")
     helpers_allowed: bool = Field(description="Helpers may use it (not approval-gated tools)")
+    server: str | None = Field(default=None, description="An MCP tool: its server's name (L8)")
 
 
 class ProtectionOption(BaseModel):
@@ -189,13 +192,22 @@ async def catalog(request: Request) -> StudioCatalog:
     service = _studio(request)
     risks = service.tool_risks()
     s = request.app.state.settings
+    async with request.app.state.pool.connection() as conn:
+        mcp = await mcp_tools.usable(conn)
+        servers = {sv.id: sv.display_name for sv in await McpStore(conn).servers()}
     return StudioCatalog(
         tools=[
-            ToolOption(name=n, label=label, description=desc, risk=risks.get(n, "read"),
-                       asks_first=risks.get(n) == "external_side_effect",
-                       helpers_allowed=risks.get(n) != "external_side_effect")
-            for n, (label, desc) in TOOLS.items()
-            if n in service.offered_tools()
+            *(ToolOption(name=n, label=label, description=desc, risk=risks.get(n, "read"),
+                         asks_first=risks.get(n) == "external_side_effect",
+                         helpers_allowed=risks.get(n) != "external_side_effect")
+              for n, (label, desc) in TOOLS.items()
+              if n in service.offered_tools()),
+            # The MCP tools people switched on (Settings → Tools), under their server.
+            *(ToolOption(name=n, label=t.tool.replace("_", " ").capitalize(),
+                         description=t.definition.description, risk=t.risk,
+                         asks_first=not t.without_asking, helpers_allowed=t.without_asking,
+                         server=servers.get(t.server_id))
+              for n, t in mcp.items()),
         ],
         protections=[
             ProtectionOption(hook=h, point=point, label=label, description=desc,

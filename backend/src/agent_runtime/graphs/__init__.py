@@ -45,6 +45,8 @@ class GraphSpec:
     agent: AgentDefinition | None = field(default=None)  # agent graphs: grants, hooks, limits
     # The skill versions the agent and its helpers use, by owner ("" = the main agent).
     skills: Mapping[str, tuple[Any, ...]] = field(default_factory=dict)
+    # The tools it was built with: the built-in ones, plus its locked MCP tools (L8).
+    tools: Any = None
 
     @classmethod
     def of_state_graph(

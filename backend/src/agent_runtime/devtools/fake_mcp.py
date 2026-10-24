@@ -6,6 +6,7 @@ clients). Its tools:
 
 - `lookup(topic)`: read-only; a fixed fact about ferries, so a test can see it arrived;
 - `send_message(to, text)`: a side effect (counted: GET /admin/calls); destructive;
+- either takes 3 s when its input contains `[slow]` (time to kill a worker mid-call);
 - `planted()`: read-only; returns text that tries to make the agent call `notify`
   (the R14.15 gate: a tool's result is data, never instructions).
 
@@ -16,6 +17,7 @@ a token, any other `Authorization` gets a 401.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping
 from contextlib import asynccontextmanager
 from typing import Any
@@ -52,14 +54,18 @@ class FakeMcp:
         read_only = ToolAnnotations(read_only_hint=True, destructive_hint=False)
 
         @self.server.tool(description=LOOKUP, annotations=read_only)
-        def lookup(topic: str) -> str:
+        async def lookup(topic: str) -> str:
             self.calls.append({"tool": "lookup", "topic": topic})
+            if "[slow]" in topic:  # time to kill a worker mid-call
+                await asyncio.sleep(3)
             return FACT
 
         @self.server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True))
-        def send_message(to: str, text: str) -> str:
+        async def send_message(to: str, text: str) -> str:
             """Sends a message to someone (a side effect)."""
             self.calls.append({"tool": "send_message", "to": to, "text": text})
+            if "[slow]" in text:
+                await asyncio.sleep(3)
             return f"sent to {to}"
 
         @self.server.tool(annotations=read_only)
