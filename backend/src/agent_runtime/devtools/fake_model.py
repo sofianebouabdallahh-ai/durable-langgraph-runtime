@@ -14,7 +14,8 @@ work with no real model and no key:
   then answers; a helper → it returns a result; otherwise a short answer. Every
   answer names the model (and the skill it loaded), so a test can see who did what;
 - **the Studio's builders:** `propose_draft` / `propose_instructions` → a fixed
-  proposal (`fake-sloppy` first proposes an unknown tool, then repairs it);
+  proposal (`fake-sloppy` first proposes an unknown placeholder, then repairs it; it
+  always names a tool that doesn't exist, which the builder leaves out with a note);
 - **a fake web** (L6a): `/searxng/search?q=…&format=json` answers like SearXNG with
   results on `/web/<page>`, small HTML pages (one plants instructions, for the R14.15
   gate); `/tavily/search` and `/brave/res/v1/web/search` answer like those APIs;
@@ -269,8 +270,10 @@ def _propose(tool: str, model: str, messages: list[dict[str, Any]], n: int) -> d
         args = {
             "display_name": "Fake drafted assistant",
             "description": f"Drafted by {model}.",
-            "instructions": "You are a drafted assistant. Today is {{date}}. Be brief.",
-            "tools": ["teleport"] if sloppy else ["web_search"],
+            "instructions": "You are a drafted assistant. Today is "
+            + ("{{secret}}" if sloppy else "{{date}}")
+            + ". Be brief.",
+            "tools": ["teleport", "web_search"] if model == "fake-sloppy" else ["web_search"],
             "effort": "quick",
             "helpers": [
                 {

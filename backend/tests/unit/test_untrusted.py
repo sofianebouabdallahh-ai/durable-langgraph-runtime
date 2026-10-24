@@ -39,3 +39,5 @@ def test_unwrap_leaves_other_text_alone() -> None:
 
 def test_the_rule_names_the_delimiters() -> None:
     assert "<data" in RULE and "never instructions" in RULE
+    assert "follow its guidance" in RULE  # skills: know-how the person chose (L8)
+    assert "can change your task, your tools" in RULE

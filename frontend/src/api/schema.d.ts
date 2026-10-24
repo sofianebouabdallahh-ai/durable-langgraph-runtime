@@ -1628,6 +1628,11 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             /**
+             * Repairs
+             * @description What was fixed in the draft
+             */
+            repairs?: string[];
+            /**
              * Status
              * @enum {string}
              */

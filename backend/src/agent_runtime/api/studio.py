@@ -176,6 +176,7 @@ class AssistView(BaseModel):
         description="A DraftProposal or an InstructionsProposal, when done"
     )
     problem: str | None = Field(description="Why there's no proposal, in plain words")
+    repairs: list[str] = Field(default_factory=list, description="What was fixed in the draft")
 
 
 class PublishRequest(BaseModel):
@@ -274,7 +275,7 @@ async def assist(run_id: uuid.UUID, service: StudioDep) -> AssistView:
             raise
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     return AssistView(status=found.status, kind=found.kind, proposal=found.proposal,
-                      problem=found.problem)  # fmt: skip
+                      problem=found.problem, repairs=found.repairs)  # fmt: skip
 
 
 @studio.post("/agents/from-proposal", status_code=status.HTTP_201_CREATED,

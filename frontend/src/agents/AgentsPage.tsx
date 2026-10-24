@@ -5,7 +5,7 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ChevronDown, Copy, Gauge, MessageSquarePlus, Plus, Sparkles, Upload, Users, Wrench, Zap } from "lucide-react";
-import { useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { api, type Schemas, unwrap } from "../api/client";
 import { href, type Route } from "../app/route";
@@ -319,6 +319,16 @@ export function DescribeIt({
             <Row label="Effort" value={draft.effort} />
           </dl>
         </div>
+        {(result?.repairs ?? []).length > 0 && (
+          <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200" data-testid="draft-repairs">
+            <p className="font-medium">We changed a few things in the draft:</p>
+            <ul className="mt-1 list-disc pl-5">
+              {(result?.repairs ?? []).map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+          </div>
+        )}
         <p className="text-sm text-stone-500">Next you can change anything, then try it in a test chat.</p>
         {error && <div role="alert" className="text-sm text-rose-600">{error}</div>}
         <div className="flex justify-end gap-2">
@@ -386,7 +396,12 @@ export function DescribeIt({
           setText(e.target.value);
         }}
       />
-      {working && <Spinner label="Drafting your agent…" />}
+      {working && (
+        <div>
+          <Spinner label="Drafting your agent…" />
+          <LaterNote>Still drafting. A model running on this computer can take a few minutes: you can leave this open.</LaterNote>
+        </div>
+      )}
       {result?.status === "failed" && (
         <div role="alert" className="text-sm text-rose-700 dark:text-rose-400">
           {result.problem}
@@ -604,4 +619,18 @@ function hookMoment(when: string): string {
     { session_start: "When a chat starts", session_end: "When a chat ends", turn_start: "Before each reply", turn_end: "After each reply", pre_tool: "Before a tool runs", post_tool: "After a tool runs" }[when] ??
     when
   );
+}
+
+/** A note shown only once something has taken a while (a local model drafting). */
+function LaterNote({ children, after = 20_000 }: { children: ReactNode; after?: number }) {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShown(true);
+    }, after);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [after]);
+  return shown ? <p className="mt-2 text-sm text-stone-500 dark:text-stone-400" data-testid="slow-note">{children}</p> : null;
 }

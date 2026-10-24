@@ -340,3 +340,24 @@ async def test_the_studio_names_missing_and_untested_models(api: Server, fake: F
     await c("POST", f"/models/connections/{added['id']}/test", json={"model": "fake-a"})
     blockers = (await c("GET", f"/studio/agents/{agent['id']}")).json()["draft"]["blockers"]
     assert not any("Unproven" in b for b in blockers)
+
+
+async def test_a_turn_on_a_local_model_gets_more_time(
+    api: Server, fake: Fake, pool: Pool, test_settings: Settings
+) -> None:
+    """The fake listens on 127.0.0.1: a model on this machine. Its turns get
+    `local_turn_timeout_s` (a CPU model writes a reply in minutes), and the binding says so."""
+    c = Seen(api.client)
+    a = await connect(c, fake, "On this machine", KEY_A, "fake-a")
+    await c("PUT", "/models/default", json={"connection_id": a["id"], "model": "fake-a"})
+    session = (await c("POST", "/sessions", json={"agent": "assistant"})).json()
+    queued = (await c("POST", f"/sessions/{session['id']}/messages", json={"content": "hi"})).json()
+    async with pool.connection() as conn:
+        sql = "SELECT limits, model_bindings FROM runs WHERE id = %s"
+        row = await (await conn.execute(sql, (uuid.UUID(queued["run_id"]),))).fetchone()
+    assert row is not None
+    limits, bindings = row["limits"], row["model_bindings"]
+    expected = min(test_settings.local_turn_timeout_s, test_settings.run_timeout_s)
+    assert limits["timeout_s"] == expected  # the default is 300
+    assert all(b["local"] for b in bindings.values())
+    await c("PUT", "/models/default", json={"connection_id": None})

@@ -212,6 +212,11 @@ configure_model() {
         env_set CONTAINER_OLLAMA_BASE_URL http://host.docker.internal:11434/v1
         env_set COMPOSE_PROFILES app
         ok "using the Ollama found at 127.0.0.1:11434 (the native app uses the GPU; Ollama in Docker on macOS doesn't)"
+        if [ "$(uname -s)" = Darwin ] && [ -n "$("$DOCKER" ps -q --filter publish=11434 2>/dev/null)" ]; then
+          warn "that Ollama runs in Docker: on a Mac that's CPU only, several times slower (a reply can take minutes)."
+          warn "For speed, stop it and install the Ollama app: https://ollama.com/download"
+        fi
+        warn "Tip: for long chats give Ollama a bigger context (OLLAMA_CONTEXT_LENGTH=8192): docs/setup/models.md"
         curl -fsS http://127.0.0.1:11434/api/tags | grep -q "\"$name\"" || pull_native "$name"
       elif native_ollama_offered; then
         configure_model; return  # installed and running now: take the native path

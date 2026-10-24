@@ -4,7 +4,9 @@ import pytest
 from pydantic import SecretStr
 
 from agent_runtime.config import Settings
+from agent_runtime.models.connections import any_local
 from agent_runtime.models.provider import call_timeout_s, configured_provider, is_local
+from agent_runtime.runs.limits import local_model_limits
 
 
 @pytest.mark.parametrize(
@@ -43,3 +45,19 @@ def test_setups_own_model_gets_the_local_limit_when_it_is_local() -> None:
                      openai_api_key=SecretStr("x"))  # fmt: skip
     assert configured_provider(local).timeout_s == local.local_model_timeout_s  # type: ignore[attr-defined]
     assert configured_provider(cloud).timeout_s == cloud.model_timeout_s  # type: ignore[attr-defined]
+
+
+def test_a_turn_on_a_local_model_gets_longer_never_past_the_run_ceiling() -> None:
+    s = Settings(postgres_password="pw", local_turn_timeout_s=900, run_timeout_s=1200)  # type: ignore[arg-type]
+    assert local_model_limits({"timeout_s": 120, "max_steps": 8}, s) == {
+        "timeout_s": 900, "max_steps": 8}  # fmt: skip
+    assert local_model_limits({"timeout_s": 1000}, s)["timeout_s"] == 1000  # already longer
+    tight = Settings(postgres_password="pw", local_turn_timeout_s=900, run_timeout_s=600)  # type: ignore[arg-type]
+    assert local_model_limits({"timeout_s": 120}, tight)["timeout_s"] == 600
+
+
+def test_which_bindings_are_local() -> None:
+    assert any_local({"default": {"local": False}, "cheap": {"local": True}})
+    assert not any_local({"default": {"local": False}})
+    assert not any_local({"default": {"connection_id": "c1"}})  # a run from before L8
+    assert not any_local(None)

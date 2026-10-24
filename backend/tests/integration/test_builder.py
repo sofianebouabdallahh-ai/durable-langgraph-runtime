@@ -86,7 +86,9 @@ async def test_describe_it_with_a_model_that_repairs_its_draft(
     started = await api.client.post("/studio/describe", json={"description": "A research helper."})
     done = await assisted(api.client, pool, test_settings, started)
     assert done["status"] == "done", done
-    assert done["proposal"]["tools"] == ["web_search"]  # repaired: "teleport" was refused
+    assert done["proposal"]["tools"] == ["web_search"]  # "teleport" left out, with a note
+    assert done["repairs"] == ["Left out “teleport”: there's no such tool here."]
+    assert "{{secret}}" not in done["proposal"]["instructions"]  # the model fixed that
     proposals = [call for call in await fake.calls() if "propose_draft" in call["tools"]]
     assert [call["last"] for call in proposals] == ["user", "tool", "tool"]  # draft, fix, done
     run_id = started.json()["run_id"]

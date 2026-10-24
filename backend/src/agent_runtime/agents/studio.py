@@ -164,6 +164,7 @@ class Assist:
     kind: Literal["draft", "instructions"]
     proposal: dict[str, Any] | None = None
     problem: str | None = None
+    repairs: list[str] = field(default_factory=list)  # what was fixed in the proposal
 
 
 # ------------------------------------------------------------------- the service
@@ -246,6 +247,11 @@ class StudioService:
 
     # ---------------------------------------------- describe it, improve it
 
+    async def _offered_now(self) -> list[str]:
+        """The Studio's tools plus the MCP tools switched on now."""
+        async with self._pool.connection() as conn:
+            return [*self.offered_tools(), *await mcp_tools.usable(conn)]
+
     def offered_tools(self) -> list[str]:
         """The Studio's tools this installation has: the code tools only with a sandbox."""
         risks = self.tool_risks()
@@ -256,7 +262,11 @@ class StudioService:
         result is a proposal (`assist`), which `create_from_proposal` turns into a draft."""
         skills = await self._library()
         offered = self.offered_tools()
-        message = builder.describe_message(description, skills, offered)
+        async with self._pool.connection() as conn:
+            mcp = await mcp_tools.usable(conn)
+        message = builder.describe_message(
+            description, skills, offered, {n: t.definition.description for n, t in mcp.items()}
+        )
         script = builder.demo_script(builder.demo_draft(description, skills, offered))
         return await self._assist_run(builder.BUILDER, message, script)
 
@@ -292,10 +302,11 @@ class StudioService:
             return Assist("working", kind)
         proposal = (result or {}).get("output", {}).get("proposal") if result else None
         if run.status.value == "completed" and proposal:
-            if kind == "draft":  # only tools this installation has
+            repairs = list(proposal.pop("repairs", []) or [])
+            if kind == "draft":  # only tools this installation has (and its MCP tools)
                 draft = builder.DraftProposal.model_validate(proposal)
-                proposal = builder.only_offered(draft, self.offered_tools()).model_dump()
-            return Assist("done", kind, proposal)
+                proposal = builder.only_offered(draft, await self._offered_now()).model_dump()
+            return Assist("done", kind, proposal, repairs=repairs)
         problem = (
             "The model didn't come up with a proposal. Try again, or describe it a little "
             "differently (a model that passed its test in Settings → Models works best)."
@@ -308,13 +319,14 @@ class StudioService:
         """A new agent whose draft is the builder's proposal (skills it named that aren't
         in the library are left out)."""
         library = {n for n, _ in await self._library()}
-        proposal = builder.only_offered(proposal, self.offered_tools()).model_copy(update={
+        proposal = builder.only_offered(proposal, await self._offered_now()).model_copy(update={
             "skills": [s for s in proposal.skills if s in library]})  # fmt: skip
         async with self._pool.connection() as conn, conn.transaction():
             store = AgentStore(conn)
             name = await self._free_name(store, proposal.display_name)
+            mcp = mcp_tools.risks(await mcp_tools.usable(conn))
             document = AgentDocument.model_validate(
-                builder.to_document(proposal, name, self._settings)
+                builder.to_document(proposal, name, self._settings, mcp)
             )
             agent, _ = await store.create(name, document.model_dump(mode="json"))
         return await self.save_draft(agent.id, document)

@@ -242,6 +242,9 @@ services:
       - ollama-models:/root/.ollama
     environment:
       OLLAMA_KEEP_ALIVE: "30m" # keep the model loaded between demo turns
+      # Ollama's default context is 4096 tokens: an agent with tools, skills and a long
+      # chat goes past it, and Ollama silently drops the start of the conversation.
+      OLLAMA_CONTEXT_LENGTH: "8192"
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 5s

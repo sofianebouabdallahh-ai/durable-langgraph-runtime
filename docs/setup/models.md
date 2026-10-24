@@ -28,6 +28,17 @@ Setup still asks for one model to start with (see [Without the app](#without-the
 
 **A local model's first answer is slow.** Ollama loads the model into memory on its first request, and unloads it after 5 idle minutes. So the first answer after a break can take a minute or more on a busy laptop; the next ones are quick. Nuria gives a local model (Ollama, or any model on this machine or your network) 5 minutes per call (`LOCAL_MODEL_TIMEOUT_S`), against 1 minute for a cloud one (`MODEL_TIMEOUT_S`). To keep a model loaded longer, set `OLLAMA_KEEP_ALIVE` (e.g. `1h`) where Ollama runs.
 
+**Make a local model fast enough to use.** Measured on a MacBook (Apple silicon, 16 GB) with `qwen3:8b`:
+
+| Where Ollama runs | Speed | A chat turn with tools |
+|---|---|---|
+| The Ollama app on the Mac (uses the GPU) | about 17 tokens a second | 30 s to 2 min |
+| Ollama in Docker (CPU only on a Mac) | about 3 tokens a second | several minutes, often too slow |
+
+- **On a Mac, install the Ollama app** ([ollama.com/download](https://ollama.com/download)), not the Compose `llm` profile: Docker on a Mac can't use the GPU. Setup finds the app on port 11434 and warns when it's a container.
+- **Give it a big enough context:** `OLLAMA_CONTEXT_LENGTH=8192` where Ollama runs (the stack's own Ollama sets it). Ollama's default, 4096 tokens, cuts an agent's instructions, tools and history short, without saying so.
+- **A turn on a local model gets 15 minutes** (`LOCAL_TURN_TIMEOUT_S`, never above `RUN_TIMEOUT_S`), against the agent's own limit for a cloud one: it reads and writes far slower. Its other budgets (steps, tokens, tool calls) stay the same.
+
 A card per connection then shows its status, its models, and **Test** (try another model), **Edit** and **Remove**.
 
 ## The default model, and a model per agent

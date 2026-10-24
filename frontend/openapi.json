@@ -756,6 +756,14 @@
             "description": "A DraftProposal or an InstructionsProposal, when done",
             "title": "Proposal"
           },
+          "repairs": {
+            "description": "What was fixed in the draft",
+            "items": {
+              "type": "string"
+            },
+            "title": "Repairs",
+            "type": "array"
+          },
           "status": {
             "enum": [
               "working",

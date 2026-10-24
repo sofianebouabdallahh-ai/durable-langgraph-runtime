@@ -22,13 +22,13 @@ in CI.
 from __future__ import annotations
 
 import re
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from typing import Annotated, Any
 
 from pydantic import Field
 
 from agent_runtime.agents.schema import MAIN_PLACEHOLDERS, PLACEHOLDER
-from agent_runtime.tools.spec import ToolArgs, ToolContext, ToolRegistry
+from agent_runtime.tools.spec import RiskClass, ToolArgs, ToolContext, ToolRegistry
 
 BUILDER, COACH = "agent-builder", "instructions-coach"
 BUILDER_TOOLS = ("propose_draft", "propose_instructions")
@@ -91,9 +91,12 @@ class InstructionsProposal(ToolArgs):
 # ------------------------------------------------------------------ the mapping
 
 
-def to_document(proposal: DraftProposal, name: str, settings: Any) -> dict[str, Any]:
+def to_document(
+    proposal: DraftProposal, name: str, settings: Any, mcp: Mapping[str, RiskClass] | None = None
+) -> dict[str, Any]:
     """The proposal as a Studio document (the form's shape), with the protections a
-    new agent gets by default and the effort as a preset within the ceilings."""
+    new agent gets by default and the effort as a preset within the ceilings. `mcp`: the
+    MCP tools switched on (L8), which it may use too."""
     from agent_runtime.agents.studio import PROTECTIONS, TOOLS, presets, slug
 
     tiers = presets(settings)
@@ -104,7 +107,8 @@ def to_document(proposal: DraftProposal, name: str, settings: Any) -> dict[str, 
             hooks.setdefault(point, []).append(hook)
             if point in ("pre_tool", "post_tool"):
                 helper_hooks.setdefault(point, []).append(hook)
-    offered = [t for t in TOOLS]
+    offered = [*TOOLS, *(mcp or {})]
+    asks = {"notify", *(n for n, r in (mcp or {}).items() if r == "external_side_effect")}
     helpers = []
     for h in proposal.helpers:
         helpers.append(
@@ -113,7 +117,7 @@ def to_document(proposal: DraftProposal, name: str, settings: Any) -> dict[str, 
                 "display_name": h.display_name,
                 "description": h.description,
                 "instructions": h.instructions,
-                "tools": [{"name": t} for t in h.tools if t in offered and t != "notify"],
+                "tools": [{"name": t} for t in h.tools if t in offered and t not in asks],
                 "max_turns": tiers["helper"]["max_turns"],
                 "limits": tiers["helper"]["limits"],
                 "hooks": helper_hooks,
@@ -134,34 +138,59 @@ def to_document(proposal: DraftProposal, name: str, settings: Any) -> dict[str, 
     }
 
 
-def _problems(proposal: DraftProposal) -> list[str]:
-    """Everything wrong with a proposal, by the one validator plus the builder's rules."""
+def repair(
+    proposal: DraftProposal, mcp: Mapping[str, RiskClass] | None = None
+) -> tuple[DraftProposal, list[str]]:
+    """What a person would fix without a second thought, fixed rather than sent back: a
+    small model often doesn't manage a second proposal. A tool that doesn't exist is left
+    out; a tool that asks a person first moves from a helper to the main agent (helpers
+    can't ask). Returns the proposal and what was changed, in plain words."""
+    from agent_runtime.agents.studio import TOOLS
+
+    known = {*TOOLS, *(mcp or {})}
+    asks = {"notify", *(n for n, r in (mcp or {}).items() if r == "external_side_effect")}
+    notes: list[str] = []
+    main = [t for t in dict.fromkeys(proposal.tools) if t in known]
+    notes += [
+        f"Left out “{t}”: there's no such tool here." for t in proposal.tools if t not in known
+    ]
+    helpers = []
+    for h in proposal.helpers:
+        kept = []
+        for t in dict.fromkeys(h.tools):
+            if t not in known:
+                notes.append(f"Left out “{t}” from {h.display_name}: there's no such tool here.")
+            elif t in asks:
+                notes.append(f"Moved “{t}” from {h.display_name} to the agent itself: it asks "
+                             "you first, and only the agent can ask.")  # fmt: skip
+                if t not in main:
+                    main.append(t)
+            else:
+                kept.append(t)
+        helpers.append(h.model_copy(update={"tools": kept}))
+    return proposal.model_copy(update={"tools": main, "helpers": helpers}), notes
+
+
+def _problems(proposal: DraftProposal, mcp: Mapping[str, RiskClass] | None = None) -> list[str]:
+    """What's still wrong once repaired: the one validator, plus the builder's rules."""
+    from dataclasses import replace
+
     from agent_runtime.agents.document import AgentDocument, to_raw
     from agent_runtime.agents.loader import Ceilings, validate_definition
-    from agent_runtime.agents.studio import TOOLS
     from agent_runtime.catalog import default_catalog
     from agent_runtime.config import get_agent_settings
 
     settings = get_agent_settings()
-    problems = [
-        f"unknown tool “{t}”: choose from {', '.join(TOOLS)}"
-        for t in {*proposal.tools, *(t for h in proposal.helpers for t in h.tools)}
-        if t not in TOOLS
-    ]
-    problems += [
-        f"helper “{h.display_name}” can't send notifications: only the main agent "
-        "can (they need a person's approval)"
-        for h in proposal.helpers
-        if "notify" in h.tools
-    ]
+    problems = []
     names = [h.display_name.strip().lower() for h in proposal.helpers]
     if len(set(names)) < len(names):
         problems.append("two helpers have the same name")
-    document = AgentDocument.model_validate(to_document(proposal, "draft", settings))
+    document = AgentDocument.model_validate(to_document(proposal, "draft", settings, mcp))
     main, helpers = to_raw(document, 1)
-    _, issues = validate_definition(
-        main, helpers, default_catalog(), Ceilings.from_settings(settings)
-    )
+    catalog = default_catalog()
+    if mcp:
+        catalog = replace(catalog, tools={**catalog.tools, **mcp})
+    _, issues = validate_definition(main, helpers, catalog, Ceilings.from_settings(settings))
     return problems + [str(i) for i in issues]
 
 
@@ -171,9 +200,16 @@ def _problems(proposal: DraftProposal) -> list[str]:
 async def propose_draft(args: DraftProposal, ctx: ToolContext) -> dict[str, Any]:
     """Propose the assistant: its name, purpose, instructions, tools, effort, helpers and
     skills. If something is wrong you'll get the problems: fix them and propose again."""
-    if problems := _problems(args):
+    from agent_runtime.mcp import tools as mcp_tools
+
+    mcp: dict[str, RiskClass] = {}
+    if ctx.pool is not None:  # (no database: no MCP tools, e.g. in unit tests)
+        async with ctx.pool.connection() as conn:
+            mcp = mcp_tools.risks(await mcp_tools.usable(conn))
+    proposal, repairs = repair(args, mcp)
+    if problems := _problems(proposal, mcp):
         raise BuilderError("Not valid yet: " + "; ".join(problems))
-    return {"accepted": True, "proposal": args.model_dump(mode="json")}
+    return {"accepted": True, "proposal": proposal.model_dump(mode="json"), "repairs": repairs}
 
 
 async def propose_instructions(args: InstructionsProposal, ctx: ToolContext) -> dict[str, Any]:
@@ -215,6 +251,8 @@ def proposal_of(messages: list[Any]) -> dict[str, Any] | None:
                 continue
             if isinstance(result, dict) and result.get("accepted"):
                 proposal: dict[str, Any] = result["proposal"]
+                if result.get("repairs"):
+                    return {**proposal, "repairs": result["repairs"]}
                 return proposal
     return None
 
@@ -223,17 +261,21 @@ def proposal_of(messages: list[Any]) -> dict[str, Any] | None:
 
 
 def describe_message(
-    description: str, skills: list[tuple[str, str]], offered: Collection[str] | None = None
+    description: str,
+    skills: list[tuple[str, str]],
+    offered: Collection[str] | None = None,
+    mcp: Mapping[str, str] | None = None,
 ) -> str:
     """What the builder is asked: the person's words, and what it may choose from
-    (`offered`: the tools this installation has; all by default)."""
+    (`offered`: the tools this installation has; all by default; `mcp`: the MCP tools
+    switched on, name → what it does)."""
     from agent_runtime.agents.studio import TOOLS
 
     tools = "\n".join(
-        f"- {name}: {desc}"
-        for name, (_, desc) in TOOLS.items()
-        if offered is None or name in offered
-    )
+        [f"- {name}: {desc}" for name, (_, desc) in TOOLS.items()
+         if offered is None or name in offered]
+        + [f"- {name}: {desc[:200]} (from an MCP server)" for name, desc in (mcp or {}).items()]
+    )  # fmt: skip
     library = "\n".join(f"- {n}: {d}" for n, d in skills[:30]) or "(none yet)"
     return (
         f"Tools offered:\n{tools}\n\nSkills in the library:\n{library}\n\n"

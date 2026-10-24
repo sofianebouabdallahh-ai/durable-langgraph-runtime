@@ -19,6 +19,20 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 - **Audit:** adding, changing and removing servers, and switching tools on, off or
   approving a change.
 
+#### Changed
+- **Skills are followed, not only read:** a skill's text is know-how you chose, so the agent
+  follows its guidance (an "Always use" skill in every answer). It still can't change the
+  agent's task, tools, limits or approvals.
+- **Describe your agent fixes what a person would fix:** a tool that doesn't exist is left
+  out, and a tool that asks you first moves from a helper to the agent itself; the draft
+  lists each fix. MCP tools you switched on can be drafted.
+
+#### Fixed
+- **A turn on a local model ran out of time:** a local model now gets 15 minutes per turn
+  (`LOCAL_TURN_TIMEOUT_S`); drafting an agent says it can take a few minutes.
+- **Ollama in the stack cut long prompts:** it now gets an 8,192-token context. Setup warns
+  when the Ollama it finds on a Mac is a container (CPU only), and how to set the context.
+
 ### Fixed
 - **A first install with a local model could fail its check**, and a first message after a break could fail: loading the model into memory took longer than a model call's 60 s limit. A local model (Ollama, or one on this machine or network) now gets 5 minutes per call (`LOCAL_MODEL_TIMEOUT_S`); setup's check waits up to 10 minutes and says it's waiting.
 
