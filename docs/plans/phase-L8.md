@@ -199,12 +199,10 @@ sandbox about 10–12 h.
 - **Annotations lie:** we never trust them for safety. They only decide what we *offer*
   you ("runs without asking" for read-only tools).
 
-## 6. Decisions to make
+## 6. Decisions (2026-10-23)
 
-1. **Transport:** remote servers only in L8 (proposed), with local stdio servers in the
-   sandbox as L8c? Or both now?
-2. **Sign-in:** tokens and headers in L8, OAuth in L8b (proposed)? Or OAuth now?
-3. **Default:** every MCP call asks first unless you switch a read-only tool to "runs
-   without asking" (proposed)? Or trust the server's read-only hint by default?
-4. **SDK version:** `mcp` 2.3.0 with a cooldown exception (proposed: newest fixes, 21 days
-   old)? Or 2.2.0 within the current cutoff?
+1. **Remote servers in L8;** local (stdio) servers come in L8c, in the sandbox.
+2. **Tokens and headers in L8;** OAuth sign-in in L8b.
+3. **Ask first by default:** you may switch a tool the server marks read-only to "runs
+   without asking"; the server's hints never decide alone.
+4. **`mcp` 2.3.0**, through a per-package cooldown exception.
