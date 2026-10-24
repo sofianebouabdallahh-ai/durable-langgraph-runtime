@@ -237,6 +237,14 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
             return await handler(req)
 
         response = await self._call(ctx, attempt, charge, attempts)
+        if _is_empty(response) and wrap_up[0] is None:  # once, charged like any call
+            logs.event(log, "empty model reply: asking once more", level=logging.WARNING)
+            nudged: list[Any] = [*request.messages, *response.result, HumanMessage(EMPTY_REPLY)]
+
+            async def again() -> ModelResponse[Any]:
+                return await handler(request.override(model=model, messages=nudged))
+
+            response = await self._call(ctx, again, charge, attempts)
         _check_progress(request.state.get("messages", []), response)
         if wrap_up[0] is not None:
             return _budget_limited(response, wrap_up[0])
@@ -343,6 +351,14 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
         )
 
 
+def _is_empty(response: ModelResponse[Any]) -> bool:
+    """No text and no tool call: what a small model's unparsable tool call becomes (seen
+    on qwen2.5:7b via Ollama: 183 tokens written, nothing usable). The agent would end
+    with an empty answer, so it's asked once more."""
+    ai = [m for m in response.result if isinstance(m, AIMessage)]
+    return bool(ai) and not any(m.tool_calls or m.text.strip() for m in ai)
+
+
 def _is_final(response: ModelResponse[Any]) -> bool:
     """The model answered without asking for a tool: the agent would stop here."""
     ai = [m for m in response.result if isinstance(m, AIMessage)]
@@ -353,6 +369,10 @@ WRAP_UP_TURN = (
     "[runtime] This run has used most of its {kind} budget. Tools are no longer "
     "available. Give your best final answer now with what you already have, and say "
     "briefly what is left undone."
+)
+EMPTY_REPLY = (
+    "[runtime] Your last reply came back empty: no text and no tool call. Answer now, or "
+    "call one of your tools."
 )
 STOPPED_EARLY = "I had to stop early: this run reached its budget before I could finish."
 NO_PROGRESS_LIMIT = 5

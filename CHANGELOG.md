@@ -32,6 +32,9 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 #### Fixed
 - **A turn on a local model ran out of time:** a local model now gets 15 minutes per turn
   (`LOCAL_TURN_TIMEOUT_S`); drafting an agent says it can take a few minutes.
+- **An empty reply from the model ended a turn with nothing:** a small model's tool call
+  that Ollama can't parse comes back as no text and no tool call. The model is now asked
+  once more (charged like any call); "Describe your agent" failed this way.
 - **Ollama in the stack cut long prompts:** it now gets an 8,192-token context. Setup warns
   when the Ollama it finds on a Mac is a container (CPU only), and how to set the context.
 
