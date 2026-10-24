@@ -4,6 +4,43 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### L8 — Tools from anywhere (MCP)
+#### Added
+- **MCP servers** (Settings → Tools):
+  - add a remote server by its address, with a token if it needs one (encrypted);
+  - Nuria tests it, lists and checks its tools, and you switch on the ones agents may use;
+  - a tool asks you first unless you choose "runs without asking" for a read-only one.
+- **MCP tools in the Studio,** under their server's name.
+  - Published agents lock each tool's definition (migration 0021).
+  - A tool its server changed is blocked until you approve the change.
+  - A tool switched off stops at once.
+- **Every MCP call goes through the tool pipeline:** approvals, budgets, results as data,
+  audit and traces. A tool that asks first isn't re-sent after a crash.
+- **Audit:** adding, changing and removing servers, and switching tools on, off or
+  approving a change.
+
+#### Changed
+- **Skills are followed, not only read:** a skill's text is know-how you chose, so the agent
+  follows its guidance. An "Always use" skill whose check found nothing is given as plain
+  guidance, last in the instructions (a small model skipped it as data: 1 time in 10
+  followed); a flagged one stays data. A skill still can't change the agent's task, tools,
+  limits or approvals: the app enforces those.
+- **Describe your agent fixes what a person would fix:** a tool that doesn't exist is left
+  out, and a tool that asks you first moves from a helper to the agent itself; the draft
+  lists each fix. MCP tools you switched on can be drafted.
+
+#### Fixed
+- **A turn on a local model ran out of time:** a local model now gets 15 minutes per turn
+  (`LOCAL_TURN_TIMEOUT_S`); drafting an agent says it can take a few minutes.
+- **Security:** pypdf 6.21.2 (from 6.19.0) fixes three denial-of-service bugs on
+  malformed PDFs read by the page reader (CVE-2026-115572, -115580, -115585), through a
+  one-package exception to the dependency cooldown.
+- **An empty reply from the model ended a turn with nothing:** a small model's tool call
+  that Ollama can't parse comes back as no text and no tool call. The model is now asked
+  once more (charged like any call); "Describe your agent" failed this way.
+- **Ollama in the stack cut long prompts:** it now gets an 8,192-token context. Setup warns
+  when the Ollama it finds on a Mac is a container (CPU only), and how to set the context.
+
 ### Fixed
 - **A first install with a local model could fail its check**, and a first message after a break could fail: loading the model into memory took longer than a model call's 60 s limit. A local model (Ollama, or one on this machine or network) now gets 5 minutes per call (`LOCAL_MODEL_TIMEOUT_S`); setup's check waits up to 10 minutes and says it's waiting.
 

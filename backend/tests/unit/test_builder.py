@@ -41,16 +41,33 @@ async def test_every_demo_draft_is_valid() -> None:
 async def test_a_bad_draft_comes_back_with_its_problems() -> None:
     draft = DraftProposal(
         display_name="X", description="d", instructions="You are X. {{secret}}",
-        tools=["teleport"],
-        helpers=[HelperProposal(display_name="Pinger", description="d", instructions="i",
-                                tools=["notify"])],
+        tools=["web_search"],
+        helpers=[HelperProposal(display_name="Pinger", description="d", instructions="i")],
     )  # fmt: skip
     with pytest.raises(BuilderError) as found:
         await propose_draft(draft, CTX)
-    message = str(found.value)
-    assert "unknown tool “teleport”" in message
-    assert "can't send notifications" in message
-    assert "secret" in message  # the one validator's placeholder rule
+    assert "secret" in str(found.value)  # the one validator's placeholder rule
+
+
+async def test_what_a_person_would_fix_is_fixed_with_a_note() -> None:
+    """A small model rarely manages a second proposal: an unknown tool is left out, and
+    a tool that asks first moves from a helper to the agent itself."""
+    draft = DraftProposal(
+        display_name="X", description="d", instructions="You are X.",
+        tools=["teleport", "web_search"],
+        helpers=[HelperProposal(display_name="Pinger", description="d", instructions="i",
+                                tools=["notify", "read_webpage"])],
+    )  # fmt: skip
+    done = await propose_draft(draft, CTX)
+    assert done["accepted"] is True
+    proposal = done["proposal"]
+    assert proposal["tools"] == ["web_search", "notify"]
+    assert proposal["helpers"][0]["tools"] == ["read_webpage"]
+    assert done["repairs"] == [
+        "Left out “teleport”: there's no such tool here.",
+        "Moved “notify” from Pinger to the agent itself: it asks you first, and only the "
+        "agent can ask.",
+    ]
 
 
 async def test_improved_instructions_keep_to_the_placeholders() -> None:
@@ -81,3 +98,24 @@ def test_the_drafter_only_offers_tools_this_installation_has() -> None:
     assert "run_python" not in trimmed.tools and "run_python" not in trimmed.helpers[0].tools
     assert "run_python" not in describe_message(text, LIBRARY, no_sandbox)
     assert "run_python" in describe_message(text, LIBRARY)
+
+
+def test_mcp_tools_switched_on_can_be_drafted() -> None:
+    from agent_runtime.agents.builder import describe_message, repair
+
+    mcp = {"mcp__travel__lookup": "read", "mcp__travel__send_message": "external_side_effect"}
+    draft = DraftProposal(
+        display_name="X", description="d", instructions="You are X.",
+        tools=["mcp__travel__lookup"],
+        helpers=[HelperProposal(display_name="Scout", description="d", instructions="i",
+                                tools=["mcp__travel__lookup", "mcp__travel__send_message"])],
+    )  # fmt: skip
+    fixed, notes = repair(draft, mcp)  # type: ignore[arg-type]
+    assert fixed.tools == ["mcp__travel__lookup", "mcp__travel__send_message"]
+    assert fixed.helpers[0].tools == ["mcp__travel__lookup"]  # runs without asking: fine
+    assert notes == ["Moved “mcp__travel__send_message” from Scout to the agent itself: it asks "
+                     "you first, and only the agent can ask."]  # fmt: skip
+    message = describe_message(
+        "Plans trips.", [], None, {"mcp__travel__lookup": "Looks up a fact."}
+    )
+    assert "- mcp__travel__lookup: Looks up a fact. (from an MCP server)" in message

@@ -15,7 +15,7 @@ concerns"). It receives validated arguments and a `ToolContext`.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -50,6 +50,8 @@ class ToolContext:
     subagent: Any = None
     # Skill tools (CR-006 R17.4) only: the calling agent's own skills, name → version.
     skills: Any = None
+    # The run's settings (MCP tools, L8: to open a server's token with the master key).
+    settings: Any = None
 
 
 ToolFn = Callable[[Any, ToolContext], Awaitable[Any]]
@@ -69,8 +71,17 @@ class ToolSpec:
     timeout_s: float | None = None  # overrides the pipeline's default (e.g. wait_subagents)
     # Polling tools (status, wait) legitimately repeat: exempt from repeat detection.
     repeatable: bool = False
+    # A JSON Schema for the arguments instead of `args_model` (MCP tools, L8): the
+    # pipeline validates against it, and the tool receives a dict.
+    input_schema: Mapping[str, Any] | None = None
+    # A call a crash cut off is re-executed with the same key, which the tool uses to
+    # dedupe its effect. A tool that can't dedupe (a remote one) says no: the model is
+    # told it may have run once, instead.
+    retry_after_crash: bool = True
 
     def json_schema(self) -> dict[str, Any]:
+        if self.input_schema is not None:
+            return dict(self.input_schema)
         return self.args_model.model_json_schema()
 
 
@@ -81,6 +92,14 @@ class UnknownTool(LookupError):
 class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, ToolSpec] = {}
+
+    def with_tools(self, specs: Iterable[ToolSpec]) -> ToolRegistry:
+        """A copy with these tools too (a bundle's MCP tools, L8); this one is unchanged."""
+        copy = ToolRegistry()
+        copy._tools = dict(self._tools)
+        for spec in specs:
+            copy.register(spec)
+        return copy
 
     def register(self, spec: ToolSpec) -> ToolSpec:
         if spec.name in self._tools:

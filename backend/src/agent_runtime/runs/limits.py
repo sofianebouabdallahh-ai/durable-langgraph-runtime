@@ -109,6 +109,16 @@ def profile_of(spec: GraphSpec) -> Profile | None:
     )
 
 
+def local_model_limits(limits: dict[str, Any], settings: AgentSettings) -> dict[str, Any]:
+    """A turn on a local model: at least `local_turn_timeout_s` of working time (it reads
+    and writes far slower than a cloud model), never above the run ceiling. The other
+    budgets stay as they are: a slow model isn't a reason to do more."""
+    out = dict(limits)
+    floor = min(settings.local_turn_timeout_s, settings.run_timeout_s)
+    out["timeout_s"] = max(out.get("timeout_s") or 0, floor)
+    return out
+
+
 def playground_limits(limits: dict[str, Any], settings: AgentSettings) -> dict[str, Any]:
     """A test chat's limits (CR-006 R17.3): the draft's own, tightened to the test
     budget. Only ever lower: a test can't buy more than the agent would get."""

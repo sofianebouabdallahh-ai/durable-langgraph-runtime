@@ -32,6 +32,12 @@ export const ACTIONS: Record<string, string> = {
   "default_model.changed": "Changed the default model",
   "tool_settings.changed": "Changed tool settings",
   "usage_sharing.changed": "Changed usage sharing",
+  "mcp_server.added": "Added an MCP server",
+  "mcp_server.changed": "Changed an MCP server",
+  "mcp_server.removed": "Removed an MCP server",
+  "mcp_tool.enabled": "Switched on an MCP tool",
+  "mcp_tool.disabled": "Switched off an MCP tool",
+  "mcp_tool.approved_change": "Approved a changed MCP tool",
 };
 
 const PAGE = 50;

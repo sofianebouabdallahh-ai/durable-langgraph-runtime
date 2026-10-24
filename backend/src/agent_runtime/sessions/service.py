@@ -30,7 +30,8 @@ from agent_runtime.audit import AuditLog
 from agent_runtime.config import Settings
 from agent_runtime.db import Pool
 from agent_runtime.graphs import GraphRegistry, UnknownGraph
-from agent_runtime.runs.limits import playground_limits
+from agent_runtime.models.connections import any_local
+from agent_runtime.runs.limits import local_model_limits, playground_limits
 from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.service import Overloaded, RunService, prepare_spec
 from agent_runtime.runs.state import RunStatus
@@ -228,6 +229,8 @@ class SessionService:
         limits = prepared.limits
         if session.playground_of is not None:  # a test chat: the small test budget (R17.3)
             limits = playground_limits(limits, self._settings)
+        if any_local(bindings):  # a local model reads and writes slower: more time per turn
+            limits = local_model_limits(limits, self._settings)
         await self._runs.admit()
         async with self._pool.connection() as conn:
             runs = RunRepository(conn)

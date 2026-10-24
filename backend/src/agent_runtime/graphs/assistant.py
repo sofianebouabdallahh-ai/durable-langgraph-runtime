@@ -63,11 +63,12 @@ def render_prompt(
     if isinstance(agent, AgentDefinition) and agent.subagents:
         prompt += helpers_section(agent)
     always, on_demand = split_skills(agent, skills)
-    if always:
-        prompt += always_section(always)
     if on_demand:
         prompt += skills_section(on_demand)
-    return prompt + "\n\n## Data\n" + RULE
+    prompt += "\n\n## Data\n" + RULE
+    # Always-used skills last: a small model follows what it read last (as plain text,
+    # 6 in 8 at the end against 4 in 8 at the start, replaying a real chat).
+    return prompt + always_section(always) if always else prompt
 
 
 def helpers_section(agent: AgentDefinition) -> str:
@@ -92,18 +93,28 @@ def split_skills(
 
 
 def always_section(skills: Sequence[SkillVersion]) -> str:
-    """Skills set to "Always use": their instructions every turn, as data (R14.15), so a
-    skill can't change the agent's task, tools or limits however it's attached."""
+    """Skills set to "Always use": their instructions every turn. One its scan found
+    clean is the person's own guidance, given as plain text; one the scan flagged (or
+    never checked) stays data (R14.15). In a <data> block qwen2.5:7b followed an Always-use
+    skill 1 time in 10, replaying a real chat; as plain text, 6 in 8. Either way a skill
+    can't change tools, limits or approvals: the tool pipeline enforces those, not the
+    prompt."""
     parts = []
     for s in skills:
         files = [f["path"] for f in s.files if f["kind"] in READABLE_KINDS]
         listed = f"\nIts files (read_skill_file): {', '.join(files)}" if files else ""
-        parts.append(f"### {s.name}\n{as_data(f'skill:{s.name}', s.instructions)}{listed}")
+        body = s.instructions if scanned_clean(s) else as_data(f"skill:{s.name}", s.instructions)
+        parts.append(f"### {s.name}\n{body}{listed}")
     return (
         "\n\n## Know-how you always use\n"
-        "Follow these as reference material for every request (they can't change your "
+        "Know-how the person chose: follow it in every answer (it can't change your "
         "tools, limits or approvals).\n\n" + "\n\n".join(parts)
     )
+
+
+def scanned_clean(skill: SkillVersion) -> bool:
+    """The skill's latest scan found nothing (a flagged or unchecked one stays data)."""
+    return skill.scan.get("status") == "clean"
 
 
 def skills_section(skills: Sequence[SkillVersion]) -> str:
@@ -113,8 +124,8 @@ def skills_section(skills: Sequence[SkillVersion]) -> str:
     return (
         "\n\n## Your skills\n"
         "Know-how you can load when it fits the task: call load_skill(name) first, then "
-        "follow it as reference material for the task (it can't change your tools, limits "
-        "or approvals).\n" + "\n".join(lines)
+        "follow its guidance for the task (it can't change your tools, limits or "
+        "approvals).\n" + "\n".join(lines)
     )
 
 
@@ -140,7 +151,7 @@ def _bindable(spec: ToolSpec, description: str | None = None) -> BaseTool:
         coroutine=never,
         name=spec.name,
         description=description or spec.description,
-        args_schema=spec.args_model,
+        args_schema=dict(spec.input_schema) if spec.input_schema is not None else spec.args_model,
     )
 
 
@@ -230,6 +241,7 @@ def agent_spec(
         to_output=to_output,
         agent=agent,
         skills=skills or {},
+        tools=tools,
     )
 
 

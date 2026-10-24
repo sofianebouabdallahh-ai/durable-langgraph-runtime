@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -22,8 +22,8 @@ from agent_runtime.audit import AuditLog
 from agent_runtime.config import AgentSettings, Settings
 from agent_runtime.db import Pool
 from agent_runtime.graphs import GraphRegistry, GraphSpec
-from agent_runtime.models.connections import ModelRouter
-from agent_runtime.runs.limits import RunOptions, profile_of, resolve_limits
+from agent_runtime.models.connections import ModelRouter, any_local
+from agent_runtime.runs.limits import RunOptions, local_model_limits, profile_of, resolve_limits
 from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.state import RunStatus
 from agent_runtime.runs.store import Run, RunRepository, RunTerminal
@@ -149,6 +149,9 @@ class RunService:
                 await ensure_on(conn, pinned.definition.id)  # its kill switch (L6)
                 bindings = await self.models.bind(conn, pinned.definition)
             prepared = prepare_spec(self.agents.spec_of(pinned), self._settings, input, options)
+            if any_local(bindings):  # a local model: more time per turn (the Studio's drafts)
+                prepared = replace(prepared, limits=local_model_limits(prepared.limits,
+                                                                       self._settings))  # fmt: skip
             agent = (pinned.bundle_hash, pinned.definition.id, pinned.version)
         else:
             prepared = prepare(self._graphs, self._settings, graph, input, options)

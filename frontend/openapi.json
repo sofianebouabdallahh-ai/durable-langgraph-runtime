@@ -198,6 +198,47 @@
         "title": "AddConnection",
         "type": "object"
       },
+      "AddServer": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "header_name": {
+            "default": "Authorization",
+            "pattern": "^[A-Za-z0-9-]{1,64}$",
+            "title": "Header Name",
+            "type": "string"
+          },
+          "token": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token"
+          },
+          "url": {
+            "maxLength": 500,
+            "minLength": 8,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name",
+          "url"
+        ],
+        "title": "AddServer",
+        "type": "object"
+      },
       "AdminState": {
         "properties": {
           "paused": {
@@ -715,6 +756,14 @@
             "description": "A DraftProposal or an InstructionsProposal, when done",
             "title": "Proposal"
           },
+          "repairs": {
+            "description": "What was fixed in the draft",
+            "items": {
+              "type": "string"
+            },
+            "title": "Repairs",
+            "type": "array"
+          },
           "status": {
             "enum": [
               "working",
@@ -830,6 +879,63 @@
           "trace_id"
         ],
         "title": "AuditRow",
+        "type": "object"
+      },
+      "ChangeServer": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "header_name": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9-]{1,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Header Name"
+          },
+          "token": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "title": "ChangeServer",
         "type": "object"
       },
       "ClientError": {
@@ -2137,6 +2243,190 @@
         "title": "KillSwitchView",
         "type": "object"
       },
+      "McpServerView": {
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "has_token": {
+            "title": "Has Token",
+            "type": "boolean"
+          },
+          "header_name": {
+            "title": "Header Name",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "protocol_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol Version"
+          },
+          "status": {
+            "description": "untested, ready or failed",
+            "title": "Status",
+            "type": "string"
+          },
+          "status_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Detail"
+          },
+          "tested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tested At"
+          },
+          "token_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Fingerprint"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/McpToolView"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "display_name",
+          "url",
+          "header_name",
+          "has_token",
+          "token_fingerprint",
+          "status",
+          "status_detail",
+          "protocol_version",
+          "tested_at",
+          "tools"
+        ],
+        "title": "McpServerView",
+        "type": "object"
+      },
+      "McpToolView": {
+        "properties": {
+          "agent_name": {
+            "description": "As agents know it: mcp__<server>__<tool>",
+            "title": "Agent Name",
+            "type": "string"
+          },
+          "approved_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What was switched on, if different",
+            "title": "Approved Description"
+          },
+          "changed": {
+            "description": "The server changed it since it was switched on",
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "description": {
+            "description": "What the server says now",
+            "title": "Description",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "hints": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Hints",
+            "type": "object"
+          },
+          "input_schema": {
+            "additionalProperties": true,
+            "title": "Input Schema",
+            "type": "object"
+          },
+          "name": {
+            "description": "As the server names it",
+            "title": "Name",
+            "type": "string"
+          },
+          "read_only": {
+            "description": "The server says so (a hint, never trusted alone)",
+            "title": "Read Only",
+            "type": "boolean"
+          },
+          "scan": {
+            "additionalProperties": true,
+            "description": "The check of its description and arguments",
+            "title": "Scan",
+            "type": "object"
+          },
+          "without_asking": {
+            "title": "Without Asking",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "agent_name",
+          "description",
+          "input_schema",
+          "read_only",
+          "hints",
+          "enabled",
+          "without_asking",
+          "changed",
+          "approved_description",
+          "scan"
+        ],
+        "title": "McpToolView",
+        "type": "object"
+      },
       "MessageView": {
         "properties": {
           "content": {
@@ -3263,6 +3553,26 @@
         "title": "SessionView",
         "type": "object"
       },
+      "SetTool": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "without_asking": {
+            "default": false,
+            "description": "Only for a read-only tool",
+            "title": "Without Asking",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "SetTool",
+        "type": "object"
+      },
       "SkillDetail": {
         "properties": {
           "allowed_tools": {
@@ -3968,6 +4278,18 @@
           "risk": {
             "title": "Risk",
             "type": "string"
+          },
+          "server": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An MCP tool: its server's name (L8)",
+            "title": "Server"
           }
         },
         "required": [
@@ -5827,6 +6149,314 @@
         "summary": "Stop an agent, or all, now",
         "tags": [
           "kill switch"
+        ]
+      }
+    },
+    "/mcp/servers": {
+      "get": {
+        "operationId": "servers_mcp_servers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/McpServerView"
+                  },
+                  "title": "Response Servers Mcp Servers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "MCP servers",
+        "tags": [
+          "mcp"
+        ]
+      },
+      "post": {
+        "operationId": "add_mcp_servers_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddServer"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add an MCP server (it's tested at once)",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/mcp/servers/{server_id}": {
+      "delete": {
+        "operationId": "remove_mcp_servers__server_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove (its tools stop working for every agent)",
+        "tags": [
+          "mcp"
+        ]
+      },
+      "patch": {
+        "operationId": "change_mcp_servers__server_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeServer"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/mcp/servers/{server_id}/test": {
+      "post": {
+        "operationId": "test_mcp_servers__server_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ask the server for its tools",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/mcp/servers/{server_id}/tools/{tool}": {
+      "put": {
+        "operationId": "set_tool_mcp_servers__server_id__tools__tool__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Server Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tool",
+            "required": true,
+            "schema": {
+              "title": "Tool",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetTool"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Switch a tool on or off",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/mcp/servers/{server_id}/tools/{tool}/approve": {
+      "post": {
+        "operationId": "approve_mcp_servers__server_id__tools__tool__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Server Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tool",
+            "required": true,
+            "schema": {
+              "title": "Tool",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve a tool the server changed",
+        "tags": [
+          "mcp"
         ]
       }
     },

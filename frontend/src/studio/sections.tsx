@@ -161,6 +161,7 @@ function ToolCards({
   readOnly: boolean;
 }) {
   return (
+    <>
     <div className="grid gap-2.5 sm:grid-cols-2">
       {catalog.tools
         .filter((t) => !forHelper || t.helpers_allowed)
@@ -179,6 +180,7 @@ function ToolCards({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="text-sm font-medium">{t.label}</span>
+                    {t.server && <Pill tone="blue">{t.server} · MCP</Pill>}
                     {t.asks_first && <Pill tone="amber">Asks you first</Pill>}
                   </div>
                   <p className="mt-0.5 text-[13px] text-stone-500 dark:text-stone-400">{t.description}</p>
@@ -215,6 +217,12 @@ function ToolCards({
           );
         })}
     </div>
+    {!forHelper && (
+      <p className="mt-2 text-xs text-stone-500">
+        More tools from other services: add an MCP server in <a href="#/settings/tools" className="underline underline-offset-2">Settings → Tools</a>.
+      </p>
+    )}
+    </>
   );
 }
 

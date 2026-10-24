@@ -8,10 +8,11 @@ under their least-privilege database logins.
     graceful   docker stop it instead: SIGTERM → released → resumed elsewhere (R10.7)
     privilege  the worker's login can't drop a table or delete runs (R14.13)
     sandbox    docker kill the worker while its turn runs Python in the sandbox (L6 SC5)
+    mcp        docker kill the worker during an MCP tool call (L8 SC5; profile `test`)
 
 Usage (the stack must be up):
     COMPOSE_PROJECT_NAME=agent-runtime UI_PORT=3000 \\
-        uv run python -m tests.e2e.compose_e2e [crash|graceful|privilege|all] [--repeat N]
+        uv run python -m tests.e2e.compose_e2e [<scenario>|all] [--repeat N]
 """
 
 from __future__ import annotations
@@ -196,6 +197,105 @@ def sandbox() -> bool:
     return not c.failed
 
 
+FIXTURE = "http://fake-model:9999"  # the fixture MCP server (profile `test`)
+
+
+def fixture_calls(tool: str, *, wait_for: int = 0) -> int:
+    """How many calls of `tool` the fixture has seen; with `wait_for`, block until that
+    many (inside its container, so the worker can be killed while the call is slow)."""
+    probe = (
+        "import json, time, urllib.request\n"
+        f"def n(): return sum(c['tool'] == '{tool}' for c in json.load(urllib.request.urlopen("
+        "'http://127.0.0.1:9999/mcp-admin/calls')))\n"
+        "end = time.monotonic() + 60\n"
+        f"while n() < {wait_for} and time.monotonic() < end: time.sleep(0.05)\n"
+        "print(n())\n"
+    )
+    return int(compose("--profile", "test", "exec", "-T", "fake-model", "python", "-c", probe))
+
+
+def mcp() -> bool:
+    """L8 SC5: the worker dies during an MCP call. The turn completes; a read-only call is
+    sent again (it's safe); an approved ask-first call is never sent twice."""
+    c = Check("docker kill a worker mid MCP call (L8 SC5)")
+    compose("--profile", "test", "up", "-d", "--wait", "fake-model")
+    reset = ("import urllib.request; urllib.request.urlopen(urllib.request.Request("
+             "'http://127.0.0.1:9999/mcp-admin/reset', method='POST'))")  # fmt: skip
+
+    def reset_fixture() -> bool:
+        try:
+            compose("--profile", "test", "exec", "-T", "fake-model", "python", "-c", reset)
+        except subprocess.CalledProcessError:
+            return False
+        return True
+
+    # It has no health check: `up --wait` can return before it listens.
+    wait(reset_fixture, 60, "the fixture MCP server")
+    with httpx.Client(base_url=API, timeout=30) as client:
+        server = client.post("/mcp/servers", json={
+            "display_name": f"Crash {time.time_ns() % 10**6}", "url": f"{FIXTURE}/mcp/",
+            "token": "fake-mcp-token"}).json()  # fmt: skip
+        c("the fixture server is ready", server.get("status") == "ready", str(server)[:200])
+        tools = f"/mcp/servers/{server['id']}/tools"
+        client.put(f"{tools}/lookup", json={"enabled": True, "without_asking": True})
+        client.put(f"{tools}/send_message", json={"enabled": True}).raise_for_status()
+        lookup, send = (f"mcp__{server['name']}__{t}" for t in ("lookup", "send_message"))
+
+        agent = client.post("/studio/agents", json={"display_name": server["display_name"]}).json()
+        doc = {**agent["draft"]["document"], "description": "Checks ferries.",
+               "tools": [{"name": lookup}, {"name": send}]}  # fmt: skip
+        client.put(f"/studio/agents/{agent['id']}/draft", json=doc).raise_for_status()
+        test = client.post(f"/studio/agents/{agent['id']}/test-chat").json()
+        hello = {"content": "hi", "script": [{"content": "hi"}]}
+        tried = client.post(f"/sessions/{test['id']}/messages", json=hello).json()
+        wait(lambda: client.get(f"/runs/{tried['run_id']}").json()["status"] == "completed",
+             60, "the test chat")  # fmt: skip
+        name = client.post(f"/studio/agents/{agent['id']}/publish", json={}).json()["name"]
+        sid = client.post("/sessions", json={"agent": name}).json()["id"]
+
+        def killed_mid_call(script: list[dict[str, Any]], tool: str, approve: bool) -> str:
+            before = fixture_calls(tool)  # before the turn: its call may start at once
+            sent = client.post(f"/sessions/{sid}/messages", json={"content": "go",
+                                                                    "script": script})  # fmt: skip
+            sent.raise_for_status()
+            run_id: str = sent.json()["run_id"]
+            if approve:
+                wait(lambda: client.get(f"/runs/{run_id}").json()["status"] == "waiting_approval",
+                     60, "the approval")  # fmt: skip
+                client.post(f"/sessions/{sid}/approve", json={"decision": "approve"})
+            victim = owner_container(client, run_id)
+            fixture_calls(tool, wait_for=before + 1)  # the call is in flight (3 s)
+            subprocess.run([DOCKER, "kill", victim], check=True, capture_output=True)
+            try:
+                wait(lambda: client.get(f"/runs/{run_id}").json()["status"]
+                     in ("completed", "failed"), 120, "the turn to finish")  # fmt: skip
+            finally:
+                subprocess.run([DOCKER, "start", victim], capture_output=True)
+            c(f"{tool}: the turn completed", client.get(f"/runs/{run_id}").json()["status"]
+              == "completed")  # fmt: skip
+            return run_id
+
+        def last_result() -> dict[str, Any]:
+            msgs = client.get(f"/sessions/{sid}/messages").json()["messages"]
+            result: dict[str, Any] = [m for m in msgs if m["type"] == "tool_result"][-1]["content"]
+            return result
+
+        def call(tool: str, **args: str) -> dict[str, Any]:
+            return {"tool_calls": [{"name": tool, "args": args}]}
+
+        killed_mid_call([call(lookup, topic="Naxos [slow]"), {"content": "ok"}], "lookup", False)
+        sent = fixture_calls("lookup")
+        c("read-only: sent again after the crash", sent == 2, f"{sent} calls")
+        c("read-only: its result reached the chat", "07:30" in str(last_result()))
+        killed_mid_call([call(send, to="ops", text="hi [slow]"), {"content": "ok"}],
+                        "send_message", True)  # fmt: skip
+        sent = fixture_calls("send_message")
+        c("ask-first: never sent twice", sent == 1, f"{sent} calls")
+        c("ask-first: the chat says it may have run once",
+          "may have run once" in str(last_result()), str(last_result())[:200])  # fmt: skip
+    return not c.failed
+
+
 def privilege() -> bool:
     c = Check("least privilege at runtime (R14.13)")
     whoami = compose("exec", "-T", "worker", "python", "-c",
@@ -216,7 +316,13 @@ def privilege() -> bool:
     return not c.failed
 
 
-SCENARIOS = {"crash": crash, "graceful": graceful, "sandbox": sandbox, "privilege": privilege}
+SCENARIOS = {
+    "crash": crash,
+    "graceful": graceful,
+    "sandbox": sandbox,
+    "mcp": mcp,
+    "privilege": privilege,
+}
 
 
 def main() -> int:

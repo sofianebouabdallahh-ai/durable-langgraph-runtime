@@ -225,6 +225,26 @@ async def test_polling_the_same_thing_five_times_is_no_progress(
         assert await cur.fetchone() == {"status": "cancelled"}  # it doesn't outlive the run
 
 
+async def test_an_empty_reply_is_asked_for_once_more(
+    pool: Pool, test_settings: Settings, checkpoint_tables: None
+) -> None:
+    """No text and no tool call (a small model's unparsable tool call) ends nothing: the
+    model is asked once more, and that call is charged like any other."""
+    done, _ = await run_assistant(pool, test_settings, [{"content": ""}, {"content": "hi"}])
+    assert done.status is S.COMPLETED
+    assert (await counters(pool, done.id))["model_calls"] == 2
+    replies = [m.content for m in await thread(pool, done) if isinstance(m, AIMessage)]
+    assert replies == ["hi"]  # the empty one never reaches the conversation
+
+
+async def test_an_empty_reply_twice_is_not_retried_forever(
+    pool: Pool, test_settings: Settings, checkpoint_tables: None
+) -> None:
+    done, _ = await run_assistant(pool, test_settings, [{"content": ""}, {"content": ""}])
+    assert done.status is S.COMPLETED
+    assert (await counters(pool, done.id))["model_calls"] == 2  # once more, not again
+
+
 # ---------------------------------------------------------- R14.7: retries
 
 

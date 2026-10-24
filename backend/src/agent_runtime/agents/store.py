@@ -5,7 +5,8 @@ definition, so storing the same definition twice is a no-op and a run's
 `agent_hash` pins exactly what it executes.
 """
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
 from psycopg.types.json import Jsonb
@@ -45,11 +46,13 @@ class SnapshotMissing(LookupError):
     pass
 
 
-def bundle_content(defn: AgentDefinition, skills: SkillSet | None = None) -> dict[str, Any]:
+def bundle_content(
+    defn: AgentDefinition, skills: SkillSet | None = None, mcp: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
     """What a bundle stores: `{main: hash, helpers: [[name, hash], …], skills: [[owner,
-    name, version], …]}`. Lists, because jsonb doesn't keep object key order and the
-    order is part of the definition. `skills` only when there are any, so bundles from
-    before skills keep their hashes."""
+    name, version], …], mcp: {tool: locked definition}}`. Lists, because jsonb doesn't
+    keep object key order and the order is part of the definition. `skills` and `mcp`
+    only when there are any, so older bundles keep their hashes."""
     content: dict[str, Any] = {
         "main": content_hash(canonical_content(defn)),
         "helpers": [[s.frontmatter.name, content_hash(canonical_content(s))]
@@ -57,23 +60,32 @@ def bundle_content(defn: AgentDefinition, skills: SkillSet | None = None) -> dic
     }  # fmt: skip
     if skills and (entries := manifest(skills)):
         content["skills"] = entries
+    if mcp:
+        content["mcp"] = {name: mcp[name] for name in sorted(mcp)}
     return content
 
 
-def bundle_digest(defn: AgentDefinition, skills: SkillSet | None = None) -> str:
+def bundle_digest(
+    defn: AgentDefinition, skills: SkillSet | None = None, mcp: Mapping[str, Any] | None = None
+) -> str:
     """The hash `snapshot_bundle` would return, computed without writing anything (the
     Studio asks it on every read: is this exact draft, with today's skills, tested?)."""
-    return content_hash(bundle_content(defn, skills))
+    return content_hash(bundle_content(defn, skills, mcp))
 
 
-async def snapshot_bundle(conn: Conn, defn: AgentDefinition, skills: SkillSet | None = None) -> str:
-    """Snapshot an agent with its helpers and its skill versions; return the bundle's
-    hash (what a run pins)."""
+async def snapshot_bundle(
+    conn: Conn,
+    defn: AgentDefinition,
+    skills: SkillSet | None = None,
+    mcp: Mapping[str, Any] | None = None,
+) -> str:
+    """Snapshot an agent with its helpers, its skill versions and its MCP tools' locked
+    definitions; return the bundle's hash (what a run pins)."""
     repo = AgentDefinitionRepository(conn)
     await repo.snapshot(defn)
     for sub in defn.subagents:
         await repo.snapshot(sub)
-    content = bundle_content(defn, skills)
+    content = bundle_content(defn, skills, mcp)
     digest = content_hash(content)
     await conn.execute(
         """
@@ -90,6 +102,7 @@ async def snapshot_bundle(conn: Conn, defn: AgentDefinition, skills: SkillSet | 
 class Bundle:
     definition: AgentDefinition
     skills: SkillSet
+    mcp: Mapping[str, Any] = field(default_factory=dict)  # tool name → locked definition
 
 
 async def load_bundle(conn: Conn, digest: str) -> Bundle:
@@ -116,7 +129,7 @@ async def load_bundle(conn: Conn, digest: str) -> Bundle:
     skills: dict[str, tuple[SkillVersion, ...]] = {}
     for owner, _, version in entries:
         skills[str(owner)] = (*skills.get(str(owner), ()), versions[str(version)])
-    return Bundle(definition, skills)
+    return Bundle(definition, skills, bundle.get("mcp") or {})
 
 
 async def _content(conn: Conn, digest: str, kind: str) -> dict[str, Any]:

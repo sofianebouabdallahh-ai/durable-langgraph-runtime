@@ -34,6 +34,7 @@ from agent_runtime.api.activity import activity_router
 from agent_runtime.api.audit import audit_router
 from agent_runtime.api.client_errors import client_errors_router
 from agent_runtime.api.kill_switch import kill_switch_router
+from agent_runtime.api.mcp import mcp_router
 from agent_runtime.api.models import models_router
 from agent_runtime.api.onboarding import onboarding_router
 from agent_runtime.api.problems import ApiDraining, ResultNotReady
@@ -61,6 +62,7 @@ from agent_runtime.api.tools import tools_router
 from agent_runtime.config import Settings, get_agent_settings, get_settings
 from agent_runtime.db import Pool, create_pool
 from agent_runtime.graphs import GraphRegistry, GraphSpec, default_registry
+from agent_runtime.mcp.service import McpService
 from agent_runtime.models.connections import ConnectionService
 from agent_runtime.queue import RedisWorkQueue, WorkQueue, create_redis
 from agent_runtime.runs.kill_switch import KillSwitch
@@ -447,6 +449,7 @@ def create_app(
         app.state.skills = SkillService(p)
         app.state.tool_settings = ToolSettings(p, settings)
         app.state.kill_switch = KillSwitch(p, app.state.service)
+        app.state.mcp = McpService(p, settings)
 
     app = FastAPI(
         title="Agent Runtime API",
@@ -474,6 +477,7 @@ def create_app(
     app.include_router(kill_switch_router)
     app.include_router(activity_router)
     app.include_router(audit_router)
+    app.include_router(mcp_router)
     app.include_router(telemetry_router)
     app.include_router(client_errors_router)
     app.include_router(graphs_router)

@@ -61,6 +61,10 @@ class AgentSettings(BaseSettings):
     playground_model_calls: int = Field(default=20, gt=0)
     playground_tool_calls: int = Field(default=20, gt=0)
     playground_cost_usd: float = Field(default=0.25, gt=0)
+    # A turn on a local model (Ollama, or one on this machine or network) gets at least
+    # this long, test chats and the Studio's drafting included: a local model reads and
+    # writes far slower, minutes per reply on a CPU. Never above run_timeout_s.
+    local_turn_timeout_s: int = Field(default=900, gt=0)
     # R14.2: at this share of any budget the agent gets one wrap-up turn.
     soft_limit_ratio: float = Field(default=0.8, gt=0, lt=1)
 
@@ -164,6 +168,7 @@ class Settings(AgentSettings):
     # which on a busy laptop takes minutes, and it generates more slowly.
     model_timeout_s: float = Field(default=60.0, gt=0)
     local_model_timeout_s: float = Field(default=300.0, gt=0)
+    mcp_timeout_s: float = Field(default=60.0, gt=0)  # one call to an MCP server (L8)
     model_retry_attempts: int = Field(default=3, ge=1, le=5)  # every attempt is charged
     model_retry_base_s: float = Field(default=1.0, gt=0)
     model_retry_cap_s: float = Field(default=20.0, gt=0)

@@ -215,8 +215,10 @@ async def test_an_always_used_skill_reaches_the_model_and_its_reasoning_the_down
 
     async with httpx.AsyncClient() as client:
         (served, *_) = (await client.get(f"{web}/calls")).json()
-    assert "## Know-how you always use" in served["system"]
-    assert '<data source="skill:trip-planning">' in served["system"]
+    always = served["system"].index("## Know-how you always use")
+    assert served["system"].index("## Data") < always  # last, where a small model follows it
+    assert "### trip-planning\n" in served["system"][always:]  # its scan is clean: plain guidance
+    assert '<data source="skill:trip-planning">' not in served["system"]
     assert "load_skill" in served["tools"]  # its files stay readable
 
     msgs = (await c("GET", f"/sessions/{chat['id']}/messages")).json()["messages"]

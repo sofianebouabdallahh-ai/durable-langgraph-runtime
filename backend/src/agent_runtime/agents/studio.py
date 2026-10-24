@@ -17,6 +17,7 @@ from __future__ import annotations
 import contextlib
 import re
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -42,6 +43,7 @@ from agent_runtime.audit import Action, AuditLog
 from agent_runtime.config import AgentSettings
 from agent_runtime.db import Conn, Pool
 from agent_runtime.ids import new_id
+from agent_runtime.mcp import tools as mcp_tools
 from agent_runtime.runs.service import RunService
 from agent_runtime.runs.store import Run, RunRepository
 from agent_runtime.sandbox.tools import SANDBOX_TOOLS
@@ -52,6 +54,7 @@ from agent_runtime.skills.binding import MissingSkills, bind, lock_of
 from agent_runtime.skills.scan import ScanReport, scan
 from agent_runtime.skills.spec import SkillContent
 from agent_runtime.skills.store import SkillStore
+from agent_runtime.tools.spec import RiskClass
 
 # ------------------------------------------------------------------ the catalog
 
@@ -161,6 +164,7 @@ class Assist:
     kind: Literal["draft", "instructions"]
     proposal: dict[str, Any] | None = None
     problem: str | None = None
+    repairs: list[str] = field(default_factory=list)  # what was fixed in the proposal
 
 
 # ------------------------------------------------------------------- the service
@@ -243,6 +247,11 @@ class StudioService:
 
     # ---------------------------------------------- describe it, improve it
 
+    async def _offered_now(self) -> list[str]:
+        """The Studio's tools plus the MCP tools switched on now."""
+        async with self._pool.connection() as conn:
+            return [*self.offered_tools(), *await mcp_tools.usable(conn)]
+
     def offered_tools(self) -> list[str]:
         """The Studio's tools this installation has: the code tools only with a sandbox."""
         risks = self.tool_risks()
@@ -253,7 +262,11 @@ class StudioService:
         result is a proposal (`assist`), which `create_from_proposal` turns into a draft."""
         skills = await self._library()
         offered = self.offered_tools()
-        message = builder.describe_message(description, skills, offered)
+        async with self._pool.connection() as conn:
+            mcp = await mcp_tools.usable(conn)
+        message = builder.describe_message(
+            description, skills, offered, {n: t.definition.description for n, t in mcp.items()}
+        )
         script = builder.demo_script(builder.demo_draft(description, skills, offered))
         return await self._assist_run(builder.BUILDER, message, script)
 
@@ -289,10 +302,11 @@ class StudioService:
             return Assist("working", kind)
         proposal = (result or {}).get("output", {}).get("proposal") if result else None
         if run.status.value == "completed" and proposal:
-            if kind == "draft":  # only tools this installation has
+            repairs = list(proposal.pop("repairs", []) or [])
+            if kind == "draft":  # only tools this installation has (and its MCP tools)
                 draft = builder.DraftProposal.model_validate(proposal)
-                proposal = builder.only_offered(draft, self.offered_tools()).model_dump()
-            return Assist("done", kind, proposal)
+                proposal = builder.only_offered(draft, await self._offered_now()).model_dump()
+            return Assist("done", kind, proposal, repairs=repairs)
         problem = (
             "The model didn't come up with a proposal. Try again, or describe it a little "
             "differently (a model that passed its test in Settings → Models works best)."
@@ -305,13 +319,14 @@ class StudioService:
         """A new agent whose draft is the builder's proposal (skills it named that aren't
         in the library are left out)."""
         library = {n for n, _ in await self._library()}
-        proposal = builder.only_offered(proposal, self.offered_tools()).model_copy(update={
+        proposal = builder.only_offered(proposal, await self._offered_now()).model_copy(update={
             "skills": [s for s in proposal.skills if s in library]})  # fmt: skip
         async with self._pool.connection() as conn, conn.transaction():
             store = AgentStore(conn)
             name = await self._free_name(store, proposal.display_name)
+            mcp = mcp_tools.risks(await mcp_tools.usable(conn))
             document = AgentDocument.model_validate(
-                builder.to_document(proposal, name, self._settings)
+                builder.to_document(proposal, name, self._settings, mcp)
             )
             agent, _ = await store.create(name, document.model_dump(mode="json"))
         return await self.save_draft(agent.id, document)
@@ -342,14 +357,19 @@ class StudioService:
             published = next((v for v in versions if v.state == "published"), None)
             draft = None
             if draft_version is not None:
-                definition, issues = self._check(draft_version.document, draft_version.number)
+                available = await mcp_tools.usable(conn)
+                definition, issues = self._check(
+                    draft_version.document, draft_version.number, mcp_tools.risks(available)
+                )
                 model_issues, untested = await self._models_of(conn, draft_version.document)
                 skill_issues = await self._skills_of(conn, draft_version.document)
-                # "Tested" means: this exact draft with the library's skills as they are
-                # now. A skill edited since the test makes it untested (the hash moves).
+                # "Tested" means: this exact draft with the library's skills and the MCP
+                # tools as they are now. A skill edited, or an MCP tool approved again,
+                # since the test makes it untested (the hash moves).
                 tested = False
                 if definition is not None and not skill_issues:
-                    current = bundle_digest(definition, await bind(conn, definition, None))
+                    mcp = mcp_tools.lock(available, mcp_tools.granted(definition))
+                    current = bundle_digest(definition, await bind(conn, definition, None), mcp)
                     tested = await store.tested(agent_id, current)
                 draft = Draft(draft_version, issues + model_issues + skill_issues, tested, untested)
         return AgentState(agent, draft, published, versions)
@@ -371,14 +391,18 @@ class StudioService:
                 await AuditLog(conn).record(audited[0], "agent", agent.name, after=audited[1])
             document = document.model_copy(update={"name": agent.name})  # the id is fixed
             draft = await store.open_draft(agent_id, document.model_dump(mode="json"))
-            definition, _ = self._check(document.model_dump(mode="json"), draft.number)
+            available = await mcp_tools.usable(conn)
+            definition, _ = self._check(
+                document.model_dump(mode="json"), draft.number, mcp_tools.risks(available)
+            )
             bundle = None
             if definition is not None:
                 # A missing skill is an issue on the form until it exists again.
                 with contextlib.suppress(MissingSkills):
                     bundle = await snapshot_bundle(
-                        conn, definition, await bind(conn, definition, None)
-                    )
+                        conn, definition, await bind(conn, definition, None),
+                        mcp_tools.lock(available, mcp_tools.granted(definition)),
+                    )  # fmt: skip
             await store.save_draft(agent_id, document.model_dump(mode="json"), bundle)
         return await self.get(agent_id)
 
@@ -424,14 +448,18 @@ class StudioService:
         version = state.draft.version
         async with self._pool.connection() as conn, conn.transaction():
             store = AgentStore(conn)
-            definition, _ = self._check(version.document, version.number)
+            available = await mcp_tools.usable(conn)
+            definition, _ = self._check(version.document, version.number,
+                                        mcp_tools.risks(available))  # fmt: skip
             assert definition is not None  # no blockers: it validated
             skills = await bind(conn, definition, None)
-            digest = await snapshot_bundle(conn, definition, skills)
-            if not await store.tested(agent_id, digest):  # a skill changed since get()
-                raise PublishBlocked(["A skill changed since the test: test it again"])
+            mcp = mcp_tools.lock(available, mcp_tools.granted(definition))
+            digest = await snapshot_bundle(conn, definition, skills, mcp)
+            if not await store.tested(agent_id, digest):  # changed since get()
+                raise PublishBlocked(["A skill or an MCP tool changed since the test: "
+                                      "test it again"])  # fmt: skip
             note = (changelog or "").strip()[:500] or None
-            await store.publish(agent_id, note, digest, lock_of(skills))
+            await store.publish(agent_id, note, digest, lock_of(skills), mcp)
             await AuditLog(conn).record("agent.published", "agent", state.agent.name, after={
                 "version": version.number, "changelog": note, "bundle": digest})  # fmt: skip
         return await self.get(agent_id)
@@ -463,7 +491,8 @@ class StudioService:
                 version = await store.published(agent.id)
                 if version is None:
                     continue
-                definition, _ = self._check(version.document, version.number)
+                locked = mcp_tools.risks(mcp_tools.unlock(version.mcp_lock))
+                definition, _ = self._check(version.document, version.number, locked)
                 if definition is not None:
                     out.append((definition, version.number, agent.id))
         return out
@@ -500,7 +529,12 @@ class StudioService:
                 version = await store.draft(agent_id) or await store.published(agent_id)
         if version is None:
             raise LookupError("no such version")
-        definition, issues = self._check(version.document, version.number)
+        if version.state == "draft":
+            async with self._pool.connection() as conn:
+                mcp = mcp_tools.risks(await mcp_tools.usable(conn))
+        else:
+            mcp = mcp_tools.risks(mcp_tools.unlock(version.mcp_lock))
+        definition, issues = self._check(version.document, version.number, mcp)
         if definition is None:
             raise PublishBlocked([f"{i.where}: {i.message}" for i in issues])
         skills = await self._skill_contents(definition, version)
@@ -625,13 +659,15 @@ class StudioService:
             if isinstance(name, str) and name not in found
         ]
 
-    def _check(self, raw: dict[str, Any], version: int) -> tuple[Any, list[PlainIssue]]:
+    def _check(
+        self, raw: dict[str, Any], version: int, mcp: Mapping[str, RiskClass] | None = None
+    ) -> tuple[Any, list[PlainIssue]]:
         try:
             document = AgentDocument.model_validate(raw)
         except ValidationError as exc:
             return None, [PlainIssue("agent", ".".join(str(p) for p in e["loc"]) or None,
                                      plain(e["msg"])) for e in exc.errors()]  # fmt: skip
-        definition, issues = self._agents.validate(document, version)
+        definition, issues = self._agents.validate(document, version, mcp)
         return definition, [_plain(i) for i in issues]
 
 

@@ -38,6 +38,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 
 from agent_runtime import genai, logs, telemetry
@@ -95,6 +96,7 @@ class ToolRunContext:
     # A Studio test chat (CR-006 R17.3): after approval, an external side effect is
     # recorded but not performed. Nothing leaves a test chat.
     simulate_side_effects: bool = False
+    settings: Any = None  # the run's settings, passed on to tools that need them (MCP)
 
 
 @dataclass(frozen=True)
@@ -281,7 +283,15 @@ class ToolPipeline:
                     "taken_over": begun.taken_over,  # re-executing a dead owner's call
                 },
             )
-            if ctx.simulate_side_effects and spec.risk_class == "external_side_effect":
+            if begun.taken_over and not spec.retry_after_crash:
+                # A remote call can't be deduplicated: it may have happened once already.
+                status, result = (
+                    "failed",
+                    {"error": "This call was cut off by a crash and may have run once "
+                              "already, so it wasn't sent again. Ask the person whether to "
+                              "try it again."},
+                )  # fmt: skip
+            elif ctx.simulate_side_effects and spec.risk_class == "external_side_effect":
                 status, result = (
                     "done",
                     {
@@ -302,6 +312,7 @@ class ToolPipeline:
                         orchestrator=ctx.orchestrator,
                         subagent=ctx.subagent,
                         skills=ctx.skills,
+                        settings=ctx.settings,
                     ),
                 )
             async with ctx.pool.connection() as conn:
@@ -347,6 +358,13 @@ class ToolPipeline:
 
     @staticmethod
     def _validate(spec: ToolSpec, raw: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+        if spec.input_schema is not None:  # an MCP tool (L8): its own JSON Schema
+            errors = sorted(Draft202012Validator(spec.input_schema).iter_errors(raw),
+                            key=lambda e: list(e.path))  # fmt: skip
+            problems = "; ".join(
+                f"{'.'.join(str(p) for p in e.path) or '(args)'}: {e.message}" for e in errors
+            )
+            return dict(raw), problems or None
         try:
             return spec.args_model.model_validate(raw).model_dump(mode="json"), None
         except ValidationError as exc:
@@ -361,7 +379,11 @@ class ToolPipeline:
     ) -> tuple[Literal["done", "failed"], Any]:
         timeout = spec.timeout_s or self._timeout
         try:
-            parsed = spec.args_model.model_validate(args)
+            parsed = (
+                dict(args)
+                if spec.input_schema is not None
+                else spec.args_model.model_validate(args)
+            )
             result = await asyncio.wait_for(spec.fn(parsed, tctx), timeout=timeout)
             return "done", json.loads(json.dumps(result, default=str))
         except TimeoutError:

@@ -8,9 +8,11 @@ REQUIRE_SERVICES=1 (set by `make test` and CI): a stopped database must never
 turn into a green build.
 """
 
+import asyncio
 import os
 import uuid
 from collections.abc import AsyncIterator, Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn
 
@@ -25,6 +27,8 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 
 from agent_runtime.config import Settings, get_settings
 from agent_runtime.db import Pool, create_pool
+from agent_runtime.devtools.fake_mcp import FakeMcp
+from agent_runtime.devtools.fake_mcp import create_app as create_mcp_app
 from agent_runtime.queue import RedisWorkQueue, create_redis
 from agent_runtime.sandbox import tools as sandbox_tools
 from tests.integration.local_sandbox import SANDBOX_TOKEN, LocalBackend, local_sandboxd
@@ -152,3 +156,37 @@ def sandbox(
     )
     monkeypatch.setattr(sandbox_tools, "get_settings", lambda: with_sandbox)
     return with_sandbox
+
+
+# ------------------------------------------------------------- MCP (phase L8)
+
+MCP_TOKEN = "fixture-token-" + "q" * 20
+
+
+@dataclass
+class ServedMcp:
+    url: str
+    admin: str
+    fake: FakeMcp
+
+
+@pytest.fixture
+async def served_mcp() -> AsyncIterator[ServedMcp]:
+    """The fake MCP server (devtools), over real HTTP, in this process."""
+    import socket
+
+    import uvicorn
+
+    app, fake = create_mcp_app(token=MCP_TOKEN)
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = int(s.getsockname()[1])
+    server = uvicorn.Server(uvicorn.Config(app, port=port, log_level="warning", lifespan="on"))
+    task = asyncio.create_task(server.serve())
+    while not server.started:  # noqa: ASYNC110 — uvicorn offers no "started" event
+        await asyncio.sleep(0.05)
+    try:
+        yield ServedMcp(f"http://127.0.0.1:{port}/mcp/", f"http://127.0.0.1:{port}/admin", fake)
+    finally:
+        server.should_exit = True
+        await task

@@ -65,6 +65,11 @@ class ScanReport:
 class _Text:
     where: str  # the file
     text: str
+    about: str = "skill"  # what's checked: "skill", or "tool" (an MCP tool's description)
+
+    @property
+    def noun(self) -> str:
+        return "a tool's description" if self.about == "tool" else "skill text"
 
 
 Check = Callable[[SkillContent, list[_Text]], Iterator[Finding]]
@@ -125,6 +130,15 @@ def scan(content: SkillContent) -> ScanReport:
     return ScanReport(tuple(findings))
 
 
+def scan_texts(parts: list[tuple[str, str]]) -> ScanReport:
+    """The text checks on other text an agent reads, e.g. an MCP tool's description and
+    schema (L8): (where, text) pairs. Secrets, steering, links, encoding, invisible
+    characters; not the checks about a skill's files and size."""
+    texts = [_Text(where, text, "tool") for where, text in parts]
+    checks = (secrets, injection, links, encoded, invisible)
+    return ScanReport(tuple(f for check in checks for f in check(None, texts)))  # type: ignore[arg-type]
+
+
 def _line(text: str, index: int) -> int:
     return text.count("\n", 0, index) + 1
 
@@ -137,8 +151,7 @@ def secrets(content: SkillContent, texts: list[_Text]) -> Iterator[Finding]:
                     "secrets",
                     "block",
                     "This looks like a secret (a key, token or "
-                    "password). Remove it: skills are text that agents and people "
-                    "read.",
+                    f"password). Remove it: {t.noun} is read by agents and people.",
                     f"{t.where}, line {_line(t.text, m.start())}",
                 )
 
@@ -161,7 +174,7 @@ def injection(content: SkillContent, texts: list[_Text]) -> Iterator[Finding]:
                 "injection",
                 "review",
                 f"Tries to steer the agent beyond its "
-                f"task: “{phrase}”. Agents treat skill text as information, "
+                f"task: “{phrase}”. Agents treat {t.noun} as information, "
                 "never as rules, but check this is meant.",
                 f"{t.where}, line {_line(t.text, m.start())}",
             )

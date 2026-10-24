@@ -49,6 +49,7 @@ class Version:
     created_at: datetime
     published_at: datetime | None
     skill_lock: dict[str, str] | None = None  # skill name → version hash, set at publish
+    mcp_lock: dict[str, Any] | None = None  # MCP tool → approved definition, set at publish
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> Version:
@@ -57,12 +58,13 @@ class Version:
             document=row["document"], bundle_hash=row["bundle_hash"],
             changelog=row["changelog"], created_at=row["created_at"],
             published_at=row["published_at"], skill_lock=row["skill_lock"],
+            mcp_lock=row.get("mcp_lock"),
         )  # fmt: skip
 
 
 _VERSION = (
     "agent_id, number, state, document, bundle_hash, changelog, created_at, published_at, "
-    "skill_lock"
+    "skill_lock, mcp_lock"
 )
 
 
@@ -184,14 +186,15 @@ class AgentStore:
         changelog: str | None,
         bundle_hash: str,
         skill_lock: dict[str, str],
+        mcp_lock: dict[str, Any] | None = None,
     ) -> Version:
         """Freeze the draft: its content, the bundle it runs and the skill versions it
         locks (the AC47 trigger keeps all three from changing afterwards)."""
         cur = await self._conn.execute(
             f"UPDATE agent_versions SET state = 'published', published_at = now(), changelog = %s, "
-            f"bundle_hash = %s, skill_lock = %s "
+            f"bundle_hash = %s, skill_lock = %s, mcp_lock = %s "
             f"WHERE agent_id = %s AND state = 'draft' RETURNING {_VERSION}",
-            (changelog, bundle_hash, Jsonb(skill_lock), agent_id),
+            (changelog, bundle_hash, Jsonb(skill_lock), Jsonb(mcp_lock or {}), agent_id),
         )
         row = await cur.fetchone()
         if row is None:

@@ -10,7 +10,9 @@ from that snapshot. So:
 - publishing a new version never changes a running turn; the next turn uses it (AC47);
 - a built-in file edited during a rolling upgrade can't change a queued turn (R15.4);
 - skills are in the bundle too, as exact versions: a draft takes the library's current
-  ones, a published version the ones it locked (CR-006 R17.4).
+  ones, a published version the ones it locked (CR-006 R17.4);
+- so are MCP tools (L8), as the definitions people approved: a draft takes the tools
+  switched on now, a published version the ones it locked.
 
 Patterns: Registry (two sources behind one lookup); content-addressed snapshots;
 memoised factory (one compiled spec per hash per process: specs are immutable).
@@ -20,8 +22,9 @@ from __future__ import annotations
 
 import uuid
 from collections import OrderedDict
-from dataclasses import dataclass, field
-from typing import Literal
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
+from typing import Any, Literal
 
 from agent_runtime.agents.document import AgentDocument, to_raw
 from agent_runtime.agents.loader import Catalog, Ceilings, Issue, validate_definition
@@ -32,8 +35,9 @@ from agent_runtime.catalog import default_catalog
 from agent_runtime.config import get_agent_settings
 from agent_runtime.db import Conn, Pool
 from agent_runtime.graphs import GraphRegistry, GraphSpec
+from agent_runtime.mcp import tools as mcp_tools
 from agent_runtime.skills.binding import MissingSkills, SkillSet, bind
-from agent_runtime.tools.spec import ToolRegistry
+from agent_runtime.tools.spec import RiskClass, ToolRegistry
 
 Source = Literal["builtin", "user"]
 CACHE_SIZE = 256
@@ -51,6 +55,7 @@ class Resolved:
     source: Source
     agent_id: uuid.UUID | None = None  # user agents
     skills: SkillSet = field(default_factory=dict)
+    mcp: Mapping[str, Any] = field(default_factory=dict)  # MCP tool → locked definition
 
 
 class AgentResolver:
@@ -90,10 +95,14 @@ class AgentResolver:
             return None
 
     def validate(
-        self, document: AgentDocument, version: int
+        self, document: AgentDocument, version: int, mcp: Mapping[str, RiskClass] | None = None
     ) -> tuple[AgentDefinition | None, list[Issue]]:
+        """`mcp`: the MCP tools it may use (name → risk class), besides the built-in ones."""
         main, helpers = to_raw(document, version)
-        return validate_definition(main, helpers, self._catalog, self._ceilings)
+        catalog = self._catalog
+        if mcp:
+            catalog = replace(catalog, tools={**catalog.tools, **mcp})
+        return validate_definition(main, helpers, catalog, self._ceilings)
 
     async def resolve(
         self, conn: Conn, name: str, *, draft_of: uuid.UUID | None = None
@@ -127,16 +136,20 @@ class AgentResolver:
                         and await AgentStore(conn).published(stored.id))  # fmt: skip
 
     async def _from_version(self, conn: Conn, version: Version, source: Source) -> Resolved:
+        draft = version.state == "draft"
+        available = await mcp_tools.usable(conn) if draft else mcp_tools.unlock(version.mcp_lock)
         definition, issues = self.validate(
-            AgentDocument.model_validate(version.document), version.number
-        )
+            AgentDocument.model_validate(version.document), version.number,
+            mcp_tools.risks(available),
+        )  # fmt: skip
         if definition is None:  # e.g. a ceiling lowered since it was published
             raise AgentUnavailable("; ".join(str(i) for i in issues))
-        lock = version.skill_lock if version.state != "draft" else None
-        skills = await self._bind(conn, definition, lock)
-        digest = await snapshot_bundle(conn, definition, skills)
-        self._remember(digest, definition, skills)
-        return Resolved(definition, digest, version.number, source, version.agent_id, skills)
+        skills = await self._bind(conn, definition, None if draft else version.skill_lock)
+        mcp = mcp_tools.lock(available, mcp_tools.granted(definition))
+        digest = await snapshot_bundle(conn, definition, skills, mcp)
+        self._remember(digest, definition, skills, mcp)
+        return Resolved(definition, digest, version.number, source, version.agent_id, skills,
+                        mcp)  # fmt: skip
 
     @staticmethod
     async def _bind(
@@ -150,7 +163,8 @@ class AgentResolver:
     # ----------------------------------------------------------------- specs
 
     def spec_of(self, resolved: Resolved) -> GraphSpec:
-        return self._remember(resolved.bundle_hash, resolved.definition, resolved.skills)
+        return self._remember(resolved.bundle_hash, resolved.definition, resolved.skills,
+                              resolved.mcp)  # fmt: skip
 
     async def spec(self, bundle_hash: str) -> GraphSpec:
         """The compiled agent a run pinned (from its snapshot; any worker, any time)."""
@@ -159,16 +173,21 @@ class AgentResolver:
             return cached
         async with self._pool.connection() as conn:
             bundle = await load_bundle(conn, bundle_hash)
-        return self._remember(bundle_hash, bundle.definition, bundle.skills)
+        return self._remember(bundle_hash, bundle.definition, bundle.skills, bundle.mcp)
 
     def _remember(
-        self, digest: str, definition: AgentDefinition, skills: SkillSet | None = None
+        self,
+        digest: str,
+        definition: AgentDefinition,
+        skills: SkillSet | None = None,
+        mcp: Mapping[str, Any] | None = None,
     ) -> GraphSpec:
         from agent_runtime.graphs.assistant import agent_spec
 
         spec = self._specs.get(digest)
         if spec is None:
-            spec = agent_spec(definition, self._tools, skills or {})
+            tools = mcp_tools.registry_with(self._tools, mcp_tools.unlock(mcp))
+            spec = agent_spec(definition, tools, skills or {})
             self._specs[digest] = spec
             while len(self._specs) > CACHE_SIZE:
                 self._specs.popitem(last=False)

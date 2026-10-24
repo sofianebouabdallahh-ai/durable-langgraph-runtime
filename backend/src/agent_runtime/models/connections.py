@@ -592,6 +592,7 @@ class ModelRouter:
                     "connection": str(connection.id),
                     "name": name,
                     "model": model_id,
+                    "local": _local(connection),
                 }
             elif default is not None:
                 connection = await store.get(default[0])
@@ -599,10 +600,19 @@ class ModelRouter:
                     "connection": str(default[0]),
                     "name": connection.name,
                     "model": default[1],
+                    "local": _local(connection),
                 }
             else:
-                bindings[model] = {"setup": True}
+                bindings[model] = {"setup": True, "local": self._setup_is_local()}
         return bindings
+
+    def _setup_is_local(self) -> bool:
+        """The model setup configured (.env): Ollama, or an address on this machine."""
+        s = self._settings
+        if s.model_provider == "scripted":
+            return False
+        url = s.ollama_base_url if s.model_provider == "ollama" else s.openai_base_url
+        return s.model_provider == "ollama" or is_local(url)
 
     async def providers(self, bindings: dict[str, Binding]) -> dict[str, ModelProvider]:
         """The adapter for each bound model (the worker, before the run's graph starts).
@@ -628,3 +638,12 @@ def _audited(c: Connection) -> dict[str, Any]:
     """A connection as the audit trail shows it: never the key, only that one is set."""
     return {"display_name": c.display_name, "kind": c.kind, "base_url": c.base_url,
             "models": c.models, **key_change(c.key_fingerprint)}  # fmt: skip
+
+
+def _local(c: Connection) -> bool:
+    return c.kind == "ollama" or is_local(c.base_url)
+
+
+def any_local(bindings: dict[str, Any] | None) -> bool:
+    """Does a run with these bindings use a local model (slower: see local_model_limits)?"""
+    return any(b.get("local") for b in (bindings or {}).values())

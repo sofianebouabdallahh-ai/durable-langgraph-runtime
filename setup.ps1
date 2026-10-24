@@ -175,6 +175,7 @@ function Set-Model {
         $tags = Invoke-RestMethod http://127.0.0.1:11434/api/tags -TimeoutSec 2
         Set-EnvValue "CONTAINER_OLLAMA_BASE_URL" "http://host.docker.internal:11434/v1"; Set-EnvValue "COMPOSE_PROFILES" "app"
         Ok "using the Ollama found at 127.0.0.1:11434"
+        Warn "Tip: for long chats give Ollama a bigger context (OLLAMA_CONTEXT_LENGTH=8192): docs/setup/models.md"
         if (-not ($tags.models | Where-Object { $_.name -eq $name })) { Install-OllamaModel $name }
       } catch {
         Set-EnvValue "CONTAINER_OLLAMA_BASE_URL" "http://ollama:11434/v1"; Set-EnvValue "COMPOSE_PROFILES" "app,llm"

@@ -37,6 +37,8 @@ TABLES = {
     "run_model_usage",
     "audit_events",
     "reply_feedback",
+    "mcp_servers",
+    "mcp_tools",
 }
 
 

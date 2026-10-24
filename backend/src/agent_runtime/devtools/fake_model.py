@@ -14,11 +14,16 @@ work with no real model and no key:
   then answers; a helper → it returns a result; otherwise a short answer. Every
   answer names the model (and the skill it loaded), so a test can see who did what;
 - **the Studio's builders:** `propose_draft` / `propose_instructions` → a fixed
-  proposal (`fake-sloppy` first proposes an unknown tool, then repairs it);
+  proposal (`fake-sloppy` first proposes an unknown placeholder, then repairs it; it
+  always names a tool that doesn't exist, which the builder leaves out with a note);
 - **a fake web** (L6a): `/searxng/search?q=…&format=json` answers like SearXNG with
   results on `/web/<page>`, small HTML pages (one plants instructions, for the R14.15
   gate); `/tavily/search` and `/brave/res/v1/web/search` answer like those APIs;
 - **code** (L6b): offered `run_python`, it runs `print(6 * 7)` once and says what it printed;
+- **MCP tools** (L8): offered `mcp__…` tools, it calls the first one once (required text
+  arguments get the user's message), then says what it got back;
+- **an MCP server** (L8): `/mcp` is devtools/fake_mcp.py's server, with its `/mcp-admin/…`
+  switches;
 - **reasoning:** every answer starts with "Thinking: <model> decides to …" as
   `reasoning_content`, like a reasoning model (the chat download shows it);
 - **a log:** GET /calls lists what it served (model, which key, tools, the system
@@ -37,15 +42,27 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from starlette.applications import Starlette
+from starlette.routing import Route
+
+from agent_runtime.devtools.fake_mcp import FakeMcp
 
 HELPER = re.compile(r"^- `([a-z0-9-]+)`:", re.MULTILINE)
 SECTION = re.compile(r"^## (Your helpers|Your skills)\n(.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
 SLOW_MARK, SLOW_S = "[slow]", 2.0
+MCP_TOKEN = "fake-mcp-token"  # the fake MCP server's (tests type it in Settings → Tools)
 
 
 def create_app(key: str | None = None, base_url: str = "http://fake-model:9999") -> FastAPI:
     """`base_url`: how the stack reaches this server (its fake web's links point there)."""
-    app = FastAPI(title="fake OpenAI-compatible model")
+    mcp = FakeMcp(token=MCP_TOKEN)
+    app = FastAPI(title="fake OpenAI-compatible model", lifespan=mcp.lifespan)
+    # The fake MCP server (L8): its endpoint, and its test switches (rug pull, calls).
+    app.mount("/mcp", mcp.guarded())
+    app.mount("/mcp-admin", Starlette(routes=[
+        Route(r.path.removeprefix("/admin"), r.endpoint, methods=list(r.methods or []))
+        for r in mcp.admin_routes()
+    ]))  # fmt: skip
     calls: list[dict[str, Any]] = []
 
     @app.get("/v1/models")
@@ -124,7 +141,9 @@ def create_app(key: str | None = None, base_url: str = "http://fake-model:9999")
             await asyncio.sleep(300)
         elif _asked_slowly(body["messages"]):
             await asyncio.sleep(SLOW_S)
-        reply = _decide(model, body["messages"], tools, len(calls))
+        schemas = {t["function"]["name"]: t["function"].get("parameters") or {}
+                   for t in body.get("tools") or []}  # fmt: skip
+        reply = _decide(model, body["messages"], tools, len(calls), schemas)
         if body.get("stream"):
             return StreamingResponse(_stream(model, reply), media_type="text/event-stream")
         return _complete(model, reply)
@@ -158,7 +177,13 @@ def _web_results(base: str, query: str) -> list[dict[str, str]]:
     ]
 
 
-def _decide(model: str, messages: list[dict[str, Any]], tools: list[str], n: int) -> dict[str, Any]:
+def _decide(
+    model: str,
+    messages: list[dict[str, Any]],
+    tools: list[str],
+    n: int,
+    schemas: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """{"text": …} or {"tool": name, "args": {…}}: a tiny deterministic policy."""
     last = messages[-1]
     can = model != "fake-notools"
@@ -194,6 +219,13 @@ def _decide(model: str, messages: list[dict[str, Any]], tools: list[str], n: int
     used += (
         f" Code printed: {printed.group(1).strip().replace(chr(92) + 'n', '')}." if printed else ""
     )
+    # MCP tools (L8): call the first one offered, once, then say what came back.
+    mcp = next((t for t in tools if t.startswith("mcp__")), None)
+    if can and mcp and not _called(messages, mcp):
+        return {"tool": mcp, "args": _mcp_args((schemas or {}).get(mcp, {}), messages),
+                "id": f"call_{n}"}  # fmt: skip
+    if mcp and (got := _results_of(messages, mcp)):
+        used += f" MCP {mcp.split('__')[-1]}: {got[0][:160]}"
     if last.get("role") == "tool":
         answered = _tool_name(messages, last.get("tool_call_id"))
         if can and answered == "spawn_subagent" and "wait_subagents" in tools:
@@ -238,8 +270,10 @@ def _propose(tool: str, model: str, messages: list[dict[str, Any]], n: int) -> d
         args = {
             "display_name": "Fake drafted assistant",
             "description": f"Drafted by {model}.",
-            "instructions": "You are a drafted assistant. Today is {{date}}. Be brief.",
-            "tools": ["teleport"] if sloppy else ["web_search"],
+            "instructions": "You are a drafted assistant. Today is "
+            + ("{{secret}}" if sloppy else "{{date}}")
+            + ". Be brief.",
+            "tools": ["teleport", "web_search"] if model == "fake-sloppy" else ["web_search"],
             "effort": "quick",
             "helpers": [
                 {
@@ -251,6 +285,14 @@ def _propose(tool: str, model: str, messages: list[dict[str, Any]], n: int) -> d
             ],
         }
     return {"tool": tool, "args": args, "id": f"call_{n}"}
+
+
+def _mcp_args(schema: dict[str, Any], messages: list[dict[str, Any]]) -> dict[str, Any]:
+    """Every required text argument gets the user's last message."""
+    said = str(next((m.get("content") for m in reversed(messages) if m.get("role") == "user"), ""))
+    props = schema.get("properties") or {}
+    return {name: said[:80] or "Naxos" for name in schema.get("required") or []
+            if (props.get(name) or {}).get("type", "string") == "string"}  # fmt: skip
 
 
 def _called(messages: list[dict[str, Any]], tool: str) -> bool:
