@@ -61,6 +61,8 @@ cd nuria
 
 Then open **http://localhost:3000** (setup opens it for you).
 
+**Tested on macOS and Linux. Windows is experimental:** `setup.ps1` hasn't been run on a real Windows machine yet. Running the Linux setup inside WSL is the safer route ([Windows guide](docs/setup/windows.md)). If something breaks, please [open an issue](https://github.com/sofianebouabdallahh-ai/durable-langgraph-runtime/issues) with the output.
+
 What `./setup.sh` does:
 1. checks Docker, finds free ports, and generates private passwords for this machine (kept only in `.env`);
 2. asks which model to use:
