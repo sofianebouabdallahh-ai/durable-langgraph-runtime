@@ -13,7 +13,7 @@ import time
 import uuid
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from agent_runtime import logs
 from agent_runtime.admin import AdminRepository
@@ -276,22 +276,27 @@ class RunService:
     async def decide_approval(
         self,
         run_id: uuid.UUID,
-        decision: str,
+        decision: Literal["approve", "reject"],
         edits: dict[str, Any] | None = None,
         reason: str | None = None,
+        *,
+        approval_id: uuid.UUID | None = None,
     ) -> Run:
-        """R1.4: approve (re-queue with the decision) or reject (cancelled: rejected).
-        No live worker is needed. Raises NotWaitingForApproval (→ 409)."""
+        """R1.4: decide one of the run's pending approvals; the run is re-queued once
+        none is left, or cancelled (rejected). No live worker is needed. Raises
+        NotWaitingForApproval or ApprovalConflict (→ 409)."""
         async with self._pool.connection() as conn, conn.transaction():
             repo = RunRepository(conn)
-            run = await repo.decide_approval(
-                run_id, decision=decision, edits=edits, reason=reason,
+            run, decided = await repo.decide_approval(
+                run_id, approval_id=approval_id, decision=decision, edits=edits, reason=reason,
                 decided_by="local",  # an authenticated principal once auth exists (roadmap)
             )  # fmt: skip
             await AuditLog(conn).record("approval.decided", "run", run_id, after={
-                "decision": decision, "reason": reason, "edited": bool(edits)})  # fmt: skip
+                "approval_id": str(decided.id), "tool": decided.tool, "decision": decision,
+                "reason": reason, "edited": bool(edits)})  # fmt: skip
         await publish_events(self._bus, repo.emitted)
-        logs.event(log, f"approval decided: {decision}", run_id=str(run_id), decision=decision)
+        logs.event(log, f"approval decided: {decision}", run_id=str(run_id), decision=decision,
+                   approval_id=str(decided.id), tool=decided.tool)  # fmt: skip
         if run.status is RunStatus.QUEUED and self._relay is not None:
             await self._relay.enqueue(run.id)
         return run

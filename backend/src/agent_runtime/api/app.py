@@ -193,13 +193,18 @@ async def cancel_run(run_id: uuid.UUID, service: ServiceDep) -> RunView:
     status_code=status.HTTP_202_ACCEPTED,
     response_model=RunView,
     summary="Approve or reject a paused run (human-in-the-loop)",
-    description="R1.4. `approve` re-queues the run with the decision (and optional edited "
-    "tool arguments); `reject` cancels it with reason `rejected`. Works with no worker alive. "
-    "409 unless the run is `waiting_approval`.",
+    description="R1.4. Decides one pending approval (`approval_id`). `approve`: once none is "
+    "left, the run is re-queued and each approved call runs, with its edited arguments if "
+    "given; `reject` cancels the run with reason `rejected`. Works with no worker alive. 409 "
+    "unless the run is `waiting_approval`, or if the approval isn't pending.",
 )
 async def approve_run(run_id: uuid.UUID, body: ApprovalRequest, service: ServiceDep) -> RunView:
     edits = body.edits.model_dump(exclude_none=True) if body.edits else None
-    return RunView.of(await service.decide_approval(run_id, body.decision, edits, body.reason))
+    return RunView.of(
+        await service.decide_approval(
+            run_id, body.decision, edits, body.reason, approval_id=body.approval_id
+        )
+    )
 
 
 @runs.post(

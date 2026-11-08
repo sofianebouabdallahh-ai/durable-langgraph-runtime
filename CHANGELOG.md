@@ -4,6 +4,31 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### H1 — Approvals you can trust
+#### Fixed
+- **A crash can no longer turn into an approval.** If a worker died after a tool asked
+  for approval but before the pause was saved, the run resumed that tool with the
+  *previous* approval (or failed). Each approval is now its own row, bound to the
+  LangGraph interrupt that asked and to a hash of the call's real arguments; a run
+  resumes only with decisions that match both, and asks again otherwise.
+- **Two calls needing approval in one step** (for example two `notify` calls) failed the
+  run once one was approved. Each now gets its own approval card and is decided on its
+  own; nothing runs until all are approved, and rejecting one cancels the turn.
+- **Approved edits are checked like the model's own arguments:** `pre_tool` hooks (a deny
+  or a redaction applies) and the policy, not only the schema.
+- **A call that changed after you approved it isn't run.**
+- **Hooks only tighten:** a hook that asks for approval no longer stops the hooks after
+  it, so a later deny still wins and a later redaction still applies.
+
+#### Changed
+- **API:** `POST /sessions/{id}/approve` and `POST /runs/{id}/approve` take an
+  `approval_id` (from `interrupt_payload.approval_id`). Without it, the request applies
+  only when exactly one approval is pending (409 `approval-conflict` otherwise).
+  `interrupt_payload` is now the *next* pending approval, with its `approval_id`.
+- **Migration 0022** adds `run_approvals`. Runs already waiting when you upgrade ask
+  once more after you decide, bound to the call (fail closed). `runs.resume_value` is no
+  longer used and will be dropped in a later release.
+
 ## [0.2.0] - 2026-10-24
 
 The first public release: tools from MCP servers, real tools (web search, reading pages, Python in a sandbox), Activity and logs, a guided first agent, and what a real local model taught us.

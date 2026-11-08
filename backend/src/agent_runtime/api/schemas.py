@@ -52,7 +52,9 @@ class RunView(BaseModel):
     releases: int = Field(description="Graceful hand-offs on worker shutdown (R10.7)")
     cancel_requested: bool
     interrupt_payload: dict[str, Any] | None = Field(
-        description="What a waiting_approval run waits on (R1.4)"
+        description="The next approval a waiting_approval run waits on (R1.4): its "
+        "`approval_id`, `tool`, `args` (secrets redacted), `call_id` and `reason`. Several "
+        "can be pending; once this one is decided, the next one shows here."
     )
     limits: dict[str, Any]
     parent_run_id: uuid.UUID | None = Field(description="Set for child runs (R2.8)")
@@ -148,10 +150,16 @@ class ApprovalEdits(BaseModel):
 
 
 class ApprovalRequest(BaseModel):
-    """R1.4: `{decision: approve|reject, edits?}`."""
+    """R1.4: `{approval_id?, decision: approve|reject, edits?, reason?}`."""
 
     model_config = ConfigDict(extra="forbid")
 
+    approval_id: uuid.UUID | None = Field(
+        default=None,
+        description="Which approval this decides (`interrupt_payload.approval_id`). Send it: "
+        "it makes sure you decide the call you were shown. Without it, the request applies "
+        "only when exactly one approval is pending (409 otherwise).",
+    )
     decision: Literal["approve", "reject"]
     edits: ApprovalEdits | None = None
     reason: str | None = Field(default=None, max_length=2000)

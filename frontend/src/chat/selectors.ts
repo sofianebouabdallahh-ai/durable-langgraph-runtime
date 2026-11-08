@@ -1,6 +1,6 @@
 /**
  * Pure views of the chat state for the components: the transcript grouped into
- * turns, a tool call paired with its result, the approval a turn waits on.
+ * turns, a tool call paired with its result, the approvals a turn waits on.
  */
 import type { Message } from "../api/messages";
 import { TERMINAL } from "../stream/events";
@@ -66,18 +66,45 @@ export function turns(state: ChatState): TurnView[] {
   });
 }
 
+/**
+ * The decision of each approval request, by the request's message id. Requests carry
+ * their `approvalId` (phase H1): a decision pairs with the request it names. Older
+ * requests have none: the first unclaimed decision after one is its own.
+ */
+function decisionsOf(messages: Message[]): Map<string, Of<"approval">> {
+  const asks = messages.filter((m): m is Of<"interrupt"> => m.type === "interrupt");
+  const decisions = messages.filter((m): m is Of<"approval"> => m.type === "approval");
+  const named = new Set(asks.map((a) => a.approvalId).filter((id): id is string => id !== null));
+  const out = new Map<string, Of<"approval">>();
+  const claimed = new Set<string>();
+  for (const ask of asks) {
+    const own =
+      ask.approvalId !== null
+        ? decisions.find((d) => d.approvalId === ask.approvalId)
+        : decisions.find((d) => d.seq > ask.seq && !claimed.has(d.messageId) && !(d.approvalId !== null && named.has(d.approvalId)));
+    if (own) {
+      out.set(ask.messageId, own);
+      claimed.add(own.messageId);
+    }
+  }
+  return out;
+}
+
 /** `active`: the turn is still going; in an ended one, a call without a result never finished. */
 function items(messages: Message[], helpers: Helper[], active: boolean): Item[] {
   const results = new Map<string, Of<"tool_result">>();
-  const decisions: Of<"approval">[] = [];
   for (const m of messages) {
     if (m.type === "tool_result") results.set(m.toolCallId, m);
-    if (m.type === "approval") decisions.push(m);
   }
-  // A call held for a person's decision: its approval request has no decision yet.
-  const held = new Set<string>();
+  const decided = decisionsOf(messages);
+  // A call held for a person's decision: its approval request has no decision yet. Matched
+  // by the call's id; older requests didn't carry it, so by the tool's name.
+  const heldCalls = new Set<string>();
+  const heldTools = new Set<string>();
   for (const m of messages) {
-    if (m.type === "interrupt" && m.tool && !decisions.some((d) => d.seq > m.seq)) held.add(m.tool);
+    if (m.type !== "interrupt" || decided.has(m.messageId)) continue;
+    if (m.callId) heldCalls.add(m.callId);
+    else if (m.tool) heldTools.add(m.tool);
   }
   const out: Item[] = [];
   let helpersShown = false;
@@ -94,16 +121,13 @@ function items(messages: Message[], helpers: Helper[], active: boolean): Item[] 
           }
         } else {
           const result = results.get(m.toolCallId) ?? null;
-          const awaitingApproval = result === null && held.has(m.tool);
+          const awaitingApproval = result === null && (heldCalls.has(m.toolCallId) || heldTools.has(m.tool));
           out.push({ kind: "tool", key: m.messageId, call: m, result, awaitingApproval, ended: result === null && !awaitingApproval && !active });
         }
         break;
-      case "interrupt": {
-        // Approvals are decided in order: the first decision after this request is its own.
-        const decided = decisions.find((d) => d.seq > m.seq) ?? null;
-        out.push({ kind: "approval-request", key: m.messageId, message: m, decided });
+      case "interrupt":
+        out.push({ kind: "approval-request", key: m.messageId, message: m, decided: decided.get(m.messageId) ?? null });
         break;
-      }
       case "error":
         out.push({ kind: "error", key: m.messageId, message: m });
         break;
@@ -117,15 +141,11 @@ function items(messages: Message[], helpers: Helper[], active: boolean): Item[] 
   return out;
 }
 
-/** The approval the active turn waits on, if any. */
-export function pendingApproval(state: ChatState): Of<"interrupt"> | null {
-  if (state.turn?.status !== "waiting_approval") return null;
+/** The approvals the active turn waits on: each still needs its own decision. */
+export function pendingApprovals(state: ChatState): Of<"interrupt">[] {
+  if (state.turn?.status !== "waiting_approval") return [];
   const runId = state.turn.runId;
-  let pending: Of<"interrupt"> | null = null;
-  for (const m of state.messages) {
-    if (m.runId !== runId) continue;
-    if (m.type === "interrupt") pending = m;
-    if (m.type === "approval") pending = null;
-  }
-  return pending;
+  const own = state.messages.filter((m) => m.runId === runId);
+  const decided = decisionsOf(own);
+  return own.filter((m): m is Of<"interrupt"> => m.type === "interrupt" && !decided.has(m.messageId));
 }

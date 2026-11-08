@@ -622,7 +622,7 @@ export interface paths {
         put?: never;
         /**
          * Approve or reject a paused run (human-in-the-loop)
-         * @description R1.4. `approve` re-queues the run with the decision (and optional edited tool arguments); `reject` cancels it with reason `rejected`. Works with no worker alive. 409 unless the run is `waiting_approval`.
+         * @description R1.4. Decides one pending approval (`approval_id`). `approve`: once none is left, the run is re-queued and each approved call runs, with its edited arguments if given; `reject` cancels the run with reason `rejected`. Works with no worker alive. 409 unless the run is `waiting_approval`, or if the approval isn't pending.
          */
         post: operations["approve_run_runs__run_id__approve_post"];
         delete?: never;
@@ -809,7 +809,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Approve or reject the active turn (R12.6) */
+        /** Approve or reject one of the active turn's approvals (R12.6) */
         post: operations["approve_turn_sessions__session_id__approve_post"];
         delete?: never;
         options?: never;
@@ -1579,9 +1579,14 @@ export interface components {
         };
         /**
          * ApprovalRequest
-         * @description R1.4: `{decision: approve|reject, edits?}`.
+         * @description R1.4: `{approval_id?, decision: approve|reject, edits?, reason?}`.
          */
         ApprovalRequest: {
+            /**
+             * Approval Id
+             * @description Which approval this decides (`interrupt_payload.approval_id`). Send it: it makes sure you decide the call you were shown. Without it, the request applies only when exactly one approval is pending (409 otherwise).
+             */
+            approval_id?: string | null;
             /**
              * Decision
              * @enum {string}
@@ -2556,7 +2561,7 @@ export interface components {
             id: string;
             /**
              * Interrupt Payload
-             * @description What a waiting_approval run waits on (R1.4)
+             * @description The next approval a waiting_approval run waits on (R1.4): its `approval_id`, `tool`, `args` (secrets redacted), `call_id` and `reason`. Several can be pending; once this one is decided, the next one shows here.
              */
             interrupt_payload: {
                 [key: string]: unknown;

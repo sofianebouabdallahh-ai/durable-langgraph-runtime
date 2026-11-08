@@ -20,7 +20,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from psycopg.errors import UniqueViolation
 
@@ -292,30 +292,36 @@ class SessionService:
     async def approve(
         self,
         session_id: uuid.UUID,
-        decision: str,
+        decision: Literal["approve", "reject"],
         edits: dict[str, Any] | None = None,
         reason: str | None = None,
+        *,
+        approval_id: uuid.UUID | None = None,
     ) -> Run:
-        """R12.6: forward to the active run's approval and record an `approval` message,
-        in one transaction. Raises NoActiveTurn, NotWaitingForApproval (→ 409)."""
+        """R12.6: decide one of the active turn's approvals and record an `approval`
+        message, in one transaction. Raises NoActiveTurn, NotWaitingForApproval,
+        ApprovalConflict (→ 409)."""
         active = await self._active(session_id)
         async with self._pool.connection() as conn:
             runs = RunRepository(conn)
             repo = SessionRepository(conn)
             async with conn.transaction():
-                waiting = await runs.get(active)
-                run = await runs.decide_approval(
-                    active, decision=decision, edits=edits, reason=reason, decided_by="local"
-                )
-                content = {"decision": decision, "edits": edits, "reason": reason,
-                           "interrupt": waiting.interrupt_payload}  # fmt: skip
+                run, decided = await runs.decide_approval(
+                    active, approval_id=approval_id, decision=decision, edits=edits,
+                    reason=reason, decided_by="local",
+                )  # fmt: skip
+                content = {"approval_id": str(decided.id), "decision": decision,
+                           "edits": edits, "reason": reason,
+                           "interrupt": decided.payload()}  # fmt: skip
                 await repo.append(session_id, [event_message(active, "approval", content)],
                                   run_id=active, epoch=None)  # fmt: skip
                 await AuditLog(conn).record("approval.decided", "run", active, after={
+                    "approval_id": str(decided.id), "tool": decided.tool,
                     "decision": decision, "reason": reason, "edited": bool(edits)})  # fmt: skip
         await publish_events(self._bus, runs.emitted)
         await publish_messages(self._bus, repo.created)
-        logs.event(log, f"approval decided: {decision}", run_id=str(active), decision=decision)
+        logs.event(log, f"approval decided: {decision}", run_id=str(active), decision=decision,
+                   approval_id=str(decided.id), tool=decided.tool)  # fmt: skip
         if run.status is RunStatus.QUEUED:
             await self._enqueue(run.id)
         return run

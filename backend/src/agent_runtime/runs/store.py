@@ -26,7 +26,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from psycopg.pq import TransactionStatus
 from psycopg.types.json import Jsonb
@@ -34,6 +34,7 @@ from psycopg.types.json import Jsonb
 from agent_runtime.db import Conn
 from agent_runtime.fencing import Fence, check_fence
 from agent_runtime.ids import new_id
+from agent_runtime.runs.approvals import Approval, ApprovalRepository
 from agent_runtime.runs.events import EventType
 from agent_runtime.runs.state import InvalidTransition, RunStatus, sources_of
 from agent_runtime.telemetry import current_traceparent
@@ -428,8 +429,11 @@ class RunRepository:
                 current = await self.get(run_id)  # raises RunNotFound
                 raise InvalidTransition(current.status, target)
             await self.append_event(run_id, epoch=row["epoch"], type=event, payload=payload or {})
-            if target.is_terminal and row["parent_run_id"] is not None:
-                await self._child_ended(Run.from_row(row))
+            if target.is_terminal:
+                # Whatever the run still asked a person is moot once it has ended.
+                await ApprovalRepository(self._conn).cancel_pending(run_id)
+                if row["parent_run_id"] is not None:
+                    await self._child_ended(Run.from_row(row))
         return Run.from_row(row)
 
     async def _child_ended(self, child: Run) -> None:
@@ -623,15 +627,21 @@ class RunRepository:
         self,
         run_id: uuid.UUID,
         *,
-        decision: str,
+        approval_id: uuid.UUID | None = None,
+        decision: Literal["approve", "reject"],
         edits: dict[str, Any] | None,
         reason: str | None,
         decided_by: str,
-    ) -> Run:
-        """R1.4. approve → store the resume value and re-queue; reject → cancelled(rejected).
+    ) -> tuple[Run, Approval]:
+        """R1.4 (phase H1): decide ONE pending approval of a waiting run.
 
-        Works with no worker alive: the run holds no lease while it waits.
-        Raises NotWaitingForApproval (→ 409) unless the run is waiting_approval."""
+        approve → that approval is approved; once none is pending, the run is re-queued
+        and resumes with every decision, each bound to its interrupt and arguments.
+        reject → the run is cancelled (rejected); what else it asked is cancelled too.
+
+        Works with no worker alive: the run holds no lease while it waits. The run's row
+        is locked first, so decisions on one run (two tabs) are serialised. Raises
+        NotWaitingForApproval or ApprovalConflict (→ 409)."""
         async with self._conn.transaction():
             cur = await self._conn.execute(
                 f"SELECT {_RUN_COLUMNS} FROM runs WHERE id = %s FOR NO KEY UPDATE", (run_id,)
@@ -642,26 +652,35 @@ class RunRepository:
             run = Run.from_row(row)
             if run.status is not RunStatus.WAITING_APPROVAL:
                 raise NotWaitingForApproval(run)
+            approvals = ApprovalRepository(self._conn)
+            decided = await approvals.decide(
+                run_id, approval_id, decision=decision, edits=edits, comment=reason,
+                decided_by=decided_by,
+            )  # fmt: skip
             await self.append_event(
                 run_id,
                 epoch=run.epoch,
                 type=EventType.APPROVAL_DECIDED,
-                payload={"decision": decision, "edits": edits, "reason": reason,
-                         "decided_by": decided_by},
+                payload={"approval_id": str(decided.id), "tool": decided.tool,
+                         "call_id": decided.call_id, "decision": decision, "edits": edits,
+                         "reason": reason, "decided_by": decided_by},
             )  # fmt: skip
             if decision == "reject":
                 await self.set_interrupt(run_id, None)
-                return await self.transition(
+                cancelled = await self.transition(
                     run_id, RunStatus.CANCELLED, event=EventType.RUN_CANCELLED,
                     reason="rejected", payload={"reason": "rejected", "comment": reason},
                 )  # fmt: skip
-            await self._conn.execute(
-                "UPDATE runs SET resume_value = %s, interrupt_payload = NULL WHERE id = %s",
-                (Jsonb({"decision": "approve", "edits": edits or {}}), run_id),
-            )
-            return await self.transition(
+                return cancelled, decided
+            remaining = await approvals.pending(run_id)
+            if remaining:  # still waiting for the others: shown first is the next one
+                await self.set_interrupt(run_id, remaining[0].payload())
+                return await self.get(run_id), decided
+            await self.set_interrupt(run_id, None)
+            queued = await self.transition(
                 run_id, RunStatus.QUEUED, event=EventType.RUN_RESUMED_AFTER_APPROVAL
             )
+            return queued, decided
 
     async def is_cancel_requested(self, run_id: uuid.UUID) -> bool:
         cur = await self._conn.execute("SELECT cancel_requested FROM runs WHERE id = %s", (run_id,))

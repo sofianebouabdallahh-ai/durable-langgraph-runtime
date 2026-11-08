@@ -369,6 +369,69 @@ async def approval_restart(c: Cluster) -> Report:
     return r
 
 
+async def approvals_restart(c: Cluster) -> Report:
+    """Phase H1: two calls needing approval in ONE step. Every worker is killed before
+    each decision; each approval is decided by its own id; nothing is sent until both
+    are, and then each exactly once."""
+    r = Report("two approvals in one step survive restarts (H1)")
+    run_id = await _assistant_run(
+        c,
+        [
+            {"tool_calls": [{"name": "notify", "args": {"to": "ceo", "message": "one"}},
+                            {"name": "notify", "args": {"to": "cfo", "message": "two"}}]},
+            {"content": "Both notified."},
+        ],
+    )  # fmt: skip
+    await c.wait(lambda: c.status_is(run_id, "waiting_approval"), timeout_s=30, what="pause")
+    asked = await c.rows(
+        "SELECT id::text, args->>'to' AS recipient FROM run_approvals WHERE run_id = %s "
+        "AND status = 'pending' ORDER BY created_at, id",
+        run_id,
+    )
+    r.check("both calls asked, each its own approval", len(asked) == 2, str(asked))
+
+    def kill_all() -> None:
+        for worker in c.workers:
+            if worker.poll() is None:
+                worker.send_signal(signal.SIGKILL)
+                worker.wait()
+
+    kill_all()
+    first = await c.client.post(
+        f"/runs/{run_id}/approve", json={"decision": "approve", "approval_id": asked[0]["id"]}
+    )
+    still = first.status_code == 202 and first.json()["status"] == "waiting_approval"
+    r.check("after one decision it still waits for the other", still, first.text[:200])
+    next_up = first.json().get("interrupt_payload") or {}
+    r.check("the next approval shown is the other one", next_up.get("approval_id") ==
+            asked[1]["id"], str(next_up))  # fmt: skip
+
+    c.start_worker("between-0")  # a live worker must not run anything yet
+    await asyncio.sleep(3)
+    early = await c.rows("SELECT count(*) AS n FROM outbox_notifications WHERE run_id = %s",
+                         run_id)  # fmt: skip
+    r.check("nothing sent before both are decided", early[0]["n"] == 0, str(early))
+    kill_all()
+
+    second = await c.client.post(
+        f"/runs/{run_id}/approve", json={"decision": "approve", "approval_id": asked[1]["id"]}
+    )
+    r.check("the second decision re-queues it", second.status_code == 202 and
+            second.json()["status"] == "queued", second.text[:200])  # fmt: skip
+    c.start_worker("fresh-0")
+    c.start_worker("fresh-1")
+    await c.wait(
+        lambda: c.status_is(run_id, "completed", "failed"), timeout_s=60, what="completion"
+    )
+    run = await c.run(run_id)
+    sent = await c.rows(
+        "SELECT recipient FROM outbox_notifications WHERE run_id = %s ORDER BY recipient", run_id
+    )
+    r.check("fresh workers completed it", run["status"] == "completed", run["status"])
+    r.check("each sent exactly once", [s["recipient"] for s in sent] == ["ceo", "cfo"], str(sent))
+    return r
+
+
 # ---------------------------------------------------------- phase 5a: child runs
 
 
@@ -706,6 +769,7 @@ SCENARIOS: dict[str, tuple[Callable[[Cluster], Awaitable[Report]], dict[str, Any
     "api-shutdown": (api_shutdown, {"api_replicas": [{}, {}]}),
     "tool-crash": (tool_crash, {}),
     "approval-restart": (approval_restart, {}),
+    "approvals-restart": (approvals_restart, {}),
     "fanout": (fanout, {}),
     "child-crash": (child_crash, {}),
     "subagents-crash": (subagents_crash, {}),

@@ -24,6 +24,7 @@ from agent_runtime.graphs import UnknownGraph
 from agent_runtime.keys import MasterKeyMissing
 from agent_runtime.mcp.service import McpInvalid, McpNotFound
 from agent_runtime.models.connections import ConnectionInvalid, ConnectionNotFound, ModelUnavailable
+from agent_runtime.runs.approvals import ApprovalConflict
 from agent_runtime.runs.limits import LimitAboveCeiling
 from agent_runtime.runs.service import AdmissionPaused, Overloaded
 from agent_runtime.runs.store import NotWaitingForApproval, RunNotFound, RunTerminal
@@ -181,6 +182,10 @@ def install(app: FastAPI) -> None:
             409, "not-waiting-for-approval", "Run is not waiting for approval", str(exc),
             run_id=str(exc.run.id), status_now=str(exc.run.status),
         )  # fmt: skip
+
+    @app.exception_handler(ApprovalConflict)
+    async def _approval_conflict(_: Request, exc: ApprovalConflict) -> JSONResponse:
+        return problem(409, "approval-conflict", "This approval can't be decided", exc.message)
 
     @app.exception_handler(AgentSwitchedOff)
     async def _switched_off(_: Request, exc: AgentSwitchedOff) -> JSONResponse:

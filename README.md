@@ -186,6 +186,7 @@ Each row is an automated scenario, run against real processes (`make demo-e2e`) 
 | A worker is **asked to stop** (`SIGTERM`, a deploy, a node drain) | It stops reading new work, finishes its current step, and hands each run back to the queue | Another worker picks the runs up within seconds |
 | A worker is killed **during a tool call** | The tool ledger already holds the call's idempotency key. A read-only tool is called again; a tool with a side effect is never sent twice | No duplicate emails or charges. The chat says if a call may have run once |
 | A run **waits hours for approval** and everything restarts | The pause lives in Postgres, not in a process | The approval resumes it on whichever worker is free |
+| A worker dies **just as a tool asks for approval**, before the pause is saved | Each approval is bound to the interrupt that asked and to a hash of the call's arguments; a run resumes only with decisions that match | It asks you. An earlier approval is never reused |
 | An **API replica dies** while you're watching a reply | The browser reconnects through the proxy to another replica with `Last-Event-ID` | The stream continues with no missing or duplicated events |
 | **Redis loses a message**, or Pub/Sub is down | An outbox relay re-sends runs whose message was lost, and streams fall back to polling Postgres | Slower, never wrong |
 | A **helper's worker crashes**, or a fanned-out child run's | Each child run has its own lease and checkpoint, and recovers on its own | The parent waits for its children and resumes when they finish |
@@ -202,6 +203,8 @@ Each row is an automated scenario, run against real processes (`make demo-e2e`) 
 **Idempotent tool calls.** Delivery is at-least-once, so tools must be safe to retry. Every call gets a deterministic key: `sha256(run · node · call index · tool · canonical arguments)`. The key is recorded *before* the tool runs ("record, then act"). A finished call returns its stored result without running again. An interrupted call is either re-sent with the **same** key, so the tool can dedupe its own effect, or, if it has a side effect and asks first, never re-sent.
 
 **Durable pauses.** Approvals use LangGraph's `interrupt()` and `Command(resume=…)`. A waiting run holds no lease, no worker slot and no memory, so a thousand runs can wait for approval at no cost.
+
+**Approvals bound to the call.** Each approval is a row of its own, tied to LangGraph's interrupt id and to the sha256 of the call's real arguments. The run resumes with a map of decisions keyed by interrupt id, built only from rows that match both, so several approvals in one step each get their own decision, and nothing else (a crash, an earlier decision, a call that changed) can pass for one. Edited arguments go through the hooks and the policy again.
 
 **Distributed fan-out vs. in-process helpers.** Two mechanisms, each for one job ([ADR-0005](docs/adr/0005-fan-out-child-runs.md)):
 - **Child runs** spread a fan-out across the whole worker pool. Each child is a full run with its own lease and recovery. A fan-in counter, updated in the same transaction as each child's last transition, re-queues the parent exactly once.

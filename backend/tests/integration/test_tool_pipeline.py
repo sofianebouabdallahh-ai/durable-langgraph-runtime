@@ -7,6 +7,7 @@ import pytest
 
 from agent_runtime.db import Pool
 from agent_runtime.fencing import Fence, FencedError
+from agent_runtime.runs.approvals import args_hash
 from agent_runtime.runs.events import EventType as E
 from agent_runtime.runs.state import RunStatus
 from agent_runtime.runs.store import RunRepository
@@ -23,6 +24,7 @@ from agent_runtime.tools.hooks import (
 )
 from agent_runtime.tools.invocations import BudgetExceeded
 from agent_runtime.tools.pipeline import Grant, ToolCall, ToolPipeline, ToolRunContext
+from agent_runtime.tools.policy import Deny as PolicyDeny
 from agent_runtime.tools.policy import RiskClassPolicy
 from agent_runtime.tools.spec import ToolArgs, ToolContext, ToolRegistry
 from agent_runtime.untrusted import as_data
@@ -68,6 +70,10 @@ class Harness:
 
     def interrupt(self, payload: dict[str, Any]) -> Any:
         self.interrupts.append(payload)
+        approve = isinstance(self.resume, dict) and self.resume.get("decision") == "approve"
+        if approve and "args_hash" not in self.resume:
+            # What the worker does (H1): the decision comes bound to the call asked.
+            return self.resume | {"args_hash": payload["args_hash"]}
         return self.resume
 
     def pipeline(self) -> ToolPipeline:
@@ -269,6 +275,75 @@ async def test_invalid_approved_edits_are_rejected(pool: Pool, fence: Fence) -> 
     h = Harness(resume={"decision": "approve", "edits": {"args": {"to": "ops"}}})  # missing message
     result = await h.pipeline().run(call("notify", to="ceo", message="hi"), h.ctx(fence, pool))
     assert result.status == "error" and "approved edits are invalid" in result.content
+
+
+async def sent(pool: Pool, fence: Fence) -> list[dict[str, Any]]:
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT recipient, message FROM outbox_notifications WHERE run_id = %s", (fence.run_id,)
+        )
+        return list(await cur.fetchall())
+
+
+async def test_h1_the_approval_carries_the_hash_of_the_real_args(pool: Pool, fence: Fence) -> None:
+    h = Harness(resume={"decision": "approve"})
+    token = "sk-" + "abcdefghijklmnopqrstuvwxyz0123"
+    await h.pipeline().run(call("notify", to="ceo", message=f"key {token}"), h.ctx(fence, pool))
+    asked = h.interrupts[0]
+    assert token not in str(asked["args"])  # the person is shown the redacted args…
+    assert asked["args_hash"] == args_hash({"to": "ceo", "message": f"key {token}"})  # …bound
+    assert asked["call_id"] == "c0"
+
+
+async def test_h1_a_call_that_changed_after_approval_is_not_run(pool: Pool, fence: Fence) -> None:
+    h = Harness(resume={"decision": "approve", "args_hash": "0" * 64})  # approved another call
+    result = await h.pipeline().run(call("notify", to="ceo", message="hi"), h.ctx(fence, pool))
+    assert result.status == "error" and "changed after it was approved" in result.content
+    assert await sent(pool, fence) == []
+
+
+async def test_h1_approved_edits_go_through_the_hooks(pool: Pool, fence: Fence) -> None:
+    hooks = HookRegistry()
+
+    @hooks.hook("no_evil", point="pre_tool")
+    async def no_evil(inp: ToolHookInput) -> HookDecision:
+        return Deny("evil is blocked") if inp.args.get("to") == "evil" else Continue()
+
+    @hooks.hook("shout", point="pre_tool")
+    async def shout(inp: ToolHookInput) -> HookDecision:
+        return Modify({**inp.args, "message": inp.args["message"].upper()})
+
+    blocked = Harness(
+        resume={"decision": "approve", "edits": {"args": {"to": "evil", "message": "x"}}}
+    )
+    ctx = blocked.ctx(fence, pool, pre_hooks=[hooks.get("no_evil")])
+    result = await blocked.pipeline().run(call("notify", to="ceo", message="hi"), ctx)
+    assert result.status == "error" and "denied by a hook: evil is blocked" in result.content
+    assert await sent(pool, fence) == []
+
+    modified = Harness(
+        resume={"decision": "approve", "edits": {"args": {"to": "ops", "message": "go"}}}
+    )
+    ctx = modified.ctx(fence, pool, pre_hooks=[hooks.get("shout")])
+    result = await modified.pipeline().run(call("notify", 1, to="ceo", message="hi"), ctx)
+    assert result.status == "success"
+    assert await sent(pool, fence) == [{"recipient": "ops", "message": "GO"}]
+
+
+async def test_h1_approved_edits_go_through_the_policy(pool: Pool, fence: Fence) -> None:
+    class NoInterns(RiskClassPolicy):
+        async def check(self, spec: Any, args: dict[str, Any]) -> Any:
+            if args.get("to") == "interns":
+                return PolicyDeny("nobody messages the interns")
+            return await super().check(spec, args)
+
+    h = Harness(
+        resume={"decision": "approve", "edits": {"args": {"to": "interns", "message": "x"}}}
+    )
+    pipeline = ToolPipeline(h.registry, NoInterns(), interrupt=h.interrupt)
+    result = await pipeline.run(call("notify", to="ceo", message="hi"), h.ctx(fence, pool))
+    assert result.status == "error" and "denied by policy" in result.content
+    assert await sent(pool, fence) == []
 
 
 async def test_sc9_tool_budgets_count_each_key_once(pool: Pool, fence: Fence) -> None:

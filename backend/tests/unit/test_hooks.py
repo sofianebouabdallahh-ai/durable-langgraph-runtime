@@ -53,13 +53,55 @@ async def test_first_deny_wins_and_later_hooks_do_not_run() -> None:
     assert out.decision == Deny("blocked") and ran == []
 
 
-async def test_ask_stops_the_chain() -> None:
+async def test_ask_asks() -> None:
     async def ask(inp: ToolHookInput) -> HookDecision:
         return Ask({"why": "risky"})
 
     reg = reg_with(("ask", "pre_tool", ask))
     out = await run_hooks([reg.get("ask")], ToolHookInput("t", {}))
     assert out.decision == Ask({"why": "risky"})
+
+
+async def test_an_ask_never_skips_the_hooks_after_it() -> None:
+    """H1: a later deny still wins over an ask, and a later modify still applies."""
+
+    async def ask(inp: ToolHookInput) -> HookDecision:
+        return Ask({"why": "risky"})
+
+    async def no(inp: ToolHookInput) -> HookDecision:
+        return Deny("blocked domain")
+
+    async def scrub(inp: ToolHookInput) -> HookDecision:
+        return Modify({**inp.args, "token": "[REDACTED]"})
+
+    reg = reg_with(("ask", "pre_tool", ask), ("no", "pre_tool", no), ("scrub", "pre_tool", scrub))
+    denied = await run_hooks([reg.get("ask"), reg.get("no")], ToolHookInput("t", {}))
+    assert denied.decision == Deny("blocked domain")
+    assert [a["decision"] for a in denied.audit] == ["ask", "deny"]
+
+    scrubbed = await run_hooks(
+        [reg.get("ask"), reg.get("scrub")], ToolHookInput("t", {"token": "s3cret"})
+    )
+    assert scrubbed.decision == Ask({"why": "risky"})
+    assert scrubbed.input.args == {"token": "[REDACTED]"}
+    assert [a["decision"] for a in scrubbed.audit] == ["ask", "modify"]
+
+
+async def test_ignore_ask_runs_the_rest_as_if_continued() -> None:
+    """Approved edits run the hooks again: asking once more is pointless, a deny isn't."""
+
+    async def ask(inp: ToolHookInput) -> HookDecision:
+        return Ask({"why": "risky"})
+
+    async def no(inp: ToolHookInput) -> HookDecision:
+        return Deny("blocked") if inp.args.get("to") == "evil" else Continue()
+
+    reg = reg_with(("ask", "pre_tool", ask), ("no", "pre_tool", no))
+    specs = [reg.get("ask"), reg.get("no")]
+    ok = await run_hooks(specs, ToolHookInput("t", {"to": "ops"}), ignore_ask=True)
+    assert isinstance(ok.decision, Continue) and ok.audit == []
+    bad = await run_hooks(specs, ToolHookInput("t", {"to": "evil"}), ignore_ask=True)
+    assert bad.decision == Deny("blocked")
 
 
 @pytest.mark.parametrize("failure", ["raise", "timeout"])
