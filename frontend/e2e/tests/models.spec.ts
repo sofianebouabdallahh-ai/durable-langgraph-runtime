@@ -15,6 +15,7 @@ const API_REPLICAS = Number(process.env.API_REPLICAS ?? 2);
 const WORKERS = Number(process.env.WORKERS ?? 2);
 
 async function addModel(page: Page, name: string, key: string, model: string) {
+  added.push(name);
   await page.goto("/#/settings/models");
   await page.getByRole("button", { name: "Add a model" }).click();
   await page.getByRole("button", { name: /Other service/ }).click();
@@ -34,8 +35,17 @@ async function resetDefault(request: APIRequestContext) {
   await request.put("/api/models/default", { data: { connection_id: null } });
 }
 
+// The connections a test added, removed after it: repeated runs on one stack mustn't
+// pile them up (155 of them made the Models page's accessibility scan take minutes).
+const added: string[] = [];
+
 test.afterEach(async ({ request }) => {
   await resetDefault(request); // the other suites use the demo model
+  const listed = (await (await request.get("/api/models/connections")).json()) as { id: string; display_name: string }[];
+  for (const c of listed.filter((c) => added.includes(c.display_name))) {
+    await request.delete(`/api/models/connections/${c.id}`);
+  }
+  added.length = 0;
   restoreStack(API_REPLICAS, WORKERS);
 });
 
@@ -77,6 +87,7 @@ test("H2: set a model's price in Settings; a turn on it costs by that price", as
   const stamp = Date.now().toString(36);
   const name = `Priced ${stamp}`;
   const card = await addModel(page, name, `e2e-key-${stamp}`, "fake-a");
+  await card.getByRole("button", { name: /Prices, per 1 million tokens/ }).click(); // folded by default
   const row = card.getByTestId("model-prices").getByRole("row").filter({ hasText: "fake-a" });
   await row.getByRole("button", { name: "Set the price of fake-a" }).click();
   await row.getByLabel("Input price of fake-a").fill("1000");

@@ -275,12 +275,35 @@ const PRICE_SOURCE: Record<Price["source"], string> = {
  * estimate so a budget still stops a runaway agent.
  */
 function Prices({ connection: c }: { connection: Connection }) {
+  const [open, setOpen] = useState(false); // folded: the table is rendered only when open
   const entries = Object.entries(c.prices);
   if (entries.length === 0) return null;
+  const estimated = entries.filter(([, p]) => p.source === "estimate").length;
   return (
     <div className="mt-4" data-testid="model-prices">
-      <div className="mb-1 text-sm font-medium">Prices, per 1 million tokens</div>
-      <table className="w-full text-sm">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => {
+          setOpen((o) => !o);
+        }}
+        className="text-sm font-medium hover:underline"
+      >
+        Prices, per 1 million tokens {open ? "▾" : "▸"}
+      </button>
+      {estimated > 0 && (
+        <span className="ml-2 text-xs text-amber-700 dark:text-amber-400">
+          {estimated === 1 ? "1 model has" : `${String(estimated)} models have`} no known price: estimated
+        </span>
+      )}
+      {open && <PriceTable connection={c} entries={entries} />}
+    </div>
+  );
+}
+
+function PriceTable({ connection: c, entries }: { connection: Connection; entries: [string, Price][] }) {
+  return (
+      <table className="mt-1 w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-stone-500">
             <th className="py-1 pr-3 font-medium">Model</th>
@@ -296,7 +319,6 @@ function Prices({ connection: c }: { connection: Connection }) {
           ))}
         </tbody>
       </table>
-    </div>
   );
 }
 
