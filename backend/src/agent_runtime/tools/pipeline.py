@@ -9,7 +9,9 @@ Pattern: Chain of Responsibility with a FIXED order (CR-004 R15.7):
     5 re-validate if hooks modified the args
     6 policy      Allow · Deny · RequireApproval; RequireApproval or a hook's ask → interrupt()
                   (the run pauses durably; on resume LangGraph re-runs this whole pipeline and
-                  interrupt() returns the human's decision; approved edits are re-validated)
+                  interrupt() returns the human's decision for THIS call: it runs only if the
+                  approved args hash matches; approved edits go through validation, the
+                  pre_tool hooks and the policy again — phase H1)
     7+8 ledger    idempotency key = sha256(run · node · call_index · tool · canonical(args));
                   budgets checked and charged only when a key is first recorded (R14.1, R2.6)
                   done → cached result, no execution; in_progress at an older epoch → re-execute
@@ -45,6 +47,7 @@ from agent_runtime import genai, logs, telemetry
 from agent_runtime.db import Conn, Pool
 from agent_runtime.fencing import Fence
 from agent_runtime.redaction import redact
+from agent_runtime.runs import approvals
 from agent_runtime.runs.events import EventType
 from agent_runtime.tools import invocations
 from agent_runtime.tools.hooks import Ask, Deny, HookSpec, ToolHookInput, run_hooks
@@ -224,28 +227,34 @@ class ToolPipeline:
                         "reason": reason,
                     },
                 )
+            asked = approvals.args_hash(args)  # the call being asked: real args
             resume = self._interrupt(
                 {
-                    "type": "tool_approval",
+                    "type": approvals.APPROVAL_TYPE,
                     "tool": spec.name,
                     "args": redact(args),
                     "call_id": call.id,
                     "reason": reason,
+                    "args_hash": asked,
                 }
             )
-            # Fail closed: only an explicit approval runs the tool. (A rejection normally
-            # cancels the run before any resume; this doesn't rely on that.)
+            # Fail closed: only an explicit approval OF THIS CALL runs the tool. (A
+            # rejection normally cancels the run before any resume; this doesn't rely on
+            # that.) A call that changed since it was approved isn't run (phase H1).
             if not (isinstance(resume, dict) and resume.get("decision") == "approve"):
                 return self._deny(
                     call, ctx, "not_approved", "a person didn't approve this call", "policy"
                 )
+            if resume.get("args_hash") != asked:
+                return self._deny(
+                    call, ctx, "not_approved",
+                    "the call changed after it was approved, so it wasn't run", "policy",
+                )  # fmt: skip
             edited = (resume.get("edits") or {}).get("args")
             if edited is not None:
-                args, error = self._validate(spec, edited)
+                args, error = await self._checked_edits(spec, call, ctx, edited)
                 if error is not None:
-                    return ToolResult(
-                        f"Error: approved edits are invalid: {error}", "error", stage="policy"
-                    )
+                    return ToolResult(f"Error: approved edits {error}", "error", stage="policy")
         else:
             assert isinstance(decision, Allow)
 
@@ -373,6 +382,29 @@ class ToolPipeline:
                 for e in exc.errors()
             )
             return raw, problems
+
+    async def _checked_edits(
+        self, spec: ToolSpec, call: ToolCall, ctx: ToolRunContext, edited: dict[str, Any]
+    ) -> tuple[dict[str, Any], str | None]:
+        """Arguments a person edited when approving go through the same checks as the
+        model's own: validation, the pre_tool hooks (a deny or a modify applies; asking
+        again is pointless) and the policy (a deny applies)."""
+        args, error = self._validate(spec, edited)
+        if error is not None:
+            return args, f"are invalid: {error}"
+        checked = await run_hooks(ctx.pre_hooks, ToolHookInput(spec.name, args), ignore_ask=True)
+        self._audit_hooks(ctx, call, checked.audit)
+        if isinstance(checked.decision, Deny):
+            return args, f"were denied by a hook: {checked.decision.reason}"
+        if checked.input.args != args:
+            args, error = self._validate(spec, checked.input.args)
+            if error is not None:
+                return args, f"became invalid in a hook: {error}"
+        verdict = await self._policy.check(spec, args)
+        if isinstance(verdict, PolicyDeny):
+            self._deny(call, ctx, "policy", verdict.reason, "policy")  # recorded
+            return args, f"were denied by policy: {verdict.reason}"
+        return args, None
 
     async def _execute(
         self, spec: ToolSpec, args: dict[str, Any], tctx: ToolContext

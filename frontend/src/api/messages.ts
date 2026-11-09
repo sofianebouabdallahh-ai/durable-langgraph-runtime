@@ -34,8 +34,17 @@ export type Message =
       cached: boolean;
       durationMs: number | null;
     })
-  | (Base & { type: "interrupt"; kind: string | null; tool: string | null; args: Json; reason: string | null })
-  | (Base & { type: "approval"; decision: "approve" | "reject"; reason: string | null })
+  | (Base & {
+      type: "interrupt";
+      kind: string | null;
+      /** Which approval this asks (null on messages written before phase H1). */
+      approvalId: string | null;
+      callId: string | null;
+      tool: string | null;
+      args: Json;
+      reason: string | null;
+    })
+  | (Base & { type: "approval"; approvalId: string | null; decision: "approve" | "reject"; reason: string | null })
   | (Base & { type: "error"; reason: string; budgetLimited: boolean })
   | (Base & { type: "system"; text: string });
 
@@ -86,6 +95,8 @@ export function parseMessage(view: Schemas["MessageView"]): Message | null {
         ...base,
         type: "interrupt",
         kind: strOrNull(c.interrupt_type),
+        approvalId: strOrNull(payload.approval_id),
+        callId: strOrNull(payload.call_id),
         tool: strOrNull(payload.tool),
         args: obj(payload.args),
         reason: strOrNull(payload.reason),
@@ -95,6 +106,7 @@ export function parseMessage(view: Schemas["MessageView"]): Message | null {
       return {
         ...base,
         type: "approval",
+        approvalId: strOrNull(c.approval_id),
         decision: c.decision === "approve" ? "approve" : "reject",
         reason: strOrNull(c.reason),
       };

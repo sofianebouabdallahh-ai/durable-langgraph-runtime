@@ -152,8 +152,9 @@ demo-replicas: env ## AC3: stream from any replica; Pub/Sub off stalls; replica 
 demo-tools: env ## SIGKILL right after a tool's side effect: it still happens exactly once
 	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e tool-crash --repeat $(or $(REPEAT),1)
 
-demo-approval: env ## AC4: approval survives killing every worker; resumes with the edits
+demo-approval: env ## AC4 + H1: approvals survive killing every worker; edits; two in one step
 	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e approval-restart --repeat $(or $(REPEAT),1)
+	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e approvals-restart --repeat $(or $(REPEAT),1)
 
 demo-fanout: env ## AC6: child runs spread over workers; a crashed child doesn't break the fan-in
 	cd backend && uv run --frozen --env-file $(ENV_FILE) python -m tests.e2e fanout --repeat $(or $(REPEAT),1)

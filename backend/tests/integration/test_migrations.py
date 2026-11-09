@@ -39,6 +39,7 @@ TABLES = {
     "reply_feedback",
     "mcp_servers",
     "mcp_tools",
+    "run_approvals",
 }
 
 

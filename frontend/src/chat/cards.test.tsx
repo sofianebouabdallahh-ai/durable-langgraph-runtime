@@ -36,7 +36,7 @@ describe("ToolCard", () => {
 });
 
 describe("ApprovalCard", () => {
-  const ask = msg(3, "interrupt", { kind: "tool_approval", tool: "notify", args: { to: "ops" }, reason: "external" }) as Of<"interrupt">;
+  const ask = msg(3, "interrupt", { kind: "tool_approval", approvalId: "ap-1", callId: "n1", tool: "notify", args: { to: "ops" }, reason: "external" }) as Of<"interrupt">;
 
   it("approves once, or rejects with a reason", async () => {
     const onDecide = vi.fn();
@@ -55,7 +55,7 @@ describe("ApprovalCard", () => {
   });
 
   it("shows the decision once made, and no buttons when not pending", () => {
-    const decided = msg(4, "approval", { decision: "reject", reason: null }) as Of<"approval">;
+    const decided = msg(4, "approval", { approvalId: "ap-1", decision: "reject", reason: null }) as Of<"approval">;
     render(<ApprovalCard message={ask} decided={decided} pending={false} />);
     expect(screen.getByText("You rejected this")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();

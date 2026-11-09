@@ -36,7 +36,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # ------------------------------------------------------------------ runtime
 FROM ${PYTHON_IMAGE} AS runtime
+# `upgrade`: Debian's security fixes published after the base image was built (the Trivy
+# gate failed on apt and zlib1g fixes the newest python:3.12.15-slim-trixie didn't have).
 RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
  && apt-get install -y --no-install-recommends tini \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --system --gid 10001 runtime \

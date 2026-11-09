@@ -1,7 +1,7 @@
 /** SC5 approvals, SC6 stop, SC7 helpers: the controls a person uses mid-reply. */
 import { expect, test } from "@playwright/test";
 
-import { expectScreenMatchesTranscript, send, transcript, waitTurnOver, startChat } from "./support";
+import { expectScreenMatchesTranscript, openEmptyChat, send, transcript, waitTurnOver, startChat } from "./support";
 
 test("approve a notification, after a reload", async ({ page, request }) => {
   const sid = await startChat(page, "Notify the team that the build is green");
@@ -16,6 +16,29 @@ test("approve a notification, after a reload", async ({ page, request }) => {
   await waitTurnOver(request, sid);
   const messages = await expectScreenMatchesTranscript(page, request, sid);
   expect(messages.filter((m) => m.type === "tool_result")).toHaveLength(1); // ran once
+});
+
+test("two approvals in one step: each card is decided on its own (H1)", async ({ page, request }) => {
+  const sid = await openEmptyChat(page, request);
+  const both = [
+    { tool_calls: [{ name: "notify", args: { to: "ceo", message: "one" } }, { name: "notify", args: { to: "cfo", message: "two" } }] },
+    { content: "Both sent." },
+  ];
+  const sent = await request.post(`/api/sessions/${sid}/messages`, { data: { content: "Tell the ceo and the cfo", script: both } });
+  expect(sent.status()).toBe(202);
+  const cards = page.getByTestId("approval-card");
+  await expect(cards).toHaveCount(2);
+  await expect(cards.getByRole("button", { name: "Approve" })).toHaveCount(2); // both are yours to decide
+  await cards.nth(1).getByRole("button", { name: "Approve" }).click(); // in any order
+  await expect(cards.nth(1)).toContainText("You approved this");
+  await expect(cards.nth(0).getByRole("button", { name: "Approve" })).toBeEnabled(); // still waiting
+  expect((await transcript(request, sid)).filter((m) => m.type === "tool_result")).toHaveLength(0); // nothing ran yet
+  await cards.nth(0).getByRole("button", { name: "Approve" }).click();
+  await expect(cards.nth(0)).toContainText("You approved this");
+  await expect(page.getByTestId("assistant-message").last()).toContainText("Both sent.");
+  await waitTurnOver(request, sid);
+  const messages = await expectScreenMatchesTranscript(page, request, sid);
+  expect(messages.filter((m) => m.type === "tool_result")).toHaveLength(2); // each ran once
 });
 
 test("reject one, with a reason", async ({ page, request }) => {

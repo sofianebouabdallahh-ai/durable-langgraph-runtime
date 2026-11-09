@@ -5,7 +5,9 @@ Rules enforced here:
   never contain code (R15.9).
 - They can only tighten: continue, modify (args before / result after), deny,
   or ask for human approval (pre_tool only). They can never grant or skip.
-- In order; the first deny/ask wins (R15.7).
+- In order (R15.7). A deny ends the chain and wins. An ask is remembered and the chain
+  goes on, so a later deny still wins and a later modify (a redaction) still applies:
+  an ask can never let a call skip the hooks after it (phase H1).
 - Bounded and FAIL CLOSED (R15.8): an exception or a timeout is a deny. A broken
   redaction hook must withhold data, not leak it.
 - Deterministic: on resume LangGraph re-runs the tool step, so hooks run again
@@ -157,9 +159,15 @@ class HookRegistry:
         return {name: spec.point for name, spec in self._hooks.items()}
 
 
-async def run_hooks(specs: list[HookSpec], inp: ToolHookInput) -> HookOutcome:
-    """Run `specs` in order (Chain of Responsibility) and return the combined outcome."""
+async def run_hooks(
+    specs: list[HookSpec], inp: ToolHookInput, *, ignore_ask: bool = False
+) -> HookOutcome:
+    """Run `specs` in order (Chain of Responsibility) and return the combined outcome:
+    deny if any hook denies, else ask if any asks, else continue; with every modify
+    applied. `ignore_ask`: the person already decided (approved edits run the hooks
+    again, where asking once more would be meaningless)."""
     audit: list[dict[str, Any]] = []
+    asked: Ask | None = None
     for spec in specs:
         try:
             decision = await asyncio.wait_for(spec.fn(inp), timeout=spec.timeout_s)
@@ -167,7 +175,7 @@ async def run_hooks(specs: list[HookSpec], inp: ToolHookInput) -> HookOutcome:
             decision = Deny(f"hook_error:{spec.name}:{type(exc).__name__}")
         if spec.point == "post_tool" and isinstance(decision, Ask):
             decision = Deny(f"hook_error:{spec.name}:ask_not_allowed_after_execution")
-        if isinstance(decision, Continue):
+        if isinstance(decision, Continue) or (ignore_ask and isinstance(decision, Ask)):
             continue
         record = {
             "hook": spec.name,
@@ -184,10 +192,10 @@ async def run_hooks(specs: list[HookSpec], inp: ToolHookInput) -> HookOutcome:
             continue
         if isinstance(decision, Deny):
             audit.append(record | {"reason": decision.reason})
-        else:
-            audit.append(record | {"payload": decision.payload})
-        return HookOutcome(decision, inp, audit)  # the first deny / ask wins
-    return HookOutcome(Continue(), inp, audit)
+            return HookOutcome(decision, inp, audit)  # a deny wins, whatever came before
+        audit.append(record | {"payload": decision.payload})
+        asked = asked or decision  # the first ask is the one shown
+    return HookOutcome(asked or Continue(), inp, audit)
 
 
 async def run_context_hooks(specs: list[HookSpec], inp: Any) -> Context | Deny:

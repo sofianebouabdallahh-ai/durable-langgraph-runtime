@@ -45,7 +45,7 @@ from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphRecursionError
-from langgraph.types import Command, interrupt
+from langgraph.types import Command, Interrupt, interrupt
 
 from agent_runtime import genai, logs, metrics, telemetry
 from agent_runtime.agents.resolver import AgentResolver
@@ -60,6 +60,7 @@ from agent_runtime.models.provider import ModelProvider, configured_provider
 from agent_runtime.models.retry import CircuitOpen, ModelCaller, breaker_for
 from agent_runtime.models.scripted import ScriptTurn
 from agent_runtime.redaction import redact
+from agent_runtime.runs.approvals import APPROVAL_TYPE, ApprovalAsk, ApprovalRepository
 from agent_runtime.runs.events import EventType
 from agent_runtime.runs.fanout import (
     ChildResult,
@@ -215,6 +216,15 @@ def _budget_limited(state: dict[str, Any]) -> str | None:
     last = messages[-1] if messages else None
     reason = getattr(last, "additional_kwargs", {}).get("budget_limited")
     return str(reason) if reason else None
+
+
+def _ask_of(pending: Interrupt) -> ApprovalAsk:
+    """What a pending approval interrupt asks. Anything else stopped the run where no
+    person can decide it: a bug, which fails the run rather than guessing."""
+    value = pending.value
+    if not (isinstance(value, dict) and value.get("type") == APPROVAL_TYPE):
+        raise RuntimeError(f"unexpected interrupt: {type(value).__name__} {value!r:.200}")
+    return ApprovalAsk.of(pending.id, value)
 
 
 def _written_by(metadata: Any, run: Run) -> bool:
@@ -447,11 +457,11 @@ class RunExecutor:
             await self._orchestrator.recover()
 
         graph_input: Any = None
-        pending: Any = None  # the interrupt this run stopped on, if any
+        pending: list[Interrupt] = []  # the interrupts this run stopped on, if any
         latest = await checkpointer.aget_tuple(config)
         if latest is not None and _written_by(latest.metadata, run):
             state = await graph.aget_state(config)
-            pending = state.interrupts[0].value if state.interrupts else None
+            pending = list(state.interrupts)
         elif spec.agent is not None:
             # A new turn: on a session thread, earlier turns' messages are already there.
             prior = (await graph.aget_state(config)).values.get("messages", []) if latest else []
@@ -462,26 +472,30 @@ class RunExecutor:
 
         try:
             while True:
-                if is_spawn(pending):
+                spawn = next((i for i in pending if is_spawn(i.value)), None)
+                if spawn is not None:
                     # Stopped on a fan-out: either it was never carried out (a crash, or
                     # a rejection, before waiting_children) → do it now; or the children
                     # have all ended → resume the node with their results.
-                    step = await self._fan_out_or_in(run, fence, pending, outbox, limits)
+                    step = await self._fan_out_or_in(run, fence, spawn.value, outbox, limits)
                     if isinstance(step, Run):
                         return step
-                    graph_input = Command(resume=step)
-                elif pending is not None:
-                    # Paused on an approval (R1.4) and since approved: LangGraph re-runs
-                    # the interrupted step and interrupt() returns the human's decision.
-                    graph_input = Command(resume=run.resume_value)
+                    graph_input = Command(resume={spawn.id: step})
+                elif pending:
+                    # Paused on approvals (R1.4). Resume only with decisions bound to these
+                    # very interrupts and calls; anything undecided (a crash before the
+                    # pause committed, a call that changed) is asked instead (phase H1).
+                    decisions = await self._decisions(run.id, pending)
+                    if decisions is None:
+                        break
+                    graph_input = Command(resume=decisions)
                 final = await self._under_lease(
                     graph.ainvoke(graph_input, config, durability="sync", context=context),
                     fence,
                     deadline - time.time(),
                 )
-                interrupts = final.get("__interrupt__")
-                pending = interrupts[0].value if interrupts else None
-                if not is_spawn(pending):
+                pending = list(final.get("__interrupt__") or [])
+                if not any(is_spawn(i.value) for i in pending):
                     break
         except ReleaseRequested:
             return await self._release(fence, outbox)
@@ -510,7 +524,7 @@ class RunExecutor:
         except Exception as exc:
             log.exception("run %s failed", run.id)
             return await self._fail(fence, FailureReason.ERROR, outbox, detail=repr(exc))
-        if pending is not None:
+        if pending:
             return await self._pause(fence, pending, outbox)
         if reason := _budget_limited(final):
             # R14.2: the wrap-up answer is stored, and the run ends failed(budget:*).
@@ -904,27 +918,58 @@ class RunExecutor:
             if await RunRepository(conn).is_cancel_requested(run_id):
                 raise CancelRequested
 
-    async def _pause(self, fence: Fence, payload: Any, outbox: Outbox) -> Run:
-        """Durable pause (R1.4): persist what we wait on, release the lease. No worker
-        holds the run while a human decides; approval re-queues it."""
+    async def _decisions(
+        self, run_id: uuid.UUID, pending: list[Interrupt]
+    ) -> dict[str, Any] | None:
+        """The resume map for `pending` (interrupt id → decision), or None when any of
+        them has no approved decision bound to its interrupt id and arguments."""
+        asks = [_ask_of(i) for i in pending]
+        async with self._pool.connection() as conn:
+            decided = await ApprovalRepository(conn).decided_for(run_id, asks)
+        if len(decided) < len(asks):
+            return None
+        return {a.interrupt_id: decided[a.interrupt_id].resume_value() for a in asks}
+
+    async def _pause(self, fence: Fence, pending: list[Interrupt], outbox: Outbox) -> Run:
+        """Durable pause (R1.4): record what is asked, release the lease. No worker holds
+        the run while a person decides; once every approval is decided, the run is
+        re-queued. Idempotent (phase H1): pausing again after a crash asks only what
+        wasn't asked yet, or what changed."""
+        try:
+            asks = [_ask_of(i) for i in pending]
+        except RuntimeError as exc:  # stopped on something no person can decide
+            return await self._fail(fence, FailureReason.ERROR, outbox, detail=str(exc))
         await self._settle_subagents(None)
-        value = payload if isinstance(payload, dict) else {"value": payload}
 
         async def work(repo: RunRepository) -> Run:
             await outbox.flush(repo)
+            approvals = ApprovalRepository(repo.conn)
+            asked = await approvals.ask(fence.run_id, fence.epoch, asks)
             if self._transcript is not None:
-                await self._transcript.write_event(
-                    repo.conn, "interrupt",
-                    {"interrupt_type": value.get("type"), "payload": value},
-                )  # fmt: skip
-            await repo.set_interrupt(fence.run_id, value)
-            return await repo.transition(
+                for a in asked:
+                    await self._transcript.write_event(
+                        repo.conn, "interrupt",
+                        {"interrupt_type": APPROVAL_TYPE, "payload": a.payload()},
+                    )  # fmt: skip
+            waiting = await approvals.pending(fence.run_id)
+            if not waiting:  # every interrupt was decided: _decisions would have resumed
+                raise RuntimeError(f"run {fence.run_id} paused with nothing left to ask")
+            await repo.set_interrupt(fence.run_id, waiting[0].payload())
+            first, *others = asked or waiting[:1]
+            paused = await repo.transition(
                 fence.run_id, RunStatus.WAITING_APPROVAL, event=EventType.INTERRUPT_RAISED,
-                fence=fence, payload=value,
+                fence=fence, payload=first.payload(),
             )  # fmt: skip
+            for a in others:  # one interrupt.raised per approval asked (Activity counts them)
+                await repo.append_event(
+                    fence.run_id, epoch=fence.epoch, type=EventType.INTERRUPT_RAISED,
+                    payload=a.payload(),
+                )  # fmt: skip
+            return paused
 
         paused = await self._fenced_then_publish(fence, work)
-        logs.event(log, "approval asked", interrupt=value.get("type"), tool=value.get("tool"))
+        for a in asks:
+            logs.event(log, "approval asked", interrupt=APPROVAL_TYPE, tool=a.tool)
         return paused
 
     async def _release(self, fence: Fence, outbox: Outbox, *, reason: str = "draining") -> Run:

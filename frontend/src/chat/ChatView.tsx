@@ -4,6 +4,7 @@ import { Download, Info, Loader2, WifiOff } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { api, API_BASE, ApiError, unwrap } from "../api/client";
+import type { Message } from "../api/messages";
 import { sendMessage } from "../api/send";
 import type { ConnectionState } from "../stream/connection";
 import type { TurnStatus } from "../stream/events";
@@ -13,13 +14,14 @@ import { agentLabel, turnLabel } from "../ui/words";
 import { ApprovalCard, ErrorNote, HelperCards, StepList, ToolCard } from "./cards";
 import { Composer } from "./Composer";
 import { problemText } from "./problems";
-import { type Item, pendingApproval, type TurnView, turns } from "./selectors";
+import { type Item, pendingApprovals, type TurnView, turns } from "./selectors";
 import { isBusy } from "./transcript";
 import { useChat } from "./useChat";
 import { ReplyRating } from "./ReplyRating";
 import { WhatHappened } from "./WhatHappened";
 
-type Decide = (decision: "approve" | "reject", reason: string | null) => void;
+type Interrupt = Extract<Message, { type: "interrupt" }>;
+type Decide = (request: Interrupt, decision: "approve" | "reject", reason: string | null) => void;
 
 /** An agent's display name: from the agents list ("Nuria", "Trip planner"), else its id. */
 export function useAgentName(name: string | null): string {
@@ -49,7 +51,7 @@ export function ChatView({
   const listedName = useAgentName(agentId);
   const label = agentName ?? listedName;
   const busy = isBusy(state);
-  const waiting = pendingApproval(state);
+  const waiting = pendingApprovals(state);
   const ended = state.turn && !busy ? `${state.turn.runId}:${state.turn.status}` : null;
   useEffect(() => {
     if (ended) onTurnEnd?.();
@@ -78,11 +80,11 @@ export function ChatView({
     }
   };
 
-  const decide = async (decision: "approve" | "reject", reason: string | null) => {
+  const decide = async (request: Interrupt, decision: "approve" | "reject", reason: string | null) => {
+    // The approval's own id: you decide the call you were shown, even with several waiting.
+    const body = { decision, reason, ...(request.approvalId ? { approval_id: request.approvalId } : {}) };
     try {
-      await unwrap(
-        api.POST("/sessions/{session_id}/approve", { params: { path: { session_id: sessionId } }, body: { decision, reason } }),
-      );
+      await unwrap(api.POST("/sessions/{session_id}/approve", { params: { path: { session_id: sessionId } }, body }));
     } catch (e) {
       setNotice(problemText(e));
     }
@@ -113,8 +115,8 @@ export function ChatView({
         views={views}
         agent={label}
         brand={agentId === "chat"}
-        waitingId={waiting?.messageId ?? null}
-        onDecide={(decision, reason) => void decide(decision, reason)}
+        waitingIds={new Set(waiting.map((m) => m.messageId))}
+        onDecide={(request, decision, reason) => void decide(request, decision, reason)}
         status={state.turn?.status}
         sentCount={sentCount}
       />
@@ -127,7 +129,7 @@ export function ChatView({
           )}
           <Composer
             busy={busy}
-            waitingApproval={waiting !== null}
+            waitingApproval={waiting.length > 0}
             onSend={send}
             onStop={stop}
             placeholder={`Message ${label}…`}
@@ -143,7 +145,7 @@ function MessageList({
   views,
   agent,
   brand,
-  waitingId,
+  waitingIds,
   onDecide,
   status,
   sentCount,
@@ -151,7 +153,7 @@ function MessageList({
   views: TurnView[];
   agent: string;
   brand: boolean;
-  waitingId: string | null;
+  waitingIds: ReadonlySet<string>;
   onDecide: Decide;
   status: TurnStatus | undefined;
   sentCount: number;
@@ -187,7 +189,7 @@ function MessageList({
           </div>
         )}
         {views.map((v) => (
-          <TurnBlock key={v.runId} view={v} agent={agent} brand={brand} waitingId={waitingId} onDecide={onDecide} status={v.active ? status : undefined} />
+          <TurnBlock key={v.runId} view={v} agent={agent} brand={brand} waitingIds={waitingIds} onDecide={onDecide} status={v.active ? status : undefined} />
         ))}
         <div ref={end} />
       </div>
@@ -202,14 +204,14 @@ function TurnBlock({
   view,
   agent,
   brand,
-  waitingId,
+  waitingIds,
   onDecide,
   status,
 }: {
   view: TurnView;
   agent: string;
   brand: boolean;
-  waitingId: string | null;
+  waitingIds: ReadonlySet<string>;
   onDecide: Decide;
   status: TurnStatus | undefined;
 }) {
@@ -235,7 +237,7 @@ function TurnBlock({
               {agent}
               {answeredBy(view) && <span className="ml-1.5 text-xs font-normal text-stone-500" data-testid="answered-by">· {answeredBy(view)}</span>}
             </div>
-            {renderItems(view.items, agent, waitingId, onDecide)}
+            {renderItems(view.items, agent, waitingIds, onDecide)}
             {view.draft && (
               <div data-testid="draft">
                 <Markdown text={view.draft} />
@@ -281,7 +283,7 @@ function answeredBy(view: TurnView): string | null {
 }
 
 /** Items in order; consecutive tool steps share one frame. */
-function renderItems(items: Item[], agent: string, waitingId: string | null, onDecide: Decide): ReactNode[] {
+function renderItems(items: Item[], agent: string, waitingIds: ReadonlySet<string>, onDecide: Decide): ReactNode[] {
   const out: ReactNode[] = [];
   let steps: Extract<Item, { kind: "tool" }>[] = [];
   const flush = () => {
@@ -320,9 +322,11 @@ function renderItems(items: Item[], agent: string, waitingId: string | null, onD
             key={item.key}
             message={item.message}
             decided={item.decided}
-            pending={item.message.messageId === waitingId}
+            pending={waitingIds.has(item.message.messageId)}
             agent={agent}
-            onDecide={onDecide}
+            onDecide={(decision, reason) => {
+              onDecide(item.message, decision, reason);
+            }}
           />,
         );
         break;

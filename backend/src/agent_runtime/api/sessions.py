@@ -147,13 +147,17 @@ async def send_message(
     "/{session_id}/approve",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=RunView,
-    summary="Approve or reject the active turn (R12.6)",
+    summary="Approve or reject one of the active turn's approvals (R12.6)",
 )
 async def approve_turn(
     session_id: uuid.UUID, body: ApprovalRequest, service: SessionsDep
 ) -> RunView:
     edits = body.edits.model_dump() if body.edits else None
-    return RunView.of(await service.approve(session_id, body.decision, edits, body.reason))
+    return RunView.of(
+        await service.approve(
+            session_id, body.decision, edits, body.reason, approval_id=body.approval_id
+        )
+    )
 
 
 @sessions.post("/{session_id}/cancel", status_code=status.HTTP_202_ACCEPTED,
