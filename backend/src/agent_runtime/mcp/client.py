@@ -15,28 +15,21 @@ hints): what a person approves, and what a call checks the server still offers.
 from __future__ import annotations
 
 import hashlib
-import ipaddress
 import json
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import urlparse
 
 import httpx2
 from mcp import Client, MCPError
 from mcp.client.streamable_http import streamable_http_client
 
+from agent_runtime.net import DestinationRefused, Guard
+
 USER_AGENT = "Nuria (MCP client)"
 MAX_RESULT_CHARS = 200_000  # what we keep of a result; the pipeline truncates further
 # The stack's own services, by their Compose and Kubernetes names: never an MCP server.
-INTERNAL_HOSTS = frozenset({
-    "postgres", "redis", "api", "worker", "ui", "sandboxd", "fetcher", "searxng",
-    "otel-collector", "tempo", "loki", "prometheus", "grafana", "metadata",
-    "metadata.google.internal",
-})  # fmt: skip
-
-
 # The tool hints MCP defines, and the SDK's attribute for each.
 HINTS = (
     ("readOnlyHint", "read_only_hint"), ("destructiveHint", "destructive_hint"),
@@ -96,24 +89,17 @@ class McpResult:
 class Endpoint:
     url: str
     headers: Mapping[str, str] = field(default_factory=dict)  # e.g. the token: never logged
+    guard: Guard = field(default_factory=Guard)  # where it may be (checked on every call)
 
 
-def check_url(url: str) -> str:
-    """A URL an MCP server may be at: http(s), not cloud metadata, not the stack's own
-    services. This machine and your network are allowed (a local server is common)."""
-    parsed = urlparse(url.strip())
-    if parsed.scheme not in ("http", "https") or not parsed.hostname:
-        raise McpUnavailable("The address must start with http:// or https://")
-    host = parsed.hostname.lower()
-    if host in INTERNAL_HOSTS:
-        raise McpUnavailable(f"{host} is one of Nuria's own services, not an MCP server")
+async def check_url(url: str, guard: Guard | None = None) -> str:
+    """A URL an MCP server may be at (phase H3, `net.check_destination`): resolved, and
+    never cloud metadata or the stack's own services. This machine and your network are
+    allowed (a local server is common)."""
     try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        return url.strip()
-    if ip.is_link_local or ip.is_multicast or ip.is_unspecified or ip.is_reserved:
-        raise McpUnavailable(f"{host} can't be an MCP server (link-local or reserved)")
-    return url.strip()
+        return await (guard or Guard()).check(url)
+    except DestinationRefused as exc:
+        raise McpUnavailable(str(exc)) from exc
 
 
 def _definition(tool: Any) -> ToolDefinition:
@@ -170,7 +156,7 @@ def _plain(exc: BaseException, status: int | None = None) -> str:
 @asynccontextmanager
 async def _connected(endpoint: Endpoint, timeout_s: float) -> AsyncIterator[Client]:
     """A client for one exchange; the SDK's errors become McpUnavailable."""
-    url = check_url(endpoint.url)
+    url = await check_url(endpoint.url, endpoint.guard)
     statuses: list[int] = []
 
     async def seen(response: httpx2.Response) -> None:

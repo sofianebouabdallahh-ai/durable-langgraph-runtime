@@ -184,6 +184,9 @@ services:
     profiles: ["app"]
     ports:
       - "127.0.0.1:${UI_PORT:-3000}:8080"
+    environment:
+      # Host names the UI answers to, besides localhost (DNS-rebinding guard, H3).
+      UI_HOSTNAMES: ${UI_HOSTNAMES:-}
     depends_on:
       api:
         condition: service_healthy

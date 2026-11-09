@@ -27,9 +27,31 @@ upstream api {
     keepalive 16;
 }
 
+# Only Nuria's own names reach it (phase H3). A page that rebinds its domain to this
+# address (DNS rebinding) still sends ITS host name, so it lands here: 421 for
+# everything but the health check, which probes call by the pod's address.
+server {
+    listen 8080 default_server;
+    server_tokens off;
+    access_log /dev/stdout upstreams;
+
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    location / {
+        default_type text/plain;
+        return 421 "This address isn't one of Nuria's (UI_HOSTNAMES).\n";
+    }
+}
+
 server {
     listen 8080;
-    server_name _;
+    # localhost and loopback, host.docker.internal (the UI dev server's proxy), and the
+    # names in UI_HOSTNAMES (the Kubernetes ingress host; `ui` for the browser tests).
+    server_name localhost 127.0.0.1 [::1] host.docker.internal ${UI_HOSTNAMES};
     server_tokens off;
     access_log /dev/stdout upstreams;
     root /usr/share/nginx/html;

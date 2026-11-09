@@ -7,6 +7,24 @@ Nuria runs the same images on a local multi-node cluster ([kind](https://kind.si
 
 The cloud deployment (managed Postgres and Redis, TLS, a real domain) comes with the hosted beta (P16). [`values-cloud.example.yaml`](../infra/helm/agent-runtime/values-cloud.example.yaml) is its starting point.
 
+## A public address needs a password in front
+
+Nuria has no login yet. With `ingress.host` set, the chart **refuses to install** unless
+something asks for a password first:
+
+```bash
+# an htpasswd file (one user), as a Secret the Ingress controller reads
+htpasswd -nbB you 'a-long-password' > auth
+kubectl create secret generic nuria-basic-auth --from-file=auth            # ingress-nginx
+kubectl create secret generic nuria-basic-auth --from-file=users=auth      # Traefik
+```
+
+Then set `ingress.basicAuthSecret: nuria-basic-auth` (the chart adds the controller's
+annotations; for Traefik, a `Middleware`). If a VPN or an SSO proxy already protects the
+address, set `ingress.unauthenticated: true` instead. The chart also turns the admin
+API off (`ADMIN_API_ENABLED=false`), tells the UI its host name (other names get 421) and
+gives the API the names of Nuria's own Services, which outbound requests never reach.
+
 ## Start it
 
 ```bash

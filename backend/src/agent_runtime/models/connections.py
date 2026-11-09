@@ -52,6 +52,7 @@ from agent_runtime.models.provider import (
     configured_provider,
     is_local,
 )
+from agent_runtime.net import DestinationRefused, Guard, same_destination
 from agent_runtime.redaction import redact
 
 Kind = Literal["ollama", "openai", "azure_foundry", "compatible"]
@@ -327,7 +328,7 @@ class ConnectionService:
         api_key: str | None,
         models: list[str],
     ) -> Connection:
-        url = normalise_url(kind, base_url)
+        url = await self._checked(normalise_url(kind, base_url))
         key = (api_key or "").strip() or None
         if kind in ("openai", "azure_foundry") and key is None:
             raise ConnectionInvalid("This kind of model needs its key")
@@ -375,7 +376,11 @@ class ConnectionService:
             if prices is not None:
                 changes["prices"] = _priced(current.prices, prices)
             if base_url is not None and normalise_url(current.kind, base_url) != current.base_url:
-                changes["base_url"] = normalise_url(current.kind, base_url)
+                changes["base_url"] = await self._checked(normalise_url(current.kind, base_url))
+                moved = not same_destination(current.base_url, changes["base_url"])
+                if moved and current.has_key and not api_key:
+                    # A saved key is only ever sent where it was entered for (phase H3).
+                    raise ConnectionInvalid("Enter the key again for the new address")
             if api_key:
                 kek = kek_for(self._settings)
                 changes["sealed"] = seal(api_key.strip(), _aad(cid), kek)
@@ -427,8 +432,11 @@ class ConnectionService:
         local = connection.kind == "ollama" or is_local(connection.base_url)
         timeout = self._settings.local_model_timeout_s if local else TEST_TIMEOUT_S
         try:
+            await self._checked(connection.base_url)  # where it leads now (DNS can change)
             provider = self.provider(connection, model, timeout_s=timeout)
             result = await asyncio.wait_for(_ping(provider), timeout)
+        except ConnectionInvalid as exc:
+            result = TestResult(False, str(exc), model, 0)
         except TimeoutError:
             result = TestResult(False, f"Didn't answer in {timeout:.0f} s", model, 0)
         except (MasterKeyMissing, SecretUnavailable):
@@ -466,6 +474,14 @@ class ConnectionService:
             timeout_s=timeout_s,
         )
 
+    async def _checked(self, url: str) -> str:
+        """An address a model may be at (phase H3, net.py): never cloud metadata or the
+        stack's own services; your computer and your network are fine."""
+        try:
+            return await Guard.of(self._settings).check(url)
+        except DestinationRefused as exc:
+            raise ConnectionInvalid(str(exc)) from exc
+
     def prices_of(self, c: Connection) -> dict[str, Price]:
         """What a call to each of the connection's models costs, and why (phase H2)."""
         return {
@@ -477,6 +493,10 @@ class ConnectionService:
     async def remote_models(self, cid: uuid.UUID) -> list[str]:
         """What the service says it has (Ollama's pulled models; /v1/models elsewhere)."""
         connection = await self.get(cid)
+        try:
+            await self._checked(connection.base_url)
+        except ConnectionInvalid:
+            return []
         headers = {}
         if connection.sealed is not None:
             key = open_secret(connection.sealed, _aad(connection.id), kek_for(self._settings))

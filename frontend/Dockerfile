@@ -26,8 +26,9 @@ USER 101
 # filesystem can be read-only. The config is a template (resolver, API address).
 ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1 \
     NGINX_ENVSUBST_OUTPUT_DIR=/tmp \
-    NGINX_ENVSUBST_FILTER="^(NGINX_LOCAL_RESOLVERS|API_UPSTREAM)$" \
-    API_UPSTREAM=api:8000
+    NGINX_ENVSUBST_FILTER="^(NGINX_LOCAL_RESOLVERS|API_UPSTREAM|UI_HOSTNAMES)$" \
+    API_UPSTREAM=api:8000 \
+    UI_HOSTNAMES=""
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY nginx/include-rendered.conf /etc/nginx/conf.d/default.conf
 COPY nginx/security-headers.conf /etc/nginx/snippets/security-headers.conf

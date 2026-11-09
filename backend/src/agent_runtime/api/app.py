@@ -33,6 +33,7 @@ from agent_runtime.api.access import AccessLog
 from agent_runtime.api.activity import activity_router
 from agent_runtime.api.audit import audit_router
 from agent_runtime.api.client_errors import client_errors_router
+from agent_runtime.api.guard import BrowserOriginGuard, allowed_hosts
 from agent_runtime.api.kill_switch import kill_switch_router
 from agent_runtime.api.mcp import mcp_router
 from agent_runtime.api.models import models_router
@@ -470,6 +471,9 @@ def create_app(
     app.state.draining = asyncio.Event()
     app.state.loop = None
     problems.install(app)
+    # A cross-site or rebinding browser request never reaches a route (H3); the access
+    # log (added after, so outside it) still records the refusal.
+    app.add_middleware(BrowserOriginGuard, hosts=allowed_hosts(settings.ui_hostnames))
     app.add_middleware(AccessLog)
     app.include_router(runs)
     app.include_router(sessions_router)

@@ -1,4 +1,20 @@
 {{- if .Values.ingress.enabled }}
+{{- /* Phase H3: Nuria has no login yet. A public host name without one in front would
+       put every chat, key and agent on the internet: refuse to render. */}}
+{{- if and .Values.ingress.host (not .Values.ingress.basicAuthSecret) (not .Values.ingress.unauthenticated) }}
+{{- fail "ingress.host is set, but nothing asks for a password in front of Nuria (it has no login yet). Set ingress.basicAuthSecret (an htpasswd Secret, see docs/kubernetes.md), or ingress.unauthenticated: true if something else protects it." }}
+{{- end }}
+{{- $traefikAuth := and .Values.ingress.basicAuthSecret (eq .Values.ingress.className "traefik") }}
+{{- if $traefikAuth }}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "nuria.fullname" . }}-basic-auth
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  basicAuth: { secret: {{ .Values.ingress.basicAuthSecret }} }
+---
+{{- end }}
 # The one way in (R10.3): everything goes to the UI, which serves the app and
 # proxies /api (unbuffered: streams pass straight through). Traefik keeps a stream
 # open as long as the client does; the UI's nginx allows 1 h (`proxy_read_timeout`).
@@ -7,7 +23,15 @@ kind: Ingress
 metadata:
   name: {{ include "nuria.fullname" . }}
   labels: {{- include "nuria.labels" . | nindent 4 }}
-  {{- with .Values.ingress.annotations }}
+  {{- $auth := dict }}
+  {{- if .Values.ingress.basicAuthSecret }}
+  {{- if eq .Values.ingress.className "nginx" }}
+  {{- $auth = dict "nginx.ingress.kubernetes.io/auth-type" "basic" "nginx.ingress.kubernetes.io/auth-secret" .Values.ingress.basicAuthSecret "nginx.ingress.kubernetes.io/auth-realm" "Nuria" }}
+  {{- else if $traefikAuth }}
+  {{- $auth = dict "traefik.ingress.kubernetes.io/router.middlewares" (printf "%s-%s-basic-auth@kubernetescrd" .Release.Namespace (include "nuria.fullname" .)) }}
+  {{- end }}
+  {{- end }}
+  {{- with merge $auth (.Values.ingress.annotations | default dict) }}
   annotations: {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:

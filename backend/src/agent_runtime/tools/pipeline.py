@@ -52,7 +52,7 @@ from agent_runtime.runs import approvals
 from agent_runtime.runs.events import EventType
 from agent_runtime.tools import invocations
 from agent_runtime.tools.hooks import Ask, Deny, HookSpec, ToolHookInput, run_hooks
-from agent_runtime.tools.policy import Allow, RequireApproval, ToolPolicy
+from agent_runtime.tools.policy import Allow, PolicyContext, RequireApproval, ToolPolicy
 from agent_runtime.tools.policy import Deny as PolicyDeny
 from agent_runtime.tools.spec import ToolContext, ToolRegistry, ToolSpec
 from agent_runtime.untrusted import as_data
@@ -208,7 +208,7 @@ class ToolPipeline:
 
         # 6 policy (+ approval)
         self._at("policy")
-        decision = await self._policy.check(spec, args)
+        decision = await self._policy.check(spec, args, PolicyContext(ctx.fence.run_id, ctx.pool))
         if isinstance(decision, PolicyDeny):
             return self._deny(call, ctx, "policy", decision.reason, "policy")
         if isinstance(decision, RequireApproval) or isinstance(pre.decision, Ask):
@@ -407,7 +407,7 @@ class ToolPipeline:
             args, error = self._validate(spec, checked.input.args)
             if error is not None:
                 return args, f"became invalid in a hook: {error}"
-        verdict = await self._policy.check(spec, args)
+        verdict = await self._policy.check(spec, args, PolicyContext(ctx.fence.run_id, ctx.pool))
         if isinstance(verdict, PolicyDeny):
             self._deny(call, ctx, "policy", verdict.reason, "policy")  # recorded
             return args, f"were denied by policy: {verdict.reason}"

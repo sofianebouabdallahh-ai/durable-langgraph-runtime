@@ -33,6 +33,7 @@ from agent_runtime.ids import new_id
 from agent_runtime.keys import Sealed, fingerprint, open_secret, seal, secret_aad
 from agent_runtime.mcp.client import Endpoint, McpUnavailable, ToolDefinition, check_url, list_tools
 from agent_runtime.models.connections import WORKSPACE, kek_for
+from agent_runtime.net import Guard, same_destination
 from agent_runtime.skills.scan import scan_texts
 
 PREFIX = "mcp"
@@ -251,7 +252,7 @@ class McpService:
     async def add(self, *, display_name: str, url: str, token: str | None = None,
                   header_name: str = "Authorization") -> McpServer:  # fmt: skip
         try:
-            url = check_url(url)
+            url = await check_url(url, Guard.of(self._settings))
         except McpUnavailable as exc:
             raise McpInvalid(str(exc)) from exc
         sid = new_id()
@@ -273,13 +274,15 @@ class McpService:
     async def change(self, sid: uuid.UUID, *, display_name: str | None = None,
                      url: str | None = None, token: str | None = None,
                      header_name: str | None = None) -> McpServer:  # fmt: skip
-        """A new address or token needs a new test. A token isn't removed by leaving it out."""
+        """A new address or token needs a new test. A token isn't removed by leaving it out,
+        but it never follows the server somewhere new (phase H3): a new host, or a new
+        header to send it in, needs the token entered again."""
         changes: dict[str, Any] = {}
         if display_name is not None:
             changes["display_name"] = display_name.strip()[:60]
         if url is not None:
             try:
-                changes["url"] = check_url(url)
+                changes["url"] = await check_url(url, Guard.of(self._settings))
             except McpUnavailable as exc:
                 raise McpInvalid(str(exc)) from exc
         if header_name is not None:
@@ -293,6 +296,13 @@ class McpService:
             before = await store.server(sid)
             if not changes:
                 return before
+            moved = "url" in changes and not same_destination(before.url, changes["url"])
+            new_header = changes.get("header_name", before.header_name) != before.header_name
+            if before.has_token and (moved or new_header) and not token:
+                raise McpInvalid(
+                    "Enter the token again: a saved token is only sent where, and how, it "
+                    "was entered for"
+                )
             after = await store.update(sid, **changes)
             await AuditLog(conn).record("mcp_server.changed", "mcp_server", after.name,
                                         before=_audited(before), after=_audited(after))  # fmt: skip
@@ -383,12 +393,13 @@ class McpService:
 
     def endpoint(self, server: McpServer) -> Endpoint:
         """Where to call, with the token opened in memory for this call only."""
+        guard = Guard.of(self._settings)
         if server.sealed is None:
-            return Endpoint(server.url)
+            return Endpoint(server.url, guard=guard)
         token = open_secret(server.sealed, _aad(server.id), kek_for(self._settings))
         if server.header_name.lower() == "authorization" and " " not in token:
             token = f"Bearer {token}"
-        return Endpoint(server.url, {server.header_name: token})
+        return Endpoint(server.url, {server.header_name: token}, guard)
 
     def _sealed(self, sid: uuid.UUID, token: str | None) -> dict[str, Any]:
         token = (token or "").strip()

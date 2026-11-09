@@ -85,3 +85,16 @@ SANDBOXD_URL: {{ if .Values.sandbox.enabled }}{{ printf "http://%s-sandboxd:8070
     cidr: ::/0
     except: ["::1/128", "fc00::/7", "fe80::/10"]
 {{- end }}
+
+{{/* Nuria's own Service names, short and full (H3: outbound requests never go there). */}}
+{{- define "nuria.internalHosts" -}}
+{{- $f := include "nuria.fullname" . -}}
+{{- $ns := .Release.Namespace -}}
+{{- $names := list -}}
+{{- range list "api" "api-pods" "ui" "fetcher" "sandboxd" "searxng" -}}
+{{- $names = append $names (printf "%s-%s" $f .) -}}
+{{- $names = append $names (printf "%s-%s.%s.svc.cluster.local" $f . $ns) -}}
+{{- end -}}
+{{- $names = concat $names (list "postgres" "redis" (printf "postgres.%s.svc.cluster.local" $ns) (printf "redis.%s.svc.cluster.local" $ns) "kubernetes.default.svc" "kubernetes.default.svc.cluster.local") -}}
+{{- join " " $names -}}
+{{- end -}}
