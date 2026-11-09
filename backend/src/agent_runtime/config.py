@@ -159,7 +159,9 @@ class Settings(AgentSettings):
     token_flush_ms: int = Field(default=20, gt=0)  # coalesce streamed tokens (R12.3)
     scripted_streaming: bool = False  # the scripted model streams word by word (tests)
     scripted_stream_delay_s: float = Field(default=0.0, ge=0)  # per streamed word (tests)
-    # USD per million tokens, by model name; models not listed cost 0.
+    # USD per million tokens, by model name (exact, then longest prefix). One of the
+    # price sources (models/pricing.py): a connection's own price wins; an unknown model
+    # gets a high estimate, never 0.
     model_prices: dict[str, ModelPrice] = Field(
         default_factory=lambda: {"scripted": ModelPrice(input_per_mtok=0, output_per_mtok=0)}
     )

@@ -22,7 +22,6 @@ from agent_runtime.tools.hooks import (
     ToolHookInput,
     default_hooks,
 )
-from agent_runtime.tools.invocations import BudgetExceeded
 from agent_runtime.tools.pipeline import Grant, ToolCall, ToolPipeline, ToolRunContext
 from agent_runtime.tools.policy import Deny as PolicyDeny
 from agent_runtime.tools.policy import RiskClassPolicy
@@ -352,12 +351,16 @@ async def test_sc9_tool_budgets_count_each_key_once(pool: Pool, fence: Fence) ->
     for _ in range(5):  # the same call 5 times: one key, charged once
         await h.pipeline().run(call("echo", text="same"), ctx)
     await h.pipeline().run(call("echo", 1, text="second"), ctx)
-    with pytest.raises(BudgetExceeded, match="max_tool_calls=2"):
-        await h.pipeline().run(call("echo", 2, text="third"), ctx)
+    # A budget used up denies the call (a tool error the model sees), it doesn't fail
+    # the run (H2): the next model call is the wrap-up.
+    third = await h.pipeline().run(call("echo", 2, text="third"), ctx)
+    assert third.status == "error" and "Deny(budget)" in third.content
+    assert "max_tool_calls=2" in third.content and "wasn't made" in third.content
     capped = h.ctx(fence, pool, grants={"calculator": Grant(max_calls=1)})
     await h.pipeline().run(call("calculator", 3, expression="1+1"), capped)
-    with pytest.raises(BudgetExceeded, match="max_calls=1 for tool 'calculator'"):
-        await h.pipeline().run(call("calculator", 4, expression="2+2"), capped)
+    again = await h.pipeline().run(call("calculator", 4, expression="2+2"), capped)
+    assert again.status == "error" and "max_calls=1 for tool 'calculator'" in again.content
+    assert h.executions["echo"] == 2  # 'same' once, 'second' once; 'third' never ran
 
 
 async def test_sc10_large_results_are_truncated_for_the_model(pool: Pool, fence: Fence) -> None:

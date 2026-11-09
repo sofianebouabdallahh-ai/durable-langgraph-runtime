@@ -56,6 +56,7 @@ from agent_runtime.fencing import Fence, FencedError, check_fence
 from agent_runtime.graphs import GraphRegistry, GraphSpec
 from agent_runtime.graphs.assistant import AgentInput, granted_tools, subagent_graph
 from agent_runtime.models.connections import ModelRouter
+from agent_runtime.models.pricing import Price, resolve_price
 from agent_runtime.models.provider import ModelProvider, configured_provider
 from agent_runtime.models.retry import CircuitOpen, ModelCaller, breaker_for
 from agent_runtime.models.scripted import ScriptTurn
@@ -280,6 +281,7 @@ class RunExecutor:
         # Which connection and model each model string of the run uses (phase L3b).
         self._models = ModelRouter(pool, settings)
         self._model_providers: dict[str, ModelProvider] = {}
+        self._bindings: dict[str, Any] = {}  # the run's model bindings, with their prices
         self._breaker_name: str | None = None
         self._hooks = hooks or default_hooks()
         self._policy = policy or RiskClassPolicy()
@@ -404,6 +406,7 @@ class RunExecutor:
             spec.input_model.model_validate(run.input)
             # The run's models, as bound when it was created; keys opened in memory.
             self._model_providers = await self._models.providers(run.model_bindings or {})
+            self._bindings = dict(run.model_bindings or {})
             if spec.agent is not None and spec.agent.frontmatter.model in self._model_providers:
                 self._breaker_name = self._model_providers[spec.agent.frontmatter.model].name
         except Exception as exc:
@@ -667,7 +670,7 @@ class RunExecutor:
             tools, pipeline, max_model_calls=limits.max_model_calls, script=inp.script,
             orchestrator=self._orchestrator, turn=turn, caller=self._model_caller(),
             limits=limits, soft_limit_ratio=self._settings.soft_limit_ratio,
-            record_usage=self._usage_recorder(outbox),
+            record_usage=self._usage_recorder(outbox, fm.model),
             chat_model=self._chat_model(fm.model, fm.temperature, inp.script),
         )  # fmt: skip
 
@@ -693,15 +696,36 @@ class RunExecutor:
                                 window_s=s.breaker_window_s, open_s=s.breaker_open_s),
         )  # fmt: skip
 
-    def _usage_recorder(self, outbox: Outbox) -> UsageRecorder:
-        prices = self._settings.model_prices
+    def _price(self, role: str, reported: str) -> Price:
+        """The price of a call by the model bound to `role`: the one pinned with the turn
+        (phase H2), or, for a run created before prices were pinned (or a plain graph),
+        resolved now from the settings by the model the provider reported."""
+        pinned = (self._bindings.get(role) or {}).get("price")
+        if pinned:
+            return Price.from_dict(pinned)
+        local = bool((self._bindings.get(role) or {}).get("local"))
+        return resolve_price(reported, settings_prices=self._settings.model_prices, local=local)
 
-        def record(model: str, tokens_in: int, tokens_out: int, seconds: float = 0.0) -> float:
-            price = prices.get(model)
-            cost = price.cost(tokens_in, tokens_out) if price else 0.0
-            outbox.add_usage(tokens_in + tokens_out, cost)
-            outbox.add_model_call(model, tokens_in, tokens_out, cost, round(seconds * 1000))
-            return cost  # the metrics count it when the step commits (Outbox)
+    def _usage_recorder(self, outbox: Outbox, role: str) -> UsageRecorder:
+        """Each model call's usage, written the moment it returns, in its own fenced
+        transaction (phase H2): the run and its ancestors, the session, per model. A
+        call made by a step that is later lost to a crash still cost money."""
+
+        async def record(
+            model: str, tokens_in: int, tokens_out: int, seconds: float = 0.0
+        ) -> float:
+            price = self._price(role, model)
+            cost = price.cost(tokens_in, tokens_out)
+            async with self._pool.connection() as conn, conn.transaction():
+                await check_fence(conn, outbox.fence)
+                repo = RunRepository(conn)
+                await repo.add_usage(outbox.run_id, tokens_in + tokens_out, cost)
+                await repo.add_model_usage(
+                    outbox.run_id, model, tokens_in=tokens_in, tokens_out=tokens_out,
+                    cost=cost, ms=round(seconds * 1000), estimated=price.estimated,
+                )  # fmt: skip
+            metrics.llm_usage(model, tokens_in, tokens_out, cost, calls=1)
+            return cost
 
         return record
 

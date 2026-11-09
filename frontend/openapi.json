@@ -1079,6 +1079,14 @@
             "title": "Name",
             "type": "string"
           },
+          "prices": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PriceView"
+            },
+            "description": "What a call to each model costs, and where that price comes from (phase H2): budgets in USD use it",
+            "title": "Prices",
+            "type": "object"
+          },
           "test_detail": {
             "anyOf": [
               {
@@ -1132,6 +1140,7 @@
           "has_key",
           "key_fingerprint",
           "models",
+          "prices",
           "test_status",
           "test_detail",
           "tested_model",
@@ -1549,6 +1558,29 @@
               }
             ],
             "title": "Models"
+          },
+          "prices": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PriceIn"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "maxProperties": 50,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A price per model, USD per 1 million tokens; null removes one. It wins over MODEL_PRICES and Nuria's price list",
+            "title": "Prices"
           }
         },
         "title": "EditConnection",
@@ -2543,6 +2575,12 @@
             "title": "Cost",
             "type": "number"
           },
+          "estimated": {
+            "default": false,
+            "description": "Some calls had no known price and were priced by a deliberately high estimate: set the model's price in Settings \u2192 Models",
+            "title": "Estimated",
+            "type": "boolean"
+          },
           "model": {
             "title": "Model",
             "type": "string"
@@ -2580,6 +2618,12 @@
           "duration_ms": {
             "title": "Duration Ms",
             "type": "integer"
+          },
+          "estimated": {
+            "default": false,
+            "description": "Priced by the estimate for a model with no known price",
+            "title": "Estimated",
+            "type": "boolean"
           },
           "model": {
             "title": "Model",
@@ -2847,6 +2891,62 @@
           "limits"
         ],
         "title": "Preset",
+        "type": "object"
+      },
+      "PriceIn": {
+        "additionalProperties": false,
+        "properties": {
+          "input_per_mtok": {
+            "exclusiveMaximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Input Per Mtok",
+            "type": "number"
+          },
+          "output_per_mtok": {
+            "exclusiveMaximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Output Per Mtok",
+            "type": "number"
+          }
+        },
+        "required": [
+          "input_per_mtok",
+          "output_per_mtok"
+        ],
+        "title": "PriceIn",
+        "type": "object"
+      },
+      "PriceView": {
+        "properties": {
+          "input_per_mtok": {
+            "description": "USD per 1 million input tokens",
+            "title": "Input Per Mtok",
+            "type": "number"
+          },
+          "output_per_mtok": {
+            "description": "USD per 1 million output tokens",
+            "title": "Output Per Mtok",
+            "type": "number"
+          },
+          "source": {
+            "description": "Where the price comes from: set here, MODEL_PRICES, Nuria's price list (dated), free (a model on this machine or network), or an estimate (a deliberately high default for a model with no known price: set its price)",
+            "enum": [
+              "connection",
+              "settings",
+              "built-in",
+              "local",
+              "estimate"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "input_per_mtok",
+          "output_per_mtok",
+          "source"
+        ],
+        "title": "PriceView",
         "type": "object"
       },
       "ProtectionOption": {

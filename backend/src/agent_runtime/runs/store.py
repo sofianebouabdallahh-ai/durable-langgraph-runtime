@@ -745,9 +745,10 @@ class RunRepository:
         return int(row["steps"])
 
     async def add_usage(self, run_id: uuid.UUID, tokens: int, cost: float) -> None:
-        """Tokens and cost of a committed step (R14.1), for the run and its ancestors
-        (roll-up), and for its session. Inside the step's (fenced) transaction; the run
-        row is already locked, ancestors are locked here, deepest first."""
+        """Tokens and cost of a model call, the moment it returns (R14.1, phase H2), for the
+        run and its ancestors (roll-up), and for its session. Inside a fenced
+        transaction: the run row is already locked, ancestors are locked here, deepest
+        first."""
         await self._conn.execute(
             """
             UPDATE runs SET tokens = tokens + %(t)s, cost = cost + %(c)s
@@ -767,24 +768,35 @@ class RunRepository:
             {"id": run_id, "t": tokens, "c": cost},
         )
 
-    async def add_model_usage(self, run_id: uuid.UUID, models: dict[str, list[float]]) -> None:
-        """A committed step's model calls, per model (calls, tokens in/out, cost, ms), for
-        this run only (no roll-up: summing runs must not count a helper's call twice)."""
-        for model, (calls, tokens_in, tokens_out, cost, ms) in models.items():
-            await self._conn.execute(
-                """
-                INSERT INTO run_model_usage
-                    (run_id, model, calls, tokens_in, tokens_out, cost, duration_ms)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (run_id, model) DO UPDATE SET
-                    calls = run_model_usage.calls + EXCLUDED.calls,
-                    tokens_in = run_model_usage.tokens_in + EXCLUDED.tokens_in,
-                    tokens_out = run_model_usage.tokens_out + EXCLUDED.tokens_out,
-                    cost = run_model_usage.cost + EXCLUDED.cost,
-                    duration_ms = run_model_usage.duration_ms + EXCLUDED.duration_ms
-                """,
-                (run_id, model, int(calls), int(tokens_in), int(tokens_out), cost, int(ms)),
-            )
+    async def add_model_usage(
+        self,
+        run_id: uuid.UUID,
+        model: str,
+        *,
+        tokens_in: int,
+        tokens_out: int,
+        cost: float,
+        ms: int,
+        estimated: bool = False,
+    ) -> None:
+        """One model call, per model (calls, tokens in/out, cost, ms), for this run only
+        (no roll-up: summing runs must not count a helper's call twice). `estimated`:
+        priced by the unknown-model estimate, so its cost is approximate (phase H2)."""
+        await self._conn.execute(
+            """
+            INSERT INTO run_model_usage
+                (run_id, model, calls, tokens_in, tokens_out, cost, duration_ms, estimated)
+            VALUES (%s, %s, 1, %s, %s, %s, %s, %s)
+            ON CONFLICT (run_id, model) DO UPDATE SET
+                calls = run_model_usage.calls + 1,
+                tokens_in = run_model_usage.tokens_in + EXCLUDED.tokens_in,
+                tokens_out = run_model_usage.tokens_out + EXCLUDED.tokens_out,
+                cost = run_model_usage.cost + EXCLUDED.cost,
+                duration_ms = run_model_usage.duration_ms + EXCLUDED.duration_ms,
+                estimated = run_model_usage.estimated OR EXCLUDED.estimated
+            """,
+            (run_id, model, tokens_in, tokens_out, cost, ms, estimated),
+        )
 
     async def save_result(
         self, run_id: uuid.UUID, output: dict[str, Any], *, partial: bool = False

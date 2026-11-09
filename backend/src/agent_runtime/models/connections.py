@@ -44,6 +44,7 @@ from agent_runtime.keys import (
     seal,
     secret_aad,
 )
+from agent_runtime.models.pricing import Price, resolve_price
 from agent_runtime.models.provider import (
     ModelProvider,
     OpenAICompatibleProvider,
@@ -84,6 +85,7 @@ class Connection:
     sealed: Sealed | None
     key_fingerprint: str | None
     models: list[str]
+    prices: dict[str, dict[str, float]]  # model → {input_per_mtok, output_per_mtok} (H2)
     test_status: Status
     test_detail: str | None
     tested_model: str | None
@@ -116,6 +118,7 @@ class Connection:
             sealed=sealed,
             key_fingerprint=r["key_fingerprint"],
             models=list(r["models"] or []),
+            prices=dict(r.get("prices") or {}),
             test_status=r["test_status"],
             test_detail=r["test_detail"],
             tested_model=r["tested_model"],
@@ -127,8 +130,8 @@ class Connection:
 
 
 _COLUMNS = """id, name, display_name, kind, base_url, key_ciphertext, key_nonce, wrapped_key,
-    wrapped_nonce, kek_version, key_fingerprint, models, test_status, test_detail, tested_model,
-    tested_at, created_at, updated_at, archived_at"""
+    wrapped_nonce, kek_version, key_fingerprint, models, prices, test_status, test_detail,
+    tested_model, tested_at, created_at, updated_at, archived_at"""
 
 
 def _aad(connection_id: uuid.UUID) -> str:
@@ -223,7 +226,7 @@ class ConnectionStore:
                     values.append(val)
                 continue
             sets.append(f"{column} = %s")
-            values.append(Jsonb(value) if column == "models" else value)
+            values.append(Jsonb(value) if column in ("models", "prices") else value)
         cur = await self._conn.execute(
             f"UPDATE model_connections SET {', '.join(sets)} WHERE id = %s RETURNING {_COLUMNS}",
             (*values, cid),
@@ -356,9 +359,11 @@ class ConnectionService:
         base_url: str | None = None,
         api_key: str | None = None,
         models: list[str] | None = None,
+        prices: dict[str, dict[str, float] | None] | None = None,
     ) -> Connection:
         """A new key replaces the old one (the old ciphertext is gone); no key keeps it.
-        A changed address or key needs a new test."""
+        A changed address or key needs a new test. `prices`: per model, USD per 1M tokens
+        (input, output); None removes a model's price (phase H2)."""
         async with self._pool.connection() as conn, conn.transaction():
             store = ConnectionStore(conn)
             current = await store.get(cid)
@@ -367,6 +372,8 @@ class ConnectionService:
                 changes["display_name"] = display_name.strip()[:60]
             if models is not None:
                 changes["models"] = _clean(models)
+            if prices is not None:
+                changes["prices"] = _priced(current.prices, prices)
             if base_url is not None and normalise_url(current.kind, base_url) != current.base_url:
                 changes["base_url"] = normalise_url(current.kind, base_url)
             if api_key:
@@ -459,6 +466,14 @@ class ConnectionService:
             timeout_s=timeout_s,
         )
 
+    def prices_of(self, c: Connection) -> dict[str, Price]:
+        """What a call to each of the connection's models costs, and why (phase H2)."""
+        return {
+            m: resolve_price(m, connection_prices=c.prices,
+                             settings_prices=self._settings.model_prices, local=_local(c))
+            for m in dict.fromkeys([*c.models, *c.prices])
+        }  # fmt: skip
+
     async def remote_models(self, cid: uuid.UUID) -> list[str]:
         """What the service says it has (Ollama's pulled models; /v1/models elsewhere)."""
         connection = await self.get(cid)
@@ -501,6 +516,30 @@ class ConnectionService:
             if await store.by_name(name) is None:
                 return name
         raise ConnectionInvalid("too many connections with this name")
+
+
+def _priced(
+    current: dict[str, dict[str, float]], changes: dict[str, dict[str, float] | None]
+) -> dict[str, dict[str, float]]:
+    """Apply price changes: a price per model (both rates ≥ 0, below $10,000 per 1M
+    tokens), None to remove one. At most 50 priced models per connection."""
+    out = dict(current)
+    for model, price in changes.items():
+        name = model.strip()
+        if not name or len(name) > 200:
+            raise ConnectionInvalid("A price needs the model's name")
+        if price is None:
+            out.pop(name, None)
+            continue
+        rates = {k: float(price.get(k, -1)) for k in ("input_per_mtok", "output_per_mtok")}
+        if any(not 0 <= v < 10_000 for v in rates.values()):
+            raise ConnectionInvalid(
+                f"The price of {name} must be in US dollars per 1 million tokens, from 0"
+            )
+        out[name] = rates
+    if len(out) > 50:
+        raise ConnectionInvalid("At most 50 models can have a price on one connection")
+    return out
 
 
 def _clean(models: list[str]) -> list[str]:
@@ -593,6 +632,7 @@ class ModelRouter:
                     "name": name,
                     "model": model_id,
                     "local": _local(connection),
+                    "price": self._price(model_id, connection).as_dict(),
                 }
             elif default is not None:
                 connection = await store.get(default[0])
@@ -601,10 +641,32 @@ class ModelRouter:
                     "name": connection.name,
                     "model": default[1],
                     "local": _local(connection),
+                    "price": self._price(default[1], connection).as_dict(),
                 }
             else:
-                bindings[model] = {"setup": True, "local": self._setup_is_local()}
+                local = self._setup_is_local()
+                model_id = self._setup_model(model)
+                bindings[model] = {
+                    "setup": True,
+                    "local": local,
+                    "price": resolve_price(
+                        model_id, settings_prices=self._settings.model_prices, local=local
+                    ).as_dict(),
+                }
         return bindings
+
+    def _price(self, model_id: str, connection: Connection) -> Price:
+        """A turn's price for this model, pinned with its binding (phase H2)."""
+        return resolve_price(
+            model_id, connection_prices=connection.prices,
+            settings_prices=self._settings.model_prices, local=_local(connection),
+        )  # fmt: skip
+
+    def _setup_model(self, role: str) -> str:
+        """The model the setup's provider uses for `role` (its name for the scripted one)."""
+        provider = configured_provider(self._settings)
+        model_for = getattr(provider, "model_for", None)
+        return str(model_for(role)) if callable(model_for) else provider.name
 
     def _setup_is_local(self) -> bool:
         """The model setup configured (.env): Ollama, or an address on this machine."""
@@ -637,7 +699,8 @@ class ModelRouter:
 def _audited(c: Connection) -> dict[str, Any]:
     """A connection as the audit trail shows it: never the key, only that one is set."""
     return {"display_name": c.display_name, "kind": c.kind, "base_url": c.base_url,
-            "models": c.models, **key_change(c.key_fingerprint)}  # fmt: skip
+            "models": c.models, "prices": c.prices,
+            **key_change(c.key_fingerprint)}  # fmt: skip
 
 
 def _local(c: Connection) -> bool:

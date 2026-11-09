@@ -12,7 +12,7 @@ import { GuideStrip } from "../guide/GuideStrip";
 import { useAbout } from "../sessions/ModelStatus";
 import { Dialog, Section, TextField } from "../ui/form";
 import { Button, Pill, Spinner } from "../ui/primitives";
-import { type Connection, KINDS, type Kind, models, useConnections, useDefaultModel, useModelsRefresh } from "./api";
+import { type Connection, KINDS, type Kind, models, type Price, useConnections, useDefaultModel, useModelsRefresh } from "./api";
 
 const KIND_ICON: Record<Kind, typeof Cpu> = { ollama: Cpu, openai: Cloud, azure_foundry: Cloud, compatible: Server };
 
@@ -218,6 +218,7 @@ function ConnectionCard({ connection: c }: { connection: Connection }) {
           {testing ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <Zap aria-hidden className="size-4" />} Test
         </Button>
       </div>
+      <Prices connection={c} />
       <EditDialog
         open={editing}
         connection={c}
@@ -257,6 +258,107 @@ function ConnectionCard({ connection: c }: { connection: Connection }) {
         </div>
       </Dialog>
     </div>
+  );
+}
+
+const PRICE_SOURCE: Record<Price["source"], string> = {
+  connection: "set here",
+  settings: "from MODEL_PRICES in .env",
+  "built-in": "Nuria's price list",
+  local: "free: runs on your machine or network",
+  estimate: "unknown: a deliberately high estimate",
+};
+
+/**
+ * What a call to each model costs (phase H2): budgets in dollars use it. A price set
+ * here wins; without one, Nuria's price list, free for a local model, or a high
+ * estimate so a budget still stops a runaway agent.
+ */
+function Prices({ connection: c }: { connection: Connection }) {
+  const entries = Object.entries(c.prices);
+  if (entries.length === 0) return null;
+  return (
+    <div className="mt-4" data-testid="model-prices">
+      <div className="mb-1 text-sm font-medium">Prices, per 1 million tokens</div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-stone-500">
+            <th className="py-1 pr-3 font-medium">Model</th>
+            <th className="py-1 pr-3 font-medium">Input</th>
+            <th className="py-1 pr-3 font-medium">Output</th>
+            <th className="py-1 pr-3 font-medium">From</th>
+            <th className="py-1" />
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map(([model, price]) => (
+            <PriceRow key={model} connection={c} model={model} price={price} />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PriceRow({ connection: c, model, price }: { connection: Connection; model: string; price: Price }) {
+  const refresh = useModelsRefresh();
+  const [editing, setEditing] = useState(false);
+  const [input, setInput] = useState(String(price.input_per_mtok));
+  const [output, setOutput] = useState(String(price.output_per_mtok));
+  const [error, setError] = useState<string | null>(null);
+  const save = async (value: { input_per_mtok: number; output_per_mtok: number } | null) => {
+    setError(null);
+    try {
+      await models.edit(c.id, { prices: { [model]: value } });
+      setEditing(false);
+      refresh();
+    } catch (e) {
+      setError(problemText(e));
+    }
+  };
+  const valid = [input, output].every((v) => v.trim() !== "" && Number.isFinite(Number(v)) && Number(v) >= 0);
+  const cell = "h-8 w-24 rounded-lg border border-stone-200 bg-white px-2 dark:border-stone-700 dark:bg-stone-950";
+  return (
+    <tr className="border-t border-stone-100 tabular-nums dark:border-stone-800">
+      <td className="py-1.5 pr-3 font-mono text-[13px]">{model}</td>
+      {editing ? (
+        <>
+          <td className="py-1.5 pr-3">
+            <input aria-label={`Input price of ${model}`} inputMode="decimal" value={input} onChange={(e) => { setInput(e.target.value); }} className={cell} />
+          </td>
+          <td className="py-1.5 pr-3">
+            <input aria-label={`Output price of ${model}`} inputMode="decimal" value={output} onChange={(e) => { setOutput(e.target.value); }} className={cell} />
+          </td>
+          <td className="py-1.5 pr-3 text-xs text-rose-700 dark:text-rose-300">{error}</td>
+          <td className="py-1.5 text-right whitespace-nowrap">
+            <Button size="sm" variant="primary" disabled={!valid} onClick={() => void save({ input_per_mtok: Number(input), output_per_mtok: Number(output) })}>
+              Save
+            </Button>{" "}
+            <Button size="sm" onClick={() => { setEditing(false); }}>
+              Cancel
+            </Button>
+          </td>
+        </>
+      ) : (
+        <>
+          <td className="py-1.5 pr-3">${price.input_per_mtok}</td>
+          <td className="py-1.5 pr-3">${price.output_per_mtok}</td>
+          <td className={`py-1.5 pr-3 text-xs ${price.source === "estimate" ? "text-amber-700 dark:text-amber-400" : "text-stone-500"}`}>
+            {PRICE_SOURCE[price.source]}
+          </td>
+          <td className="py-1.5 text-right whitespace-nowrap">
+            <Button size="sm" variant="ghost" onClick={() => { setEditing(true); }} aria-label={`Set the price of ${model}`}>
+              Set price
+            </Button>
+            {price.source === "connection" && (
+              <Button size="sm" variant="ghost" onClick={() => void save(null)} aria-label={`Use the default price of ${model}`}>
+                Reset
+              </Button>
+            )}
+          </td>
+        </>
+      )}
+    </tr>
   );
 }
 

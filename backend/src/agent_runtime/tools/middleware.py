@@ -73,9 +73,10 @@ class TurnDenied(Exception):
 
 
 class UsageRecorder(Protocol):
-    """Counts a model call's tokens and cost (and time) with the step; returns the cost."""
+    """Records a model call's tokens, cost and time the moment it returns (durably, in
+    the run's totals: phase H2); returns the cost."""
 
-    def __call__(
+    async def __call__(
         self, model: str, tokens_in: int, tokens_out: int, seconds: float = ...
     ) -> float: ...
 
@@ -217,6 +218,22 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
             attempts[0] += 1
             if sub is not None:
                 await sub.before_model()  # cancel check + its own and the run's budget
+                return
+            # The soft limit is checked BEFORE the charge, so the wrap-up call (R14.2) is
+            # charged as the one call allowed past a limit (phase H2).
+            if wrap_up[0] is None and (kind := await ctx.soft_limit()):
+                metrics.budget_warning(kind)
+                logs.event(log, f"budget nearly used: {kind}", budget=kind,
+                           level=logging.WARNING)  # fmt: skip
+                wrap_up[0] = kind
+            await self._charge(ctx, wrap_up=wrap_up[0] is not None)
+
+        async def charge_again() -> None:
+            """A follow-up call (the empty-reply nudge, the turn guard): charged like any
+            call. It keeps its tools, so it never takes the wrap-up's allowance."""
+            attempts[0] += 1
+            if sub is not None:
+                await sub.before_model()
             else:
                 await self._charge(ctx)
 
@@ -226,12 +243,7 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
                 from agent_runtime.subagents.orchestrator import WRAP_UP_NOTE
 
                 req = req.override(messages=[*req.messages, HumanMessage(content=WRAP_UP_NOTE)])
-            elif sub is None and (kind := await ctx.soft_limit()):
-                if wrap_up[0] is None:
-                    metrics.budget_warning(kind)
-                    logs.event(log, f"budget nearly used: {kind}", budget=kind,
-                               level=logging.WARNING)  # fmt: skip
-                wrap_up[0] = kind  # R14.2: one wrap-up call, with no tools
+            elif (kind := wrap_up[0]) is not None:  # R14.2: one wrap-up call, with no tools
                 req = req.override(tools=[], messages=[*req.messages, SystemMessage(
                     content=WRAP_UP_TURN.format(kind=kind.removeprefix("budget:")))])  # fmt: skip
             return await handler(req)
@@ -244,7 +256,7 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
             async def again() -> ModelResponse[Any]:
                 return await handler(request.override(model=model, messages=nudged))
 
-            response = await self._call(ctx, again, charge, attempts)
+            response = await self._call(ctx, again, charge_again, attempts)
         _check_progress(request.state.get("messages", []), response)
         if wrap_up[0] is not None:
             return _budget_limited(response, wrap_up[0])
@@ -260,7 +272,7 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
             async def guarded() -> ModelResponse[Any]:
                 return await handler(request.override(model=model, messages=messages))
 
-            response = await self._call(ctx, guarded, charge, attempts)
+            response = await self._call(ctx, guarded, charge_again, attempts)
         return response
 
     async def _call(
@@ -279,7 +291,7 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
             response = await ctx.caller.call(attempt, charge=charge)
             seconds = time.monotonic() - t0
             span.set_attribute("llm.attempts", attempts[0] - first)
-            for model, tokens_in, tokens_out, cost in self._account(ctx, response, seconds):
+            for model, tokens_in, tokens_out, cost in await self._account(ctx, response, seconds):
                 metrics.llm_latency(model, seconds)
                 span.set_attributes({
                     "llm.model": model, "llm.tokens_in": tokens_in,
@@ -297,20 +309,20 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
         return response
 
     @staticmethod
-    async def _charge(ctx: RunContext) -> None:
+    async def _charge(ctx: RunContext, *, wrap_up: bool = False) -> None:
         limits = ctx.limits
         async with ctx.tools.pool.connection() as conn:
             await charge_model_call(
                 conn, fence=ctx.tools.fence, max_calls=ctx.max_model_calls,
                 max_tokens=limits.max_tokens if limits else None,
-                max_cost_usd=limits.max_cost_usd if limits else None,
+                max_cost_usd=limits.max_cost_usd if limits else None, wrap_up=wrap_up,
             )  # fmt: skip
 
     @staticmethod
-    def _account(
+    async def _account(
         ctx: RunContext, response: ModelResponse[Any], seconds: float = 0.0
     ) -> list[tuple[str, int, int, float]]:
-        """Tokens and cost, staged with the step (counted when it commits, R14.1).
+        """Tokens and cost, recorded the moment the call returns (R14.1, phase H2).
         Returns (model, tokens in, tokens out, cost) per message, for the span."""
         usage: list[tuple[str, int, int, float]] = []
         for m in response.result:
@@ -322,7 +334,7 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
                     int(u.get("output_tokens", 0)),
                 )
                 cost = (
-                    ctx.record_usage(model, tokens_in, tokens_out, seconds)
+                    await ctx.record_usage(model, tokens_in, tokens_out, seconds)
                     if ctx.record_usage
                     else 0.0
                 )

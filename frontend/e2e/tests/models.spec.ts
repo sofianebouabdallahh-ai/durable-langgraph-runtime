@@ -73,6 +73,32 @@ test("add a model, make it the default, chat with it; the key appears nowhere", 
   }
 });
 
+test("H2: set a model's price in Settings; a turn on it costs by that price", async ({ page, request }) => {
+  const stamp = Date.now().toString(36);
+  const name = `Priced ${stamp}`;
+  const card = await addModel(page, name, `e2e-key-${stamp}`, "fake-a");
+  const row = card.getByTestId("model-prices").getByRole("row").filter({ hasText: "fake-a" });
+  await row.getByRole("button", { name: "Set the price of fake-a" }).click();
+  await row.getByLabel("Input price of fake-a").fill("1000");
+  await row.getByLabel("Output price of fake-a").fill("2000");
+  await row.getByRole("button", { name: "Save" }).click();
+  await expect(row).toContainText("$1000");
+  await expect(row).toContainText("set here");
+
+  await page.getByRole("combobox", { name: "Default model" }).selectOption({ label: `${name} · fake-a` });
+  const sid = await startChat(page, "Plan a day in Lisbon");
+  await expect(page.getByTestId("assistant-message").last()).toContainText("Answered by fake-a", { timeout: 60_000 });
+  await waitTurnOver(request, sid);
+  const runId = (await transcript(request, sid)).find((m) => m.run_id)?.run_id;
+  expect(runId).toBeTruthy();
+  const turn = (await (await request.get(`/api/activity/turns/${String(runId)}`)).json()) as { cost: number };
+  expect(turn.cost).toBeGreaterThan(0); // 20 in + 8 out per call at $1000 / $2000 per 1M tokens
+
+  await page.goto("/#/settings/models");
+  await card.getByRole("button", { name: "Use the default price of fake-a" }).click();
+  await expect(row).not.toContainText("set here");
+});
+
 test("AC44: an agent and its helper answer through two different connections", async ({ page, request }) => {
   const stamp = Date.now().toString(36);
   await addModel(page, `Main ${stamp}`, `main-${stamp}-key`, "fake-a");

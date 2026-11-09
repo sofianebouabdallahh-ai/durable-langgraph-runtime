@@ -13,7 +13,8 @@ Pattern: Chain of Responsibility with a FIXED order (CR-004 R15.7):
                   approved args hash matches; approved edits go through validation, the
                   pre_tool hooks and the policy again — phase H1)
     7+8 ledger    idempotency key = sha256(run · node · call_index · tool · canonical(args));
-                  budgets checked and charged only when a key is first recorded (R14.1, R2.6)
+                  budgets checked and charged only when a key is first recorded (R14.1, R2.6);
+                  a budget used up denies the call (a tool error), it doesn't fail the run
                   done → cached result, no execution; in_progress at an older epoch → re-execute
                   with the SAME key, which the tool uses to dedupe its own effect
     9 execute     in-process (phase 7 adds isolation: sandbox), with a timeout (R14.5)
@@ -264,17 +265,23 @@ class ToolPipeline:
         repeat = None if spec.repeatable else repeat_hash(call, args)
         grant = ctx.grants[spec.name]
         caps = [c for c in (grant.max_calls, spec.max_calls) if c is not None]
-        async with ctx.pool.connection() as conn:
-            begun = await invocations.begin(
-                conn,
-                fence=ctx.fence,
-                key=key,
-                tool=spec.name,
-                max_total=ctx.max_tool_calls,
-                max_for_tool=min(caps) if caps else None,
-                extra_charge=ctx.extra_charge,
-                args_hash=repeat,
-            )  # BudgetExceeded / LoopDetected propagate: the run fails (R14.1, R14.4)
+        try:
+            async with ctx.pool.connection() as conn:
+                begun = await invocations.begin(
+                    conn,
+                    fence=ctx.fence,
+                    key=key,
+                    tool=spec.name,
+                    max_total=ctx.max_tool_calls,
+                    max_for_tool=min(caps) if caps else None,
+                    extra_charge=ctx.extra_charge,
+                    args_hash=repeat,
+                )  # LoopDetected propagates: the run fails (R14.4)
+        except invocations.BudgetExceeded as exc:
+            # A tool budget used up doesn't crash the step (phase H2): this call isn't
+            # made, the calls already done keep their results, and the next model call is
+            # the wrap-up (R14.2). Nothing was recorded or charged.
+            return self._deny(call, ctx, "budget", f"{exc}; this call wasn't made", "ledger")
 
         cached = isinstance(begun, invocations.Cached)
         t0 = time.monotonic()

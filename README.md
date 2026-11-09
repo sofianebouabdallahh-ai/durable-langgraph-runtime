@@ -282,11 +282,12 @@ Agents are data (Markdown files, or rows from the Studio), and data can't execut
 ### Budgets and limits
 
 **Every turn has a budget:** steps, model calls, tool calls (in total and per tool), tokens, cost in USD, and wall-clock time. The harness checks it before each model call and each tool call. In the Studio, each agent sets its **maximum turns**, its limits on tool calls, tokens, cost and time, and a cap per tool (for example, Python at most 10 times). Each helper has its own maximum turns, and at most 4 helpers run at once.
-- **Ceilings are layered, and callers can only tighten them.** Server ceilings ≥ the agent's profile ≥ per-turn options. A request above a ceiling gets `422`, with the field and its maximum.
-- **Soft limit, then hard limit.** At 80% of any budget the agent gets **one wrap-up turn**: no tools, and a note asking for its best answer with what it has. At 100% the run ends `failed`, with the reason (`budget:tool_calls`, `budget:cost`, …).
-- **Usage is durable.** It's written in the same fenced transaction as the step that used it, so a crash and reclaim continues the budget instead of resetting it.
+- **Ceilings are layered, and callers can only tighten them.** Server ceilings ≥ the agent's profile ≥ per-turn options. Every ceiling applies to every run, even an agent that sets no limits of its own. A request above a ceiling gets `422`, with the field and its maximum.
+- **Soft limit, then the answer.** At 80% of any budget the agent gets **one wrap-up turn**: no tools, and a note asking for its best answer with what it has. The run then ends `failed`, with the reason (`budget:tool_calls`, `budget:cost`, …) **and that answer**. The wrap-up turn is the one call allowed past a limit, so a burst of parallel tool calls or a helper that used the budget up can't take the answer away. A tool call over budget isn't made: the model is told why.
+- **Real prices.** Each turn pins a price per model: the one set in Settings → Models, else `MODEL_PRICES`, else Nuria's dated price list (matched by prefix, so `gpt-4o-mini-2024-07-18` is priced as gpt-4o-mini), else free for a model on your machine. A model with no known price gets a deliberately high estimate, shown as "estimated" in Activity, so a cost budget never silently counts $0.
+- **Usage is durable.** Each model call's tokens and cost are written the moment it returns, in a fenced transaction, so a crash and reclaim continues the budget instead of resetting it, and a call made by a step that was then lost to a crash is still counted.
 - **It rolls up.** A child run's or a helper's usage counts toward its parent's budget, so an agent can't escape its budget by fanning out. Fan-out is also capped in depth and in number of descendants.
-- **Loops are caught.** The same tool with the same arguments: the second repeat is served from the ledger with a note saying so, and the third ends the run as `loop_detected`.
+- **Loops are caught.** The same tool with the same arguments: the second repeat is served from the ledger with a note saying so, and the third ends the run as `loop_detected`. A call that failed may be tried again; the third identical failure ends the run.
 - **A global daily cost ceiling** can be set to stop new turns once it's reached.
 
 ### Models that misbehave

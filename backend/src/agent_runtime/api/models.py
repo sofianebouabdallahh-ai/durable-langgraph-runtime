@@ -34,6 +34,23 @@ def _service(request: Request) -> ConnectionService:
 ServiceDep = Annotated[ConnectionService, Depends(_service)]
 
 
+class PriceIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    input_per_mtok: Annotated[float, Field(ge=0, lt=10_000)]
+    output_per_mtok: Annotated[float, Field(ge=0, lt=10_000)]
+
+
+class PriceView(BaseModel):
+    input_per_mtok: float = Field(description="USD per 1 million input tokens")
+    output_per_mtok: float = Field(description="USD per 1 million output tokens")
+    source: Literal["connection", "settings", "built-in", "local", "estimate"] = Field(
+        description="Where the price comes from: set here, MODEL_PRICES, Nuria's price list "
+        "(dated), free (a model on this machine or network), or an estimate (a deliberately "
+        "high default for a model with no known price: set its price)"
+    )
+
+
 class ConnectionView(BaseModel):
     id: uuid.UUID
     name: str = Field(description="What agents say: `<name>:<model>`")
@@ -43,18 +60,23 @@ class ConnectionView(BaseModel):
     has_key: bool = Field(description="A key is saved. The key itself is never returned")
     key_fingerprint: str | None = Field(description="Tells keys apart without revealing them")
     models: list[str]
+    prices: dict[str, PriceView] = Field(
+        description="What a call to each model costs, and where that price comes from "
+        "(phase H2): budgets in USD use it"
+    )
     test_status: Literal["untested", "ready", "failed"]
     test_detail: str | None
     tested_model: str | None
     tested_at: datetime | None
 
     @classmethod
-    def of(cls, c: Connection) -> ConnectionView:
+    def of(cls, c: Connection, service: ConnectionService) -> ConnectionView:
+        prices = {m: PriceView(**p.as_dict()) for m, p in service.prices_of(c).items()}
         return cls(
             id=c.id, name=c.name, display_name=c.display_name, kind=c.kind, base_url=c.base_url,
             has_key=c.has_key, key_fingerprint=c.key_fingerprint, models=c.models,
-            test_status=c.test_status, test_detail=c.test_detail, tested_model=c.tested_model,
-            tested_at=c.tested_at,
+            prices=prices, test_status=c.test_status, test_detail=c.test_detail,
+            tested_model=c.tested_model, tested_at=c.tested_at,
         )  # fmt: skip
 
 
@@ -78,6 +100,11 @@ class EditConnection(BaseModel):
     )
     models: Annotated[list[Annotated[str, Field(max_length=200)]], Field(max_length=50)] | None = (
         None
+    )
+    prices: Annotated[dict[str, PriceIn | None], Field(max_length=50)] | None = Field(
+        default=None,
+        description="A price per model, USD per 1 million tokens; null removes one. It wins "
+        "over MODEL_PRICES and Nuria's price list",
     )
 
 
@@ -115,7 +142,7 @@ class DefaultView(BaseModel):
 
 @models_router.get("/connections", response_model=list[ConnectionView], summary="Your models")
 async def list_connections(service: ServiceDep) -> list[ConnectionView]:
-    return [ConnectionView.of(c) for c in await service.all()]
+    return [ConnectionView.of(c, service) for c in await service.all()]
 
 
 @models_router.post("/connections", status_code=status.HTTP_201_CREATED,
@@ -124,7 +151,7 @@ async def add(body: AddConnection, service: ServiceDep) -> ConnectionView:
     return ConnectionView.of(await service.add(
         display_name=body.display_name, kind=body.kind, base_url=body.base_url,
         api_key=body.api_key, models=body.models,
-    ))  # fmt: skip
+    ), service)  # fmt: skip
 
 
 @models_router.patch("/connections/{connection_id}", response_model=ConnectionView,
@@ -135,7 +162,9 @@ async def edit(
     return ConnectionView.of(await service.update(
         connection_id, display_name=body.display_name, base_url=body.base_url,
         api_key=body.api_key, models=body.models,
-    ))  # fmt: skip
+        prices=None if body.prices is None else {
+            m: None if p is None else p.model_dump() for m, p in body.prices.items()},
+    ), service)  # fmt: skip
 
 
 @models_router.delete("/connections/{connection_id}", status_code=status.HTTP_204_NO_CONTENT,
@@ -149,9 +178,9 @@ async def remove(connection_id: uuid.UUID, service: ServiceDep) -> Response:
                     summary="Check it answers and uses tools")  # fmt: skip
 async def test(connection_id: uuid.UUID, body: TestRequest, service: ServiceDep) -> TestView:
     result = await service.test(connection_id, body.model)
+    connection = ConnectionView.of(await service.get(connection_id), service)
     return TestView(ok=result.ok, detail=result.detail, model=result.model,
-                    seconds=round(result.seconds, 2),
-                    connection=ConnectionView.of(await service.get(connection_id)))  # fmt: skip
+                    seconds=round(result.seconds, 2), connection=connection)  # fmt: skip
 
 
 @models_router.get("/connections/{connection_id}/models", response_model=list[str],
@@ -173,7 +202,9 @@ async def get_default(request: Request, service: ServiceDep) -> DefaultView:
     setup = request.app.state.settings.model_provider
     if found is None:
         return DefaultView(connection=None, model=None, setup_provider=setup)
-    return DefaultView(connection=ConnectionView.of(found[0]), model=found[1], setup_provider=setup)
+    return DefaultView(
+        connection=ConnectionView.of(found[0], service), model=found[1], setup_provider=setup
+    )
 
 
 @models_router.put("/default", response_model=DefaultView, summary="Set the default model")

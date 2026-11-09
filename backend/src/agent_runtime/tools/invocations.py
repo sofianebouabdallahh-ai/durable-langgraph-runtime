@@ -139,9 +139,15 @@ async def begin(
                 (fence.run_id, args_hash),
             )
             earlier = await cur.fetchall()
-            if len(earlier) >= 2:  # this is the 3rd: the agent is looping
+            # A failed call may be tried again (a timeout, a page that was down): only
+            # calls that didn't fail are served again and count as repeats (phase H2).
+            worked = [r for r in earlier if r["status"] != "failed"]
+            failed = len(earlier) - len(worked)
+            if len(worked) >= 2:  # this is the 3rd: the agent is looping
                 raise LoopDetected(f"{tool!r} called 3 times with the same arguments")
-            repeat_of = earlier[0] if earlier else None
+            if failed >= 2 and not worked:  # this would be the 3rd identical failure
+                raise LoopDetected(f"{tool!r} failed twice with the same arguments")
+            repeat_of = worked[0] if worked else None
 
         per_tool = dict(run["tool_calls"])
         if over := _over(chain, "tool_calls_total", "max_tool_calls", max_total):
@@ -199,20 +205,27 @@ async def charge_model_call(
     max_calls: int | None,
     max_tokens: int | None = None,
     max_cost_usd: float | None = None,
+    wrap_up: bool = False,
 ) -> int:
     """Count one model call against the run's budget (R14.1), durably, BEFORE the call.
 
     Charged immediately (not with the step's checkpoint): a model call costs money
     the moment it is made, even if the step that made it is later replayed.
+
+    `wrap_up`: the main agent's wrap-up call (R14.2), the one call allowed past a limit
+    (phase H2). It is charged, but a budget a burst or a helper used up meanwhile
+    doesn't refuse it: the turn ends with an answer. It has no tools, so it is the last.
     """
     async with conn.transaction():
         await check_fence(conn, fence)
         chain = await _lock_chain(conn, fence.run_id)
-        if over := _over(chain, "model_calls", "max_model_calls", max_calls):
+        if wrap_up:
+            pass
+        elif over := _over(chain, "model_calls", "max_model_calls", max_calls):
             raise BudgetExceeded("budget:model_calls", over)
-        if over := _spent(chain, "tokens", "max_tokens", max_tokens):
+        elif over := _spent(chain, "tokens", "max_tokens", max_tokens):
             raise BudgetExceeded("budget:tokens", over)
-        if over := _spent(chain, "cost", "max_cost_usd", max_cost_usd):
+        elif over := _spent(chain, "cost", "max_cost_usd", max_cost_usd):
             raise BudgetExceeded("budget:cost", over)
         await conn.execute(
             "UPDATE runs SET model_calls = model_calls + 1 WHERE id = ANY(%s)",

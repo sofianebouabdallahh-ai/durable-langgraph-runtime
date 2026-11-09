@@ -96,6 +96,11 @@ class ModelRow(BaseModel):
     tokens_out: int
     cost: float
     avg_ms: int | None = Field(description="Average time per call")
+    estimated: bool = Field(
+        default=False,
+        description="Some calls had no known price and were priced by a deliberately high "
+        "estimate: set the model's price in Settings → Models",
+    )
 
 
 class ToolRow(BaseModel):
@@ -166,6 +171,9 @@ class ModelUsage(BaseModel):
     tokens_out: int
     cost: float
     duration_ms: int
+    estimated: bool = Field(
+        default=False, description="Priced by the estimate for a model with no known price"
+    )
 
 
 class TurnDetail(TurnRow):

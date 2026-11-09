@@ -61,6 +61,7 @@ from agent_runtime.tools.spec import ToolRegistry
 
 if TYPE_CHECKING:
     from agent_runtime.runs.limits import RunLimits
+    from agent_runtime.tools.middleware import UsageRecorder
 
 log = logging.getLogger(__name__)
 
@@ -177,7 +178,7 @@ class SubagentOrchestrator:
         worker: str | None = None,  # the main run's owner, recorded on subagent.spawned
         session_id: uuid.UUID | None = None,  # chat turns: events also go to the session
         model_caller: Callable[[], Any] | None = None,  # retries + breaker (R14.7)
-        usage_recorder: Callable[[Outbox], Callable[[str, int, int], float]] | None = None,
+        usage_recorder: Callable[[Outbox, str], UsageRecorder] | None = None,
         chat_model: Callable[[str, float, list[ScriptTurn]], Callable[[int], Any]] | None = None,
         skills: Mapping[str, tuple[Any, ...]] | None = None,  # by helper name (R17.4)
         settings: Any = None,  # the run's: passed on to tools that need them (MCP, L8)
@@ -316,11 +317,13 @@ class SubagentOrchestrator:
                 **(inv.result or {})}  # fmt: skip
 
     async def check_soft_limit(self, conn: Conn) -> None:
-        """At 80 % of the run's model or tool budget, ask sub-agents to wrap up."""
+        """At 80 % of any of the run's budgets (model calls, tool calls, tokens, cost),
+        ask sub-agents to wrap up, so the main agent keeps room for its answer."""
         if self.wrap_up:
             return
         cur = await conn.execute(
-            "SELECT model_calls, tool_calls_total FROM runs WHERE id = %s", (self.run_id,)
+            "SELECT model_calls, tool_calls_total, tokens, cost FROM runs WHERE id = %s",
+            (self.run_id,),
         )
         row = await cur.fetchone()
         if row is None:
@@ -328,6 +331,8 @@ class SubagentOrchestrator:
         for used, limit in (
             (row["model_calls"], self.run_limits.max_model_calls),
             (row["tool_calls_total"], self.run_limits.max_tool_calls),
+            (row["tokens"], self.run_limits.max_tokens),
+            (float(row["cost"]), self.run_limits.max_cost_usd),
         ):
             if limit and used >= self.limits.soft_limit * limit:
                 self.wrap_up = True
@@ -452,7 +457,7 @@ class SubagentOrchestrator:
         if self._model_caller is not None:
             extras["caller"] = self._model_caller()
         if self._usage_recorder is not None:  # its tokens and cost roll up into the run
-            extras["record_usage"] = self._usage_recorder(outbox)
+            extras["record_usage"] = self._usage_recorder(outbox, fm.model)
         if self._chat_model is not None:  # its own model role (R16.2: `model:` in its file)
             extras["chat_model"] = self._chat_model(
                 fm.model, fm.temperature, self._scripts.get(inv.name, [])

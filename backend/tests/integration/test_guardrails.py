@@ -364,3 +364,124 @@ async def test_secrets_never_reach_the_transcript(
     assert all(secret not in str(m.content) for m in msgs if m.type != "user")
     assert "[REDACTED]" in str(next(m for m in msgs if m.type == "tool_call").content)
     assert notes == [{"text": "key=[REDACTED]"}]  # the pre_tool hook cleaned what ran (AC34)
+
+
+# ------------------------------------------------- phase H2: budgets that bind
+
+
+async def test_h2_a_model_call_lost_to_a_crash_is_still_counted(
+    pool: Pool, test_settings: Settings, checkpoint_tables: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # fmt: skip
+    """Worker A's model call returns, its usage is recorded, then A dies before the step
+    commits. B makes that call again: both cost money, so both are counted."""
+    fast = test_settings.model_copy(
+        update={"lease_ttl_s": 1.0, "heartbeat_s": 0.3, "model_prices": PRICED}
+    )
+    run = await RunService(pool, fast, GRAPHS).create_run(
+        "assistant", {"message": "go", "script": [calc("1+1"), {"content": "done"}]}
+    )
+    recorded, hold = asyncio.Event(), asyncio.Event()
+    original = RunExecutor._usage_recorder
+
+    def holding(self: RunExecutor, outbox: Any, role: str) -> Any:
+        record = original(self, outbox, role)
+
+        async def wrapped(model: str, tokens_in: int, tokens_out: int, s: float = 0.0) -> float:
+            cost = await record(model, tokens_in, tokens_out, s)
+            if self.owner == "a:1":  # worker A: recorded, then dies before the commit
+                recorded.set()
+                await hold.wait()
+            return cost
+
+        return wrapped
+
+    monkeypatch.setattr(RunExecutor, "_usage_recorder", holding)
+    worker_a = asyncio.create_task(RunExecutor(pool, fast, GRAPHS, owner="a:1").execute(run.id))
+    await asyncio.wait_for(recorded.wait(), timeout=10)
+    lost = await counters(pool, run.id)
+    assert lost["tokens"] > 0 and float(lost["cost"]) > 0  # counted the moment it returned
+    worker_a.cancel()
+    await asyncio.gather(worker_a, return_exceptions=True)
+    await asyncio.sleep(fast.lease_ttl_s + 0.2)
+
+    done = await RunExecutor(pool, fast, GRAPHS, owner="b:2").execute(run.id)
+    assert done.status is S.COMPLETED
+    used = await counters(pool, run.id)
+    tokens, cost = expected_usage(await thread(pool, done))  # the calls whose steps committed
+    assert used["tokens"] == tokens + lost["tokens"]  # + the call lost with A's step
+    assert float(used["cost"]) == pytest.approx(cost + float(lost["cost"]))
+    assert used["model_calls"] == 3  # A's call, B's repeat of it, B's final answer
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT sum(calls) AS calls, sum(tokens_in + tokens_out) AS tokens "
+            "FROM run_model_usage WHERE run_id = %s",
+            (run.id,),
+        )
+        per_model = await cur.fetchone()
+    assert per_model is not None
+    assert (per_model["calls"], per_model["tokens"]) == (3, used["tokens"])  # Activity agrees
+
+
+async def test_h2_a_burst_past_the_tool_budget_still_ends_with_an_answer(
+    pool: Pool, test_settings: Settings, checkpoint_tables: None
+) -> None:
+    """7 of 10 tool calls used (70 %, under the soft limit), then ONE step asks for 15:
+    3 run, 12 are refused as tool errors, and the next model call is the wrap-up."""
+    seven = {"tool_calls": [{"name": "calculator", "args": {"expression": f"{i}+1"}}
+                            for i in range(7)]}  # fmt: skip
+    burst = {"tool_calls": [{"name": "calculator", "args": {"expression": f"{i}*3"}}
+                            for i in range(15)]}  # fmt: skip
+    done, _ = await run_assistant(
+        pool, test_settings, [seven, burst, *[calc(f"{i}-1") for i in range(5)]],
+        {"max_tool_calls": 10},
+    )  # fmt: skip
+    assert (done.status, done.reason) == (S.FAILED, "budget:tool_calls")  # with its answer
+    async with pool.connection() as conn:
+        result = await RunRepository(conn).get_result(done.id)
+    assert result is not None and result["output"]["budget_limited"] is True
+    used = await counters(pool, done.id)
+    assert used["tool_calls_total"] == 10  # never past the limit
+    assert used["model_calls"] == 3  # the 7, the burst, the wrap-up
+    messages = await thread(pool, done)
+    results = [m for m in messages if getattr(m, "type", "") == "tool"]
+    assert len(results) == 7 + 15  # every call got its answer, made or not
+    refused = [m for m in results if "Deny(budget)" in str(m.content)]
+    assert len(refused) == 12 and all("wasn't made" in str(m.content) for m in refused)
+
+
+async def test_h2_a_cost_budget_binds_and_ends_with_the_wrap_up(
+    pool: Pool, test_settings: Settings, checkpoint_tables: None
+) -> None:
+    priced = test_settings.model_copy(update={"model_prices": PRICED})
+    done, _ = await run_assistant(
+        pool, priced, [calc(f"{i}+1") for i in range(50)], {"max_cost_usd": 0.5}
+    )
+    assert (done.status, done.reason) == (S.FAILED, "budget:cost")
+    async with pool.connection() as conn:
+        result = await RunRepository(conn).get_result(done.id)
+    assert result is not None and result["output"]["budget_limited"] is True
+    used = await counters(pool, done.id)
+    ai = [m for m in await thread(pool, done) if isinstance(m, AIMessage) and m.usage_metadata]
+    last = ai[-1].usage_metadata
+    assert last is not None
+    wrap_up = PRICED["scripted"].cost(last["input_tokens"], last["output_tokens"])
+    before = float(used["cost"]) - wrap_up
+    assert 0.4 <= before < 0.5  # the soft limit (80 %) was reached before the hard one…
+    assert float(used["cost"]) > before  # …and the wrap-up call, the one past it, was charged
+
+
+async def test_h2_a_failed_call_can_be_retried_and_the_third_failure_ends_the_run(
+    pool: Pool, test_settings: Settings, checkpoint_tables: None
+) -> None:
+    done, _ = await run_assistant(pool, test_settings, [calc("1/0")] * 3 + [{"content": "x"}])
+    assert (done.status, done.reason) == (S.FAILED, "loop_detected")
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT status FROM tool_invocations WHERE run_id = %s ORDER BY created_at",
+            (done.id,),
+        )
+        rows = await cur.fetchall()
+    assert [r["status"] for r in rows] == ["failed", "failed"]  # tried again, not served
+    called = [e for e in await events(pool, done.id) if e.type == E.TOOL_CALLED]
+    assert len(called) == 2

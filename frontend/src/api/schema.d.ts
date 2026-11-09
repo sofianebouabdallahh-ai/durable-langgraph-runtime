@@ -1747,6 +1747,13 @@ export interface components {
              * @description What agents say: `<name>:<model>`
              */
             name: string;
+            /**
+             * Prices
+             * @description What a call to each model costs, and where that price comes from (phase H2): budgets in USD use it
+             */
+            prices: {
+                [key: string]: components["schemas"]["PriceView"];
+            };
             /** Test Detail */
             test_detail: string | null;
             /**
@@ -1938,6 +1945,13 @@ export interface components {
             display_name?: string | null;
             /** Models */
             models?: string[] | null;
+            /**
+             * Prices
+             * @description A price per model, USD per 1 million tokens; null removes one. It wins over MODEL_PRICES and Nuria's price list
+             */
+            prices?: {
+                [key: string]: components["schemas"]["PriceIn"] | null;
+            } | null;
         };
         /** EditSkill */
         EditSkill: {
@@ -2362,6 +2376,12 @@ export interface components {
             calls: number;
             /** Cost */
             cost: number;
+            /**
+             * Estimated
+             * @description Some calls had no known price and were priced by a deliberately high estimate: set the model's price in Settings → Models
+             * @default false
+             */
+            estimated: boolean;
             /** Model */
             model: string;
             /** Tokens In */
@@ -2377,6 +2397,12 @@ export interface components {
             cost: number;
             /** Duration Ms */
             duration_ms: number;
+            /**
+             * Estimated
+             * @description Priced by the estimate for a model with no known price
+             * @default false
+             */
+            estimated: boolean;
             /** Model */
             model: string;
             /** Tokens In */
@@ -2471,6 +2497,32 @@ export interface components {
             };
             /** Max Turns */
             max_turns: number;
+        };
+        /** PriceIn */
+        PriceIn: {
+            /** Input Per Mtok */
+            input_per_mtok: number;
+            /** Output Per Mtok */
+            output_per_mtok: number;
+        };
+        /** PriceView */
+        PriceView: {
+            /**
+             * Input Per Mtok
+             * @description USD per 1 million input tokens
+             */
+            input_per_mtok: number;
+            /**
+             * Output Per Mtok
+             * @description USD per 1 million output tokens
+             */
+            output_per_mtok: number;
+            /**
+             * Source
+             * @description Where the price comes from: set here, MODEL_PRICES, Nuria's price list (dated), free (a model on this machine or network), or an estimate (a deliberately high default for a model with no known price: set its price)
+             * @enum {string}
+             */
+            source: "connection" | "settings" | "built-in" | "local" | "estimate";
         };
         /** ProtectionOption */
         ProtectionOption: {
