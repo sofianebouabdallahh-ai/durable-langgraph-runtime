@@ -106,6 +106,7 @@ test("H2: set a model's price in Settings; a turn on it costs by that price", as
   expect(turn.cost).toBeGreaterThan(0); // 20 in + 8 out per call at $1000 / $2000 per 1M tokens
 
   await page.goto("/#/settings/models");
+  await card.getByRole("button", { name: /Prices, per 1 million tokens/ }).click(); // folded again
   await card.getByRole("button", { name: "Use the default price of fake-a" }).click();
   await expect(row).not.toContainText("set here");
 });
