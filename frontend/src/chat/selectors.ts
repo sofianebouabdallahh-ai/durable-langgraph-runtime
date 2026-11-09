@@ -21,7 +21,8 @@ export type Item =
   | { kind: "tool"; key: string; call: Of<"tool_call">; result: Of<"tool_result"> | null; awaitingApproval: boolean; ended: boolean }
   | { kind: "helpers"; key: string; helpers: Helper[] }
   | { kind: "approval-request"; key: string; message: Of<"interrupt">; decided: Of<"approval"> | null }
-  | { kind: "error"; key: string; message: Of<"error"> };
+  | { kind: "error"; key: string; message: Of<"error"> }
+  | { kind: "retried"; key: string; message: Of<"system"> };
 
 export interface TurnView {
   runId: string;
@@ -131,8 +132,11 @@ function items(messages: Message[], helpers: Helper[], active: boolean): Item[] 
       case "error":
         out.push({ kind: "error", key: m.messageId, message: m });
         break;
+      case "system":
+        if (typeof m.retry === "number") out.push({ kind: "retried", key: m.messageId, message: m });
+        break; // other system rows are the agent's context (hidden)
       default:
-        break; // user (shown as the turn's header), tool_result (paired), approval (paired), system (hidden)
+        break; // user (shown as the turn's header), tool_result (paired), approval (paired)
     }
   }
   if (!helpersShown && helpers.length > 0) {

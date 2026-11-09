@@ -45,6 +45,10 @@ RUNS = Counter("runtime_runs_total", "Runs that reached an end", ["status", "rea
 RUNS_STARTED = Counter("runtime_runs_started_total", "Executions started on a fresh lease")
 RECLAIMS = Counter("runtime_reclaims_total", "Runs taken over from a dead worker (R2.4)")
 RELEASES = Counter("runtime_releases_total", "Graceful hand-offs (R10.7)", ["reason"])
+REDRIVES = Counter("runtime_redrives_total", "Failed runs a person tried again (H4)")
+NOTIFICATIONS = Counter(
+    "runtime_notifications_total", "Notification delivery attempts (H4)", ["outcome"]
+)
 APPROVALS = Counter("runtime_approvals_total", "Human decisions on paused runs", ["decision"])
 INTERRUPTS = Counter("runtime_interrupts_total", "Runs that paused for a person (R1.4)")
 CHILDREN = Counter("runtime_children_spawned_total", "Child runs spawned (R2.8)")
@@ -132,6 +136,8 @@ def _observe(type_: str, p: dict[str, Any]) -> None:
             RECLAIMS.inc()
         case "run.released":
             RELEASES.labels(str(p.get("reason") or "draining")).inc()
+        case "run.redriven":
+            REDRIVES.inc()
         case "interrupt.raised":
             INTERRUPTS.inc()
         case "approval.decided":
@@ -170,6 +176,11 @@ def llm_usage(model: str, tokens_in: int, tokens_out: int, cost: float, calls: i
 
 def llm_latency(model: str, seconds: float) -> None:
     LLM_SECONDS.labels(model).observe(seconds)
+
+
+def notification(outcome: str) -> None:
+    """One delivery attempt: delivered, retry, failed or refused (H4)."""
+    NOTIFICATIONS.labels(outcome).inc()
 
 
 def budget_warning(kind: str) -> None:

@@ -13,7 +13,7 @@ const state = (messages: Message[], extra: Partial<ChatState> = {}): ChatState =
 describe("turns", () => {
   it("groups by turn and pairs each tool call with its result", () => {
     const s = state([
-      user(1, "6*7?"), msg(2, "system", { text: "ctx" }), call(3, "calculator", "c1"), result(4, "calculator", "c1", { value: 42 }), reply(5, "42"),
+      user(1, "6*7?"), msg(2, "system", { text: "ctx", retry: null }), call(3, "calculator", "c1"), result(4, "calculator", "c1", { value: 42 }), reply(5, "42"),
       user(6, "again", RUN2), call(7, "search", "c2", {}, RUN2),
     ]);
     const [first, second] = turns(s);
@@ -42,7 +42,7 @@ describe("turns", () => {
   it("pairs an approval request with its decision; errors and empty replies", () => {
     const s = state([
       user(1, "notify"), call(2, "notify", "n1"), msg(3, "interrupt", { kind: "tool_approval", approvalId: null, callId: null, tool: "notify", args: {}, reason: null }),
-      msg(4, "approval", { approvalId: null, decision: "approve", reason: null }), reply(5, "  "), msg(6, "error", { reason: "boom", budgetLimited: false }),
+      msg(4, "approval", { approvalId: null, decision: "approve", reason: null }), reply(5, "  "), msg(6, "error", { reason: "boom", budgetLimited: false, canRetry: false }),
     ]);
     const kinds = turns(s)[0]?.items.map((i) => i.kind);
     expect(kinds).toEqual(["tool", "approval-request", "error"]);
@@ -54,6 +54,16 @@ describe("turns", () => {
     const request = turns(s)[0]?.items[1];
     expect(request?.kind === "approval-request" && request.decided?.decision).toBe("approve");
     expect(turns(state([msg(1, "user", { text: "x" }, null as unknown as string)]))[0]?.runId).toBe("none");
+  });
+});
+
+describe("turns, tried again (H4)", () => {
+  it("shows the error, then that it was tried again, then the reply", () => {
+    const s = state([
+      user(1, "keep this"), msg(2, "error", { reason: "error", budgetLimited: false, canRetry: true }),
+      msg(3, "system", { text: "Tried again", retry: 1 }), reply(4, "Kept."),
+    ]);
+    expect(turns(s)[0]?.items.map((i) => i.kind)).toEqual(["error", "retried", "text"]);
   });
 });
 

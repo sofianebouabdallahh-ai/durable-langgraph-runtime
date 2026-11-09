@@ -63,6 +63,7 @@ from agent_runtime.models.scripted import ScriptTurn
 from agent_runtime.redaction import redact
 from agent_runtime.runs.approvals import APPROVAL_TYPE, ApprovalAsk, ApprovalRepository
 from agent_runtime.runs.events import EventType
+from agent_runtime.runs.failures import REDRIVABLE, is_transient
 from agent_runtime.runs.fanout import (
     ChildResult,
     ChildSpec,
@@ -96,6 +97,7 @@ from agent_runtime.streaming.tokens import TokenRelay
 from agent_runtime.subagents.orchestrator import SubagentLimits, SubagentOrchestrator
 from agent_runtime.tools.builtin import default_tools
 from agent_runtime.tools.hooks import (
+    ErrorHookInput,
     HookRegistry,
     SessionEndInput,
     Summary,
@@ -295,6 +297,8 @@ class RunExecutor:
         # A release the worker must NOT re-send at once (an open circuit breaker): the
         # outbox relay re-sends it once its message is stale, which is the backoff.
         self.deferred = False
+        self._redrives = 0  # this run's redrives: an error after one is a new chat row (H4)
+        self._top_level = True  # only a top-level run can be tried again
         self._spawner: Spawner = (
             LocalSpawner(graphs, settings.run_max_children) if local_fanout else RunSpawner()
         )
@@ -310,6 +314,7 @@ class RunExecutor:
             run = await repo.get(run_id)
             if run.status.is_terminal:
                 raise RunTerminal(run)
+            self._redrives, self._top_level = run.redrives, run.parent_run_id is None
             lease = await repo.acquire_lease(run_id, self.owner, self._settings.lease_ttl_s)
             if lease is None:
                 current = await repo.get(run_id)
@@ -319,7 +324,10 @@ class RunExecutor:
             try:
                 if lease.reclaimed:
                     if lease.reclaims > self._settings.max_reclaims:
-                        return await self._fail(fence, FailureReason.MAX_RECLAIMS, None)
+                        self._chat_errors(run, fence)  # the chat says so (and offers a retry)
+                        ended = await self._fail(fence, FailureReason.MAX_RECLAIMS, None)
+                        await self._turn_end(run, ended)  # turn_end and on_error see it too
+                        return ended
                     async with conn.transaction():
                         await check_fence(conn, fence)
                         await repo.append_event(
@@ -411,6 +419,9 @@ class RunExecutor:
             if spec.agent is not None and spec.agent.frontmatter.model in self._model_providers:
                 self._breaker_name = self._model_providers[spec.agent.frontmatter.model].name
         except Exception as exc:
+            self._chat_errors(run, fence)  # a chat turn shows why it stopped
+            if is_transient(exc):  # the database went away while loading it (H4)
+                return await self._retry_later(fence, None, exc)
             return await self._fail(fence, FailureReason.ERROR, None, detail=redact(repr(exc)))
         outbox = Outbox(run.id, fence, committed_steps=run.steps, bus=self._bus)
         self._test_chat = False
@@ -526,6 +537,8 @@ class RunExecutor:
             log.warning("run %s: lost ownership at epoch %s (%s)", run.id, fence.epoch, exc)
             return await self._current(run.id)
         except Exception as exc:
+            if is_transient(exc):  # Postgres or Redis failed, not the run (H4)
+                return await self._retry_later(fence, outbox, exc)
             log.exception("run %s failed", run.id)
             return await self._fail(fence, FailureReason.ERROR, outbox, detail=repr(exc))
         if pending:
@@ -666,6 +679,8 @@ class RunExecutor:
             run_id=run.id, session_id=run.session_id, agent=agent.id, message=inp.message,
             session_start=[self._hooks.get(h) for h in fm.hooks.session_start],
             turn_start=[self._hooks.get(h) for h in fm.hooks.turn_start],
+            pre_model=[self._hooks.get(h) for h in fm.hooks.pre_model],
+            post_model=[self._hooks.get(h) for h in fm.hooks.post_model],
         )  # fmt: skip
         return RunContext(
             tools, pipeline, max_model_calls=limits.max_model_calls, script=inp.script,
@@ -732,6 +747,12 @@ class RunExecutor:
 
     # ------------------------------------------------------- sessions (R15.6)
 
+    def _chat_errors(self, run: Run, fence: Fence) -> None:
+        """A chat turn ending before its transcript writer exists still writes its error
+        row (and so offers Try again)."""
+        if run.session_id is not None and self._transcript is None:
+            self._transcript = TranscriptWriter(run.session_id, run.id, fence, bus=self._bus)
+
     async def _spec_of(self, run: Run) -> GraphSpec:
         """What this run executes: its pinned agent bundle, or a plain graph by name."""
         if run.agent_hash is not None:
@@ -739,20 +760,39 @@ class RunExecutor:
         return self._graphs.get(run.graph_name)
 
     async def _turn_end(self, run: Run, ended: Run) -> None:
-        """turn_end hooks: observe-only, after the turn's outcome is committed."""
+        """turn_end hooks, and on_error ones for a failed turn (H4): observe-only, after
+        the turn's outcome is committed."""
         if not ended.status.is_terminal or run.kind == "session_end":
             return
         try:
             spec = await self._spec_of(run)
         except Exception:
             return
-        if spec.agent is None or not spec.agent.frontmatter.hooks.turn_end:
+        if spec.agent is None:
             return
-        hooks = [self._hooks.get(h) for h in spec.agent.frontmatter.hooks.turn_end]
-        await run_observers(hooks, TurnEndInput(
-            run_id=str(run.id), session_id=str(run.session_id) if run.session_id else None,
-            agent=spec.agent.id, status=str(ended.status), reason=ended.reason,
-        ))  # fmt: skip
+        hooks = spec.agent.frontmatter.hooks
+        session_id = str(run.session_id) if run.session_id else None
+        if hooks.turn_end:
+            await run_observers([self._hooks.get(h) for h in hooks.turn_end], TurnEndInput(
+                run_id=str(run.id), session_id=session_id, agent=spec.agent.id,
+                status=str(ended.status), reason=ended.reason,
+            ))  # fmt: skip
+        if hooks.on_error and ended.status is RunStatus.FAILED:
+            await run_observers([self._hooks.get(h) for h in hooks.on_error], ErrorHookInput(
+                run_id=str(run.id), session_id=session_id, agent=spec.agent.id,
+                reason=ended.reason, detail=await self._failure_detail(run.id),
+            ))  # fmt: skip
+
+    async def _failure_detail(self, run_id: uuid.UUID) -> str | None:
+        """What the run.failed event says beyond the reason (redacted when written)."""
+        async with self._pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT payload->>'detail' AS detail FROM run_events WHERE run_id = %s "
+                "AND type = 'run.failed' ORDER BY seq DESC LIMIT 1",
+                (run_id,),
+            )
+            row = await cur.fetchone()
+        return row["detail"] if row else None
 
     async def _session_end(self, run: Run, fence: Fence) -> Run:
         """A `session_end` run (R15.6): run the agent's session_end hooks once and
@@ -924,6 +964,10 @@ class RunExecutor:
         channel for a chat turn, else on the run's."""
         if spec.agent is None:
             return []
+        if spec.agent.frontmatter.hooks.post_model:
+            # A post_model hook may change the reply (a redaction): nothing of it is
+            # shown before the hooks have seen it, so it arrives whole (H4).
+            return []
         channel = session_channel(run.session_id) if run.session_id else run_channel(run.id)
         self._tokens = TokenRelay(
             self._bus, channel, run.id, flush_ms=self._settings.token_flush_ms,
@@ -997,18 +1041,50 @@ class RunExecutor:
             logs.event(log, "approval asked", interrupt=APPROVAL_TYPE, tool=a.tool)
         return paused
 
-    async def _release(self, fence: Fence, outbox: Outbox, *, reason: str = "draining") -> Run:
-        """Graceful hand-off (R10.7): back to `queued`, lease cleared, not a reclaim."""
+    async def _release(
+        self,
+        fence: Fence,
+        outbox: Outbox | None,
+        *,
+        reason: str = "draining",
+        detail: str | None = None,
+    ) -> Run:
+        """Graceful hand-off (R10.7): back to `queued`, lease cleared, not a reclaim.
+        Reason `infrastructure` also counts toward `max_infra_retries` (H4)."""
         await self._settle_subagents(None)
+        payload: dict[str, Any] = {"owner": self.owner, "reason": reason}
+        if detail:
+            payload["detail"] = detail
 
         async def work(repo: RunRepository) -> Run:
-            await outbox.flush(repo)
+            if outbox is not None:
+                await outbox.flush(repo)
+            if reason == "infrastructure":  # in the release's transaction, fenced with it
+                await repo.conn.execute(
+                    "UPDATE runs SET infra_retries = infra_retries + 1 WHERE id = %s",
+                    (fence.run_id,),
+                )
             return await repo.transition(
                 fence.run_id, RunStatus.QUEUED, event=EventType.RUN_RELEASED,
-                fence=fence, payload={"owner": self.owner, "reason": reason},
+                fence=fence, payload=payload,
             )  # fmt: skip
 
         return await self._fenced_then_publish(fence, work)
+
+    async def _retry_later(self, fence: Fence, outbox: Outbox | None, exc: BaseException) -> Run:
+        """The infrastructure failed, not the run (H4): release it, to resume from its
+        last checkpoint once its message is re-sent (the relay's backoff), at most
+        `max_infra_retries` times; then it ends failed(infrastructure). If the database
+        is still down this raises too, and the worker leaves the message to the reaper
+        (the lease expires; the run is reclaimed)."""
+        detail = redact(repr(exc))[:500]
+        run = await self._current(fence.run_id)
+        if run.infra_retries >= self._settings.max_infra_retries:
+            return await self._fail(fence, FailureReason.INFRASTRUCTURE, outbox, detail=detail)
+        logs.event(log, f"run {run.id}: the infrastructure failed; trying again later",
+                   level=logging.WARNING, error=detail, retries=run.infra_retries + 1)  # fmt: skip
+        self.deferred = True
+        return await self._release(fence, outbox, reason="infrastructure", detail=detail)
 
     async def _fail(
         self,
@@ -1034,6 +1110,10 @@ class RunExecutor:
         payload: dict[str, Any] = {"reason": str(reason)}
         if detail:
             payload["detail"] = detail[:2000]
+        if self._redrives:  # tried again: the same failure is still a new row in the chat
+            payload["attempt"] = self._redrives + 1
+        if target is RunStatus.FAILED and self._top_level and str(reason) in REDRIVABLE:
+            payload["can_retry"] = True  # the chat offers Try again (H4)
 
         async def work(repo: RunRepository) -> Run:
             if outbox is not None:

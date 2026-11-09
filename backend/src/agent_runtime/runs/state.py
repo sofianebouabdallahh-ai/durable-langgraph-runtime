@@ -74,6 +74,7 @@ class FailureReason(StrEnum):
     REJECTED = "rejected"  # R1.4: approval rejected → cancelled
     CANCEL_REQUESTED = "cancel_requested"  # R1.6
     TURN_DENIED = "turn_denied"  # R15.5: a turn_start hook (or session_start) said no
+    INFRASTRUCTURE = "infrastructure"  # H4: Postgres or Redis kept failing (bounded retries)
 
 
 class InvalidTransition(Exception):

@@ -140,6 +140,7 @@ class ToolPipeline:
         self._policy = policy
         self._interrupt = interrupt
         self._max_result = max_result_chars
+        self.max_result_chars = max_result_chars  # what the model is shown, at most (R14.5)
         self._max_stored = max_stored_chars
         self._timeout = tool_timeout_s
         self._stages = stages
@@ -364,7 +365,7 @@ class ToolPipeline:
 
         # 11 truncate
         self._at("truncate")
-        content = _truncate(json.dumps(post.input.result, default=str), self._max_result)
+        content = truncate(json.dumps(post.input.result, default=str), self._max_result)
         # 12 mark: whatever the tool returned is data, never instructions
         self._at("mark")
         content = as_data(spec.name, content)
@@ -456,7 +457,7 @@ def _summary(args: dict[str, Any], limit: int = 200) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
 
 
-def _truncate(text: str, limit: int) -> str:
+def truncate(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[:limit] + f"\n…[truncated: showing {limit} of {len(text)} characters]"
@@ -464,7 +465,7 @@ def _truncate(text: str, limit: int) -> str:
 
 def _cap(result: Any, limit: int) -> Any:
     text = json.dumps(result, default=str)
-    return result if len(text) <= limit else {"truncated": _truncate(text, limit)}
+    return result if len(text) <= limit else {"truncated": truncate(text, limit)}
 
 
 async def _asked_before(ctx: ToolRunContext, call_id: str) -> bool:

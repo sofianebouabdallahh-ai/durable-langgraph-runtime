@@ -13,6 +13,7 @@ import { problemText } from "../chat/problems";
 import { Section, Segmented, TextArea, TextField } from "../ui/form";
 import { Button, Spinner } from "../ui/primitives";
 import { McpServers } from "./McpServers";
+import { Notifications } from "./Notifications";
 
 type Settings = Schemas["ToolSettingsView"];
 type Provider = Settings["search_provider"];
@@ -49,6 +50,7 @@ export function ToolsPage() {
             <SearchSettings current={settings.data} />
             <SitesSettings current={settings.data} />
             <McpServers />
+            <Notifications />
             <Section
               title="Run Python and the terminal"
               description="Code runs in a locked box for each conversation turn: no internet, no access to your files or keys, limited time and memory."

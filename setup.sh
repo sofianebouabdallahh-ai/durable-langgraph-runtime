@@ -76,6 +76,8 @@ env_set() {  # replace or append KEY=VALUE, keeping every other line (portable: 
   cat "$tmp" > "$ENV_FILE"; rm -f "$tmp"
 }
 random_secret() { openssl rand -hex 24 2>/dev/null || od -An -tx1 -N24 /dev/urandom | tr -d ' \n'; }
+# A Standard Webhooks signing secret: whsec_ and 32 random bytes in base64 (H4).
+webhook_secret() { printf 'whsec_%s' "$(openssl rand -base64 32 2>/dev/null || head -c 32 /dev/urandom | base64)"; }
 
 # ------------------------------------------------------------------ docker
 find_docker() {
@@ -118,6 +120,8 @@ make_env() {
   for key in NURIA_SECRET_KEY SEARXNG_SECRET SANDBOXD_TOKEN; do
     [ -n "$(env_get "$key")" ] || { env_set "$key" "$(random_secret)"; changed=$((changed + 1)); }
   done
+  [ -n "$(env_get NOTIFY_WEBHOOK_SECRET)" ] || {
+    env_set NOTIFY_WEBHOOK_SECRET "$(webhook_secret)"; changed=$((changed + 1)); }
   [ "$changed" -gt 0 ] && ok "generated $changed local secret(s) (only on this machine, in .env)"
   [ -n "$(env_get COMPOSE_PROFILES)" ] || env_set COMPOSE_PROFILES app
   # The release this checkout is: Compose pulls exactly these images (L5).

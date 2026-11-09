@@ -11,6 +11,7 @@ class EventType(StrEnum):
     RUN_CANCELLED = "run.cancelled"
     RUN_RECLAIMED = "run.reclaimed"
     RUN_RELEASED = "run.released"
+    RUN_REDRIVEN = "run.redriven"  # H4: a person tried a failed run again
     NODE_STARTED = "node.started"
     NODE_COMPLETED = "node.completed"
     NODE_FAILED = "node.failed"

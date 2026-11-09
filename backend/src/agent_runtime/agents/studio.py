@@ -78,6 +78,9 @@ PROTECTIONS: dict[str, tuple[str, str, str, bool]] = {
                                "Passwords and keys in what it sends to a tool are masked", True),
     "redact_secrets_in_result": ("post_tool", "Hide secrets in tool results",
                                  "Passwords and keys in what tools return are masked", True),
+    "redact_secrets_in_reply": ("post_model", "Hide secrets in its replies",
+                                "Passwords and keys it writes are masked; replies then "
+                                "appear whole, not word by word", False),
     "session_clock": ("session_start", "Know the date and time",
                       "Tells it the current date and time when a chat starts", True),
     "summarize_session": ("session_end", "Summarise each chat",

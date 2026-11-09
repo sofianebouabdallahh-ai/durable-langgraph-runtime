@@ -48,14 +48,19 @@ from agent_runtime.models.retry import ModelCaller
 from agent_runtime.models.scripted import ScriptedChatModel, ScriptTurn
 from agent_runtime.sessions.turns import script_offset
 from agent_runtime.tools.hooks import (
+    Continue,
     Deny,
     HookSpec,
+    ModelHookInput,
+    ModelReplyInput,
     SessionHookInput,
     TurnHookInput,
     run_context_hooks,
+    run_model_hooks,
 )
 from agent_runtime.tools.invocations import LoopDetected, charge_model_call
-from agent_runtime.tools.pipeline import ToolCall, ToolPipeline, ToolRunContext
+from agent_runtime.tools.pipeline import ToolCall, ToolPipeline, ToolRunContext, truncate
+from agent_runtime.untrusted import as_data
 
 log = logging.getLogger(__name__)
 
@@ -91,6 +96,8 @@ class TurnInfo:
     message: str
     session_start: list[HookSpec] = field(default_factory=list)
     turn_start: list[HookSpec] = field(default_factory=list)
+    pre_model: list[HookSpec] = field(default_factory=list)  # H4
+    post_model: list[HookSpec] = field(default_factory=list)
 
 
 class RuntimeState(AgentState[Any]):
@@ -209,6 +216,8 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
         sub = ctx.subagent
         if sub is not None and sub.returned is not None:  # return_result: end the loop here
             return ModelResponse(result=[AIMessage(content=str(sub.returned["summary"]))])
+        turn = ctx.turn if sub is None else None
+        await _pre_model(turn, request, request.messages)
         model = ctx.model_for(script_offset(request.state.get("messages", [])))
         wrap_up: list[str | None] = [None]
 
@@ -252,6 +261,7 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
         if _is_empty(response) and wrap_up[0] is None:  # once, charged like any call
             logs.event(log, "empty model reply: asking once more", level=logging.WARNING)
             nudged: list[Any] = [*request.messages, *response.result, HumanMessage(EMPTY_REPLY)]
+            await _pre_model(turn, request, nudged)  # every call the model gets
 
             async def again() -> ModelResponse[Any]:
                 return await handler(request.override(model=model, messages=nudged))
@@ -259,21 +269,24 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
             response = await self._call(ctx, again, charge_again, attempts)
         _check_progress(request.state.get("messages", []), response)
         if wrap_up[0] is not None:
-            return _budget_limited(response, wrap_up[0])
+            return await _post_model(turn, _budget_limited(response, wrap_up[0]))
         orchestrator = ctx.orchestrator
         if orchestrator is not None and _is_final(response) and orchestrator.running():
             outcomes = await orchestrator.wait_all()
+            # The outcomes are the helpers' words: data, like wait_subagents' output (H4).
+            results = truncate(json.dumps(outcomes, default=str), ctx.pipeline.max_result_chars)
             note = HumanMessage(
                 content="[runtime] Your sub-agents were still running, so the runtime waited "
-                "for them before you finish. Their results: " + json.dumps(outcomes, default=str)
+                "for them before you finish. Their results:\n" + as_data("subagents", results)
             )
             messages: list[Any] = [*request.messages, *response.result, note]
+            await _pre_model(turn, request, messages)  # it carries the helpers' words
 
             async def guarded() -> ModelResponse[Any]:
                 return await handler(request.override(model=model, messages=messages))
 
             response = await self._call(ctx, guarded, charge_again, attempts)
-        return response
+        return await _post_model(turn, response)
 
     async def _call(
         self,
@@ -361,6 +374,61 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
         return ToolMessage(
             content=result.content, tool_call_id=call.id, name=call.name, status=result.status
         )
+
+
+async def _pre_model(
+    turn: TurnInfo | None, request: ModelRequest[RunContext], messages: list[Any]
+) -> None:
+    """pre_model hooks (H4), before each of a main agent's model calls (with the
+    messages that call sends): continue, or deny the turn. Fail closed."""
+    if turn is None or not turn.pre_model:
+        return
+    last = messages[-1] if messages else None
+    tools = [str(getattr(t, "name", None) or (t.get("name") if isinstance(t, dict) else ""))
+             for t in request.tools]  # fmt: skip
+    decided = await run_model_hooks(turn.pre_model, ModelHookInput(
+        str(turn.run_id), str(turn.session_id) if turn.session_id else None, turn.agent,
+        last.text if last is not None else "", tools,
+    ))  # fmt: skip
+    if isinstance(decided, Deny):
+        logs.event(log, "a pre_model hook denied the turn", reason=decided.reason,
+                   level=logging.WARNING)  # fmt: skip
+        raise TurnDenied(decided.reason)
+
+
+async def _post_model(turn: TurnInfo | None, response: ModelResponse[Any]) -> ModelResponse[Any]:
+    """post_model hooks (H4): continue, change the reply's text (its tool calls stay),
+    or deny the turn. Fail closed."""
+    if turn is None or not turn.post_model:
+        return response
+    at = next((i for i in range(len(response.result) - 1, -1, -1)
+               if isinstance(response.result[i], AIMessage)), None)  # fmt: skip
+    if at is None:
+        return response
+    reply = response.result[at]
+    assert isinstance(reply, AIMessage)
+    decided = await run_model_hooks(turn.post_model, ModelReplyInput(
+        str(turn.run_id), str(turn.session_id) if turn.session_id else None, turn.agent,
+        reply.text, [{"name": c["name"], "args": c["args"]} for c in reply.tool_calls],
+    ))  # fmt: skip
+    if isinstance(decided, Deny):
+        logs.event(log, "a post_model hook denied the reply", reason=decided.reason,
+                   level=logging.WARNING)  # fmt: skip
+        raise TurnDenied(decided.reason)
+    if isinstance(decided, Continue):
+        return response
+    result = list(response.result)
+    result[at] = reply.model_copy(update={"content": _with_text(reply.content, decided.value)})
+    return ModelResponse(result=result, structured_response=response.structured_response)
+
+
+def _with_text(content: str | list[Any], text: str) -> str | list[Any]:
+    """The reply's content with its text replaced by `text`, its other blocks (a
+    provider's reasoning, its signatures) kept as they were."""
+    if isinstance(content, str):
+        return text
+    kept = [b for b in content if isinstance(b, dict) and b.get("type") != "text"]
+    return [*kept, {"type": "text", "text": text}]
 
 
 def _is_empty(response: ModelResponse[Any]) -> bool:

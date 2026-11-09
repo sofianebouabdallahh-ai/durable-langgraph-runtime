@@ -119,6 +119,8 @@ export function errorText(reason: string, budgetLimited: boolean): string {
   if (reason === "cancel_requested") return "Stopped.";
   if (budgetLimited) return "Stopped early: it reached its limit for one message.";
   if (reason.startsWith("timeout")) return "Stopped: it took too long.";
+  if (reason === "infrastructure") return "Stopped: the database or the queue kept failing.";
+  if (reason === "max_reclaims") return "Stopped: the workers running it kept crashing.";
   return `Something went wrong (${reason}).`;
 }
 
@@ -133,6 +135,7 @@ export function failureReason(reason: string | null | undefined): string {
     error: "An error",
     loop_detected: "Went round in circles",
     max_reclaims: "Kept crashing",
+    infrastructure: "The database or the queue kept failing",
     children_failed: "Its helpers failed",
     depth_limit: "Too many helpers deep",
     rejected: "Rejected",
@@ -190,7 +193,11 @@ export function eventLine(type: string, payload: Record<string, unknown>): strin
     case "run.reclaimed":
       return "A worker stopped unexpectedly: another one took over and continued from the last saved step";
     case "run.released":
-      return "A worker was shutting down and handed the message over";
+      return payload.reason === "infrastructure"
+        ? "The database or the queue failed for a moment: it continues from the last saved step"
+        : "A worker was shutting down and handed the message over";
+    case "run.redriven":
+      return "You tried it again: it continues from the last saved step";
     case "subagent.spawned":
       return `Started the helper ${text(payload.agent)}`;
     case "subagent.completed":

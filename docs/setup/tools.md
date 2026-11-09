@@ -10,8 +10,8 @@ Agents do things through **tools**. You choose them for each agent in the Studio
 | **Run Python** | Runs Python 3.12 (numpy, pandas) and shows what it printed. A last line that's an expression is shown too, as in a notebook | The sandbox (on by default) |
 | **Use a terminal** | Runs shell commands (bash, coreutils) in the same sandbox | The sandbox |
 | **Work with files** | Lists, reads and writes files in the sandbox's workspace | The sandbox |
-| **Notes** | Keeps notes you ask it to remember | Nothing |
-| **Notifications** | Sends a message to someone: **always asks you first** | Nothing (not delivered yet: recorded only) |
+| **Notes** | Keeps notes you ask it to remember, and reads them back later, in any chat with the same agent | Nothing |
+| **Notifications** | Sends a message to someone: **always asks you first** | A webhook ([below](#notifications)); without one, they're kept, not sent |
 | **Tools from MCP servers** | Whatever the server offers: docs search, issue trackers, databases, your own services | A server you add in **Settings → Tools** ([below](#mcp-servers-tools-from-other-services)) |
 
 A helper with no tools can only answer from what it already knows. The Studio says so,
@@ -98,6 +98,51 @@ Code runs in a **sandbox**: a fresh, locked-down container for each conversation
 
 `./setup.sh --no-sandbox` starts Nuria without it: the code tools aren't offered, and
 everything else works. `./setup.sh --sandbox` turns it back on.
+
+## Notifications
+
+What an agent sends with **Notifications**, once you approve it, is POSTed to a webhook:
+your own service, a Slack or Teams workflow URL, Zapier, n8n, anything that takes JSON.
+
+1. In `.env`, set `NOTIFY_WEBHOOK_URL=https://…` (setup has already generated
+   `NOTIFY_WEBHOOK_SECRET`).
+2. Restart: `./setup.sh`.
+3. **Settings → Tools → Notifications** shows where they go, and how the latest ones went.
+
+Each delivery follows [Standard Webhooks](https://www.standardwebhooks.com):
+
+```json
+{"type": "notification.created", "timestamp": "2026-11-09T10:00:00+00:00",
+ "data": {"notification_id": "3f2a9c1e5b7d4e8a", "to": "ops", "message": "Deploy done",
+          "agent": "chat", "run_id": "…", "session_id": "…", "created_at": "…"}}
+```
+
+- **Headers:** `webhook-id`, `webhook-timestamp` and `webhook-signature` (`v1,` and a
+  base64 HMAC-SHA256 of `id.timestamp.body` with your secret). The official Standard
+  Webhooks libraries verify it in one call.
+- **At least once.** A receiver that's down (5xx, a timeout, 408 or 429) gets it again
+  after 5 s, 10 s, 20 s… up to an hour, for 24 hours. A 4xx means "no", and it isn't sent
+  again.
+- **The same `webhook-id` every time.** A worker that crashes after sending and before
+  recording it sends it once more, with the same id. Keep the ids you've seen, and you act
+  on each notification exactly once.
+- The address is checked like every address Nuria calls: never cloud metadata, never
+  Nuria's own services, and redirects aren't followed.
+
+## When a reply fails: Try again
+
+A reply can fail for a reason that may not happen again: a bug, the database or the queue
+failing for longer than the automatic retries, workers that kept crashing, or a reply
+that took too long. The chat then shows **Try again**:
+
+- it continues **from where it stopped**, not from the start;
+- nothing it already did runs twice: a note isn't saved twice, a notification isn't sent
+  twice;
+- it counts against the same budget. A reply that ran out of budget, went round in
+  circles or was refused by a protection would fail the same way, so it doesn't offer
+  **Try again**: send a new message instead.
+
+Only a chat's latest reply can be tried again. The API is `POST /api/runs/{id}/redrive`.
 
 ## Skills an agent always uses
 

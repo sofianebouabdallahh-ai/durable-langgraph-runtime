@@ -9,11 +9,14 @@ from agent_runtime.tools.hooks import (
     Deny,
     HookDecision,
     HookRegistry,
+    ModelHookInput,
+    ModelReplyInput,
     Modify,
     ToolHookInput,
     UnknownHook,
     default_hooks,
     run_hooks,
+    run_model_hooks,
 )
 
 
@@ -132,6 +135,7 @@ def test_registry_rules() -> None:
     assert reg.catalog() == {
         "redact_secrets_in_args": "pre_tool",
         "redact_secrets_in_result": "post_tool",
+        "redact_secrets_in_reply": "post_model",
         "session_clock": "session_start",
         "summarize_session": "session_end",
     }
@@ -202,3 +206,73 @@ async def test_context_hooks_accumulate_and_fail_closed() -> None:
     bad = await run_context_hooks([reg.get("a"), reg.get("boom")], None)
     assert isinstance(bad, Deny) and bad.reason == "hook_error:boom:RuntimeError"
     assert await run_observers([reg.get("watch")], None) == []
+
+
+# ------------------------------------------- pre_model / post_model (phase H4)
+
+REPLY = ModelReplyInput("r", None, "chat", "the key is sk-" + "a" * 40, [])
+ASKING = ModelHookInput("r", None, "chat", "hello", ["calculator"])
+
+
+async def test_post_model_modifies_in_order_and_later_hooks_see_the_new_text() -> None:
+    seen: list[str] = []
+
+    async def mask(inp: ModelReplyInput) -> HookDecision:
+        return Modify(inp.text.replace("key", "k*y"))
+
+    async def look(inp: ModelReplyInput) -> HookDecision:
+        seen.append(inp.text)
+        return Continue()
+
+    reg = reg_with(("mask", "post_model", mask), ("look", "post_model", look))
+    out = await run_model_hooks([reg.get("mask"), reg.get("look")], REPLY)
+    assert isinstance(out, Modify) and out.value.startswith("the k*y is")
+    assert seen == [out.value]
+
+
+async def test_model_hooks_deny_and_fail_closed() -> None:
+    async def no(inp: object) -> HookDecision:
+        return Deny("not today")
+
+    async def boom(inp: object) -> HookDecision:
+        raise RuntimeError("bug")
+
+    async def slow(inp: object) -> HookDecision:
+        await asyncio.sleep(1)
+        return Continue()
+
+    async def ask(inp: object) -> HookDecision:
+        return Ask({"why": "?"})
+
+    async def rewrite(inp: object) -> HookDecision:
+        return Modify("other")
+
+    reg = reg_with(("no", "pre_model", no), ("boom", "pre_model", boom),
+                   ("slow", "pre_model", slow), ("ask", "post_model", ask),
+                   ("rewrite", "pre_model", rewrite))  # fmt: skip
+    assert await run_model_hooks([reg.get("no")], ASKING) == Deny("not today")
+    for name, why in (("boom", "RuntimeError"), ("slow", "TimeoutError")):
+        out = await run_model_hooks([reg.get(name)], ASKING)
+        assert isinstance(out, Deny) and out.reason == f"hook_error:{name}:{why}"
+    out = await run_model_hooks([reg.get("ask")], REPLY)  # nothing to approve here
+    assert isinstance(out, Deny) and out.reason == "hook_error:ask:ask_not_allowed"
+    out = await run_model_hooks([reg.get("rewrite")], ASKING)  # pre_model can't modify
+    assert isinstance(out, Deny) and out.reason == "hook_error:rewrite:modify_not_allowed"
+
+
+async def test_the_built_in_reply_redaction_masks_a_key_the_model_writes() -> None:
+    hooks = default_hooks()
+    assert hooks.catalog()["redact_secrets_in_reply"] == "post_model"
+    out = await run_model_hooks([hooks.get("redact_secrets_in_reply")], REPLY)
+    assert isinstance(out, Modify) and "sk-" not in out.value and REDACTED in out.value
+    clean = ModelReplyInput("r", None, "chat", "nothing secret", [])
+    assert await run_model_hooks([hooks.get("redact_secrets_in_reply")], clean) == Continue()
+
+
+def test_a_changed_reply_keeps_its_other_blocks() -> None:
+    from agent_runtime.tools.middleware import _with_text
+
+    assert _with_text("old", "new") == "new"
+    blocks = [{"type": "reasoning", "reasoning": "r", "signature": "s"},
+              {"type": "text", "text": "old"}]  # fmt: skip
+    assert _with_text(blocks, "new") == [blocks[0], {"type": "text", "text": "new"}]

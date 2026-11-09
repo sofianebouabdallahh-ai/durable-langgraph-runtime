@@ -28,6 +28,8 @@ excepted, as above).
   connection, not your chats). With Tavily or Brave, the query goes to them under your
   key. Pages are fetched from the sites themselves. Code in the sandbox can't reach the
   internet at all.
+- **Notifications you approved**, to the webhook you set (`NOTIFY_WEBHOOK_URL`), signed
+  with your secret. With no webhook set, nothing is sent.
 - **Downloads from GitHub:** Nuria's code and images, when you install or update.
 - **Nothing else, and nothing on its own.**
   - Feedback opens GitHub's page only when you click. You see the text first, and submit it there yourself.

@@ -17,8 +17,10 @@ describe("parseMessage", () => {
     expect(parseMessage(view("interrupt", {}))).toMatchObject({ kind: null, tool: null, args: {} });
     expect(parseMessage(view("approval", { decision: "approve" }))).toMatchObject({ decision: "approve", reason: null });
     expect(parseMessage(view("approval", { decision: "maybe" }))).toMatchObject({ decision: "reject" });
-    expect(parseMessage(view("error", { reason: "x", budget_limited: true }))).toMatchObject({ reason: "x", budgetLimited: true });
-    expect(parseMessage(view("system", {}))).toMatchObject({ text: "" });
+    expect(parseMessage(view("error", { reason: "x", budget_limited: true }))).toMatchObject({ reason: "x", budgetLimited: true, canRetry: false });
+    expect(parseMessage(view("error", { reason: "error", can_retry: true }))).toMatchObject({ canRetry: true });
+    expect(parseMessage(view("system", {}))).toMatchObject({ text: "", retry: null });
+    expect(parseMessage(view("system", { text: "Tried again", retry: 2 }))).toMatchObject({ retry: 2 });
     expect(parseMessage(view("future", {}))).toBeNull();
   });
 });

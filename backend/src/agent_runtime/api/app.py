@@ -37,6 +37,7 @@ from agent_runtime.api.guard import BrowserOriginGuard, allowed_hosts
 from agent_runtime.api.kill_switch import kill_switch_router
 from agent_runtime.api.mcp import mcp_router
 from agent_runtime.api.models import models_router
+from agent_runtime.api.notifications import notifications_router
 from agent_runtime.api.onboarding import onboarding_router
 from agent_runtime.api.problems import ApiDraining, ResultNotReady
 from agent_runtime.api.schemas import (
@@ -187,6 +188,20 @@ async def run_report(
 )
 async def cancel_run(run_id: uuid.UUID, service: ServiceDep) -> RunView:
     return RunView.of(await service.cancel(run_id))
+
+
+@runs.post(
+    "/{run_id}/redrive",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=RunView,
+    summary="Try a failed run again (from its last checkpoint)",
+    description="H4. `failed` → `queued`: it resumes from its last saved step, and tool calls "
+    "already done aren't run again. For failures that might not happen again (`error`, "
+    "`infrastructure`, `max_reclaims`, `timeout`) of a top-level run; a chat turn only if "
+    "it is the chat's latest. The budgets already used still count. 409 otherwise.",
+)
+async def redrive_run(run_id: uuid.UUID, service: ServiceDep) -> RunView:
+    return RunView.of(await service.redrive(run_id))
 
 
 @runs.post(
@@ -487,6 +502,7 @@ def create_app(
     app.include_router(activity_router)
     app.include_router(audit_router)
     app.include_router(mcp_router)
+    app.include_router(notifications_router)
     app.include_router(telemetry_router)
     app.include_router(client_errors_router)
     app.include_router(graphs_router)

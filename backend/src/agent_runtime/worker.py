@@ -43,6 +43,7 @@ from agent_runtime.admin import AdminRepository
 from agent_runtime.config import Settings
 from agent_runtime.db import Pool
 from agent_runtime.graphs import GraphRegistry
+from agent_runtime.notifications.delivery import NotificationRelay
 from agent_runtime.queue import Delivery, QueueUnavailable, WorkQueue
 from agent_runtime.runs.executor import RunExecutor, default_owner
 from agent_runtime.runs.relay import OutboxRelay
@@ -85,6 +86,7 @@ class Worker:
         self.consumer = consumer or default_owner()
         self.concurrency = concurrency or settings.worker_concurrency
         self._relay = OutboxRelay(pool, queue, stale_s=settings.relay_stale_s)
+        self._notifications = NotificationRelay(pool, settings)  # the webhook (H4)
         self._bus = bus
         self._inflight: dict[str, asyncio.Task[None]] = {}
         self._draining = asyncio.Event()  # handed to executors as `release_requested`
@@ -103,6 +105,9 @@ class Worker:
             asyncio.create_task(self._every(self._settings.relay_interval_s, self._relay.sweep)),
             asyncio.create_task(self._every(self._settings.session_sweep_s, self._archive_idle)),
         ]
+        if self._notifications.enabled:
+            every = self._settings.notify_interval_s
+            background.append(asyncio.create_task(self._every(every, self._notifications.sweep)))
         log.info("worker %s up (concurrency %d)", self.consumer, self.concurrency)
         backoff = READ_BACKOFF_S
         try:

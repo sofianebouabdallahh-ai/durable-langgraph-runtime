@@ -10,7 +10,7 @@ image:
 # Secrets are never in values (R10.4): this Secret must exist in the namespace, with
 # POSTGRES_PASSWORD (the migrator), API_POSTGRES_PASSWORD, WORKER_POSTGRES_PASSWORD,
 # NURIA_SECRET_KEY, SEARXNG_SECRET (with search on), SANDBOXD_TOKEN (with the sandbox
-# on), and optionally OPENAI_API_KEY and GRAFANA_ADMIN_PASSWORD.
+# on), and optionally OPENAI_API_KEY, NOTIFY_WEBHOOK_SECRET and GRAFANA_ADMIN_PASSWORD.
 # Locally, infra/kind/cluster.sh creates it from .env.
 secretName: nuria-secrets
 
@@ -28,6 +28,9 @@ config:
   LOG_FORMAT: json
   LOG_LEVEL: INFO
   # A model server outside the cluster, e.g. Ollama on the host: set OLLAMA_BASE_URL.
+  # Notifications (H4): the webhook `notify` delivers to, after approval; empty: kept,
+  # not sent. Its signing secret is NOTIFY_WEBHOOK_SECRET in the Secret.
+  NOTIFY_WEBHOOK_URL: ""
 
 # The schema migration (R10.6): `runtime db init` (Alembic + LangGraph's tables +
 # the per-component logins), a pre-install and pre-upgrade hook, so new code never

@@ -40,6 +40,7 @@ TABLES = {
     "mcp_servers",
     "mcp_tools",
     "run_approvals",
+    "notification_deliveries",
 }
 
 
@@ -298,3 +299,34 @@ def test_a_retried_send_finds_its_turn(migrated_db: psycopg.Connection) -> None:
     migrated_db.execute(insert.replace("'completed'", "'cancelled'"), (uuid.uuid4(), session[0]))
     with pytest.raises(psycopg.errors.UniqueViolation):
         migrated_db.execute(insert, (uuid.uuid4(), session[0]))
+
+
+def test_notifications_from_before_delivery_are_never_sent_by_an_upgrade(
+    alembic_cfg: Config, test_db_url: str
+) -> None:
+    """H4: a notification queued before Nuria delivered them is backfilled as skipped (an
+    upgrade sends nothing by surprise); one queued after gets a pending delivery."""
+    url = test_db_url.replace("postgresql+psycopg", "postgresql")
+    command.upgrade(alembic_cfg, "head")
+    command.downgrade(alembic_cfg, "0023")
+    try:
+        with psycopg.connect(url, autocommit=True) as conn:
+            rid = _insert_run(conn, status="running")
+            conn.execute(
+                "INSERT INTO outbox_notifications (key, run_id, recipient, message, epoch) "
+                "VALUES (%s, %s, 'ops', 'old news', 0)", ("a" * 64, rid),
+            )  # fmt: skip
+        command.upgrade(alembic_cfg, "head")
+        with psycopg.connect(url, autocommit=True) as conn:
+            conn.execute(
+                "INSERT INTO outbox_notifications (key, run_id, recipient, message, epoch) "
+                "VALUES (%s, %s, 'ops', 'new', 0)", ("b" * 64, rid),
+            )  # fmt: skip
+            rows = conn.execute(
+                "SELECT key, status FROM notification_deliveries WHERE key IN (%s, %s) "
+                "ORDER BY key", ("a" * 64, "b" * 64),
+            ).fetchall()  # fmt: skip
+            conn.execute("DELETE FROM runs WHERE id = %s", (rid,))
+        assert rows == [("a" * 64, "skipped"), ("b" * 64, "pending")]
+    finally:
+        command.upgrade(alembic_cfg, "head")

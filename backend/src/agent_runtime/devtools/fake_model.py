@@ -26,6 +26,10 @@ work with no real model and no key:
   switches;
 - **reasoning:** every answer starts with "Thinking: <model> decides to …" as
   `reasoning_content`, like a reasoning model (the chat download shows it);
+- **a webhook receiver** (H4): POST /webhook keeps every delivery it gets (its
+  `webhook-id`, whether the signature verifies with NOTIFY_WEBHOOK_SECRET, the body);
+  GET /webhook/received lists them, DELETE clears them; POST /webhook/fail?times=N
+  makes the next N deliveries answer 500 (a receiver that's down);
 - **a log:** GET /calls lists what it served (model, which key, tools, the system
   prompt), so a test proves that two helpers used two connections (AC44), or that a
   skill reached the model. DELETE /calls clears it.
@@ -36,6 +40,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import re
 from collections.abc import AsyncIterator
 from typing import Any
@@ -46,6 +51,7 @@ from starlette.applications import Starlette
 from starlette.routing import Route
 
 from agent_runtime.devtools.fake_mcp import FakeMcp
+from agent_runtime.notifications.delivery import signing_key, verify
 
 HELPER = re.compile(r"^- `([a-z0-9-]+)`:", re.MULTILINE)
 SECTION = re.compile(r"^## (Your helpers|Your skills)\n(.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
@@ -104,6 +110,38 @@ def create_app(key: str | None = None, base_url: str = "http://fake-model:9999")
         if body is None:
             return JSONResponse({"detail": "not found"}, status_code=404)
         return HTMLResponse(body)
+
+    received: list[dict[str, Any]] = []
+    failing = [0]
+
+    @app.post("/webhook")
+    async def webhook(request: Request) -> Any:
+        body = await request.body()
+        secret = os.environ.get("NOTIFY_WEBHOOK_SECRET", "")
+        signed = verify(signing_key(secret), request.headers, body) if secret else None
+        received.append({
+            "id": request.headers.get("webhook-id"), "verified": signed,
+            "body": json.loads(body or b"null"), "answered": 500 if failing[0] else 200,
+        })  # fmt: skip
+        if failing[0]:
+            failing[0] -= 1
+            return JSONResponse({"detail": "down"}, status_code=500)
+        return {"ok": True}
+
+    @app.get("/webhook/received")
+    async def webhook_received() -> Any:
+        return received
+
+    @app.delete("/webhook/received")
+    async def webhook_clear() -> Any:
+        received.clear()
+        failing[0] = 0
+        return {"cleared": True}
+
+    @app.post("/webhook/fail")
+    async def webhook_fail(times: int = 1) -> Any:
+        failing[0] = max(times, 0)
+        return {"failing": failing[0]}
 
     @app.get("/calls")
     async def log() -> Any:

@@ -108,8 +108,8 @@ Guides for each OS, models, tools and troubleshooting: [docs/setup/](docs/setup/
 | **Search the web** | A private search engine (SearXNG) runs with Nuria: no key, no account. Tavily or Brave if you have a key |
 | **Read web pages** | Pages and PDFs as text, so the agent can quote and cite them. Public websites only |
 | **Run Python / use a terminal / work with files** | In a **disposable sandbox** per turn: no network, no secrets, read-only, with CPU, memory, process and time limits |
-| **Notes** | Things you ask the agent to remember |
-| **Notifications** | Sending a message to someone. Always asks you first |
+| **Notes** | Things you ask the agent to remember, which it can read back later, in any chat with it |
+| **Notifications** | Sending a message to someone, to your webhook. Always asks you first ([notifications](docs/setup/tools.md#notifications)) |
 | **Tools from MCP servers** | Anything a [Model Context Protocol](https://modelcontextprotocol.io) server offers: docs search, issue trackers, databases, your own services |
 
 **MCP servers** are added in Settings → Tools, by address, with a token if they need one. Nuria tests the connection and checks each tool's description for hidden instructions. Every MCP tool **asks you first** unless you mark a read-only one "runs without asking". Publishing pins each tool's exact definition, so a server that changes a tool behind your back gets that tool blocked until you review the change ([tools guide](docs/setup/tools.md)).
@@ -192,6 +192,7 @@ Each row is an automated scenario, run against real processes (`make demo-e2e`) 
 | **Redis loses a message**, or Pub/Sub is down | An outbox relay re-sends runs whose message was lost, and streams fall back to polling Postgres | Slower, never wrong |
 | A **helper's worker crashes**, or a fanned-out child run's | Each child run has its own lease and checkpoint, and recovers on its own | The parent waits for its children and resumes when they finish |
 | A **new version is deployed** mid-reply | Migrations are expand/contract, so old and new code run side by side during a rolling upgrade | Runs continue across the upgrade |
+| **Postgres restarts** mid-reply (a failover, an upgrade) | A database or queue error is the infrastructure's, not the run's: the run goes back to the queue and resumes from its last checkpoint, up to 5 times | The reply completes. If it never heals, the turn fails with **Try again**, which continues where it stopped |
 
 ## The core mechanisms
 
@@ -275,7 +276,7 @@ MCP tools ask first unless you mark a read-only one "runs without asking". The s
 ### Hooks: registered code, never inline
 
 Agents are data (Markdown files, or rows from the Studio), and data can't execute code. An agent definition **refers to hooks by name**. The hooks themselves are Python, registered in the runtime ([`tools/hooks.py`](backend/src/agent_runtime/tools/hooks.py)).
-- **Nine hook points:** `session_start`, `turn_start`, `pre_model`, `post_model`, `pre_tool`, `post_tool`, `turn_end`, `session_end`, `on_error`.
+- **Nine hook points:** `session_start`, `turn_start`, `pre_model`, `post_model`, `pre_tool`, `post_tool`, `turn_end`, `session_end`, `on_error`. A `post_model` hook can change the reply before you see it (the built-in `redact_secrets_in_reply` masks a key the model writes); `on_error` sees every failed turn.
 - **Hooks can only tighten.** They can continue, modify, deny, or ask for approval. They can never grant a tool or skip a check.
 - **They fail closed.** A hook that raises an exception or times out counts as a deny, so a broken redaction hook withholds data instead of leaking it.
 - **They're deterministic.** On resume LangGraph runs the step again, and the hooks must decide the same way.
@@ -352,7 +353,7 @@ Details, what runs where, and how to delete everything: [docs/security.md](docs/
 |---|---|---|
 | Backend unit + integration | Against real Postgres and Redis, never mocks of them: the state machine, fencing (including a control test proving an unfenced zombie *does* corrupt a run), the pipeline, the stream merger, migrations | 672 tests |
 | Runtime e2e (`make demo-e2e`) | Real worker and API processes, killed, frozen and drained mid-run | 15 scenarios |
-| Container e2e | The Compose stack as testers run it: a worker killed mid-reply, mid-sandbox and mid-MCP-call; least-privilege database logins | 5 scenarios |
+| Container e2e | The Compose stack as testers run it: a worker killed mid-reply, mid-sandbox and mid-MCP-call; Postgres restarted mid-reply; a notification delivered to a webhook; least-privilege database logins; foreign hosts and cross-site requests refused | 8 scenarios |
 | UI unit | Components and the stream reducer | 74 tests |
 | Browser (Playwright) | The whole app in a real browser, against a scripted model | 56 tests |
 | Kubernetes e2e | The Helm install on kind, a drain mid-reply | |
