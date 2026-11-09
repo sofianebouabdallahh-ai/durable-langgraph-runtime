@@ -1,6 +1,6 @@
 # Phase H1 — Approvals you can trust
 
-**Completed:** 2026-11-08 · **Branch:** `feat/h1-approvals` · **Plan:** [plans/phase-H1.md](../plans/phase-H1.md) · **Tests:** backend 685 (+13) · UI unit +1 · browser 57 (+1) · runtime e2e 16 scenarios (+1)
+**Completed:** 2026-11-08 · **Branch:** `feat/h1-approvals` · **Plan:** [plans/phase-H1.md](../plans/phase-H1.md) · **Tests:** backend 685 (+13) · UI unit +1 · browser 57 (+1) · runtime e2e 15 scenarios (+1)
 
 Found by the platform review of 2026-11-08: approvals, the guardrail Nuria leads with, could be skipped after a crash and broke when two were asked at once.
 
@@ -39,7 +39,7 @@ Found by the platform review of 2026-11-08: approvals, the guardrail Nuria leads
 | 5 | A call that changed isn't run | ✅ Pipeline: hash mismatch → not run; executor: changed hash → superseded and asked again |
 | 6 | Edits are checked | ✅ Pipeline: hook deny, hook modify and policy deny all apply to edits |
 | 7 | Runs paused before the upgrade | ✅ Integration: decided once → asked again bound to the id → done exactly once |
-| 8 | Quality | ✅ Backend 685 passed; lint, mypy --strict, agent validation clean; UI lint/types/tests/build; all 16 runtime e2e scenarios; the original approval e2e 5/5 |
+| 8 | Quality | ✅ Backend 685 passed; lint, mypy --strict, agent validation clean; UI lint/types/tests/build; all 15 runtime e2e scenarios; the original approval e2e 5/5 |
 
 **Browser suite against a stack built from this branch:**
 - 57/57 in run 1.

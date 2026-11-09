@@ -223,14 +223,14 @@ async def test_a_turn_after_one_that_ended_mid_tool_call_is_repaired(
     reject. The next turn first closes them (as its own `tool_result` rows)."""
     service = sessions(pool, test_settings)
     sid = await chat(pool, test_settings)
+    same = call("save_note", text="same")
     sent = await service.send(
         sid,
-        "two notes",
-        {"max_tool_calls": 1},
-        script=[tools(call("save_note", text="one"), call("save_note", text="two"))],
+        "loop",  # the 3rd identical call fails the turn mid-step (loop_detected)
+        script=[tools(same), tools(same), tools(same, call("save_note", text="two"))],
     )
     failed = await RunExecutor(pool, test_settings, GRAPHS).execute(sent.run.id)
-    assert (failed.status, failed.reason) == (S.FAILED, "budget:tool_calls")
+    assert (failed.status, failed.reason) == (S.FAILED, "loop_detected")
     state = await thread_messages(pool, sid)
     assert len(state[-1].tool_calls) == 2  # the dangling AI message
 

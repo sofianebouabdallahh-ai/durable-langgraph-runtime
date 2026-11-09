@@ -252,7 +252,7 @@ class ActivityRepository:
             f"""
             SELECT u.model, sum(u.calls) AS calls, sum(u.tokens_in) AS tokens_in,
                    sum(u.tokens_out) AS tokens_out, sum(u.cost) AS cost,
-                   sum(u.duration_ms) AS duration_ms
+                   sum(u.duration_ms) AS duration_ms, bool_or(u.estimated) AS estimated
             FROM run_model_usage u WHERE u.run_id IN ({TURN_RUNS})
             GROUP BY u.model ORDER BY sum(u.calls) DESC
             """,
@@ -266,6 +266,7 @@ class ActivityRepository:
                 "tokens_out": int(r["tokens_out"]),
                 "cost": _num(r["cost"]),
                 "avg_ms": round(int(r["duration_ms"]) / int(r["calls"])) if r["calls"] else None,
+                "estimated": bool(r["estimated"]),
             }
             for r in rows
         ]
@@ -372,7 +373,7 @@ class ActivityRepository:
     async def model_usage(self, run_id: uuid.UUID) -> list[dict[str, Any]]:
         """One run's model calls, per model (the turn detail)."""
         rows = await self._rows(
-            "SELECT model, calls, tokens_in, tokens_out, cost, duration_ms "
+            "SELECT model, calls, tokens_in, tokens_out, cost, duration_ms, estimated "
             "FROM run_model_usage WHERE run_id = %(id)s ORDER BY calls DESC",
             {"id": run_id},
         )

@@ -23,6 +23,16 @@ const RANGES: readonly { value: Range; label: string }[] = [
 const SLOTS = ["var(--series-1)", "var(--series-2)", "var(--series-3)", "var(--series-4)", "var(--series-5)"];
 
 export const money = (n: number) => (n === 0 ? "$0" : n < 0.01 ? "<$0.01" : `$${n.toFixed(2)}`);
+
+/** A cost, marked when some of it was priced by the estimate for a model with no known price. */
+export function Cost({ value, estimated }: { value: number; estimated?: boolean }) {
+  if (!estimated) return <>{money(value)}</>;
+  return (
+    <span title="Estimated: this model has no known price, so a deliberately high one was used. Set its price in Settings → Models." data-testid="cost-estimated">
+      ≈{money(value)} <span className="text-xs text-amber-700 dark:text-amber-400">estimated</span>
+    </span>
+  );
+}
 export const seconds = (s: number | null | undefined) =>
   s == null ? "—" : s < 60 ? `${s.toFixed(1)} s` : `${String(Math.floor(s / 60))} min ${String(Math.round(s % 60))} s`;
 const when = (iso: string) => new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -246,7 +256,9 @@ function Breakdowns({ data, onAgent }: { data: Activity; onAgent: (agent: string
                   <td className={td}>{compact(m.calls)}</td>
                   <td className={td}>{compact(m.tokens_in)} · {compact(m.tokens_out)}</td>
                   <td className={td}>{m.avg_ms == null ? "—" : seconds(m.avg_ms / 1000)}</td>
-                  <td className={td}>{money(m.cost)}</td>
+                  <td className={td}>
+                    <Cost value={m.cost} estimated={m.estimated} />
+                  </td>
                 </tr>
               ))}
               {data.models.length === 0 && <tr><td colSpan={5} className="py-4 text-stone-500">No model calls in this range.</td></tr>}

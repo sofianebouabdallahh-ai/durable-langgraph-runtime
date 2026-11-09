@@ -28,7 +28,6 @@ from agent_runtime.runs.store import RunRepository
 from agent_runtime.skills import tools as skill_tools
 from agent_runtime.skills.store import SkillVersion
 from agent_runtime.tools.builtin import NotifyArgs, notify
-from agent_runtime.tools.invocations import BudgetExceeded
 from agent_runtime.tools.pipeline import Grant, ToolCall, ToolPipeline, ToolRunContext
 from agent_runtime.tools.policy import RiskClassPolicy
 from agent_runtime.tools.spec import ToolArgs, ToolContext, ToolRegistry
@@ -164,8 +163,10 @@ async def test_planted_instructions_change_nothing(
     elif expect == "over_limit":
         await pipeline.run(obey, ctx)
         await pipeline.run(ToolCall(id="c2", name=tool, args={"text": "more"}, index=2), ctx)
-        with pytest.raises(BudgetExceeded, match="max_tool_calls=3"):
-            await pipeline.run(ToolCall(id="c3", name=tool, args={"text": "x"}, index=3), ctx)
+        over = await pipeline.run(ToolCall(id="c3", name=tool, args={"text": "x"}, index=3), ctx)
+        # The budget holds: the call over it isn't made (H2: a tool error, not a crash).
+        assert over.status == "error" and "Deny(budget)" in over.content
+        assert "max_tool_calls=3" in over.content
         assert lab.ran[tool] == 2
     else:
         pytest.fail(f"unknown expectation {expect!r}")

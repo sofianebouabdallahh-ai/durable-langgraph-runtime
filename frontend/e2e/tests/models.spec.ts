@@ -15,6 +15,7 @@ const API_REPLICAS = Number(process.env.API_REPLICAS ?? 2);
 const WORKERS = Number(process.env.WORKERS ?? 2);
 
 async function addModel(page: Page, name: string, key: string, model: string) {
+  added.push(name);
   await page.goto("/#/settings/models");
   await page.getByRole("button", { name: "Add a model" }).click();
   await page.getByRole("button", { name: /Other service/ }).click();
@@ -34,8 +35,17 @@ async function resetDefault(request: APIRequestContext) {
   await request.put("/api/models/default", { data: { connection_id: null } });
 }
 
+// The connections a test added, removed after it: repeated runs on one stack mustn't
+// pile them up (155 of them made the Models page's accessibility scan take minutes).
+const added: string[] = [];
+
 test.afterEach(async ({ request }) => {
   await resetDefault(request); // the other suites use the demo model
+  const listed = (await (await request.get("/api/models/connections")).json()) as { id: string; display_name: string }[];
+  for (const c of listed.filter((c) => added.includes(c.display_name))) {
+    await request.delete(`/api/models/connections/${c.id}`);
+  }
+  added.length = 0;
   restoreStack(API_REPLICAS, WORKERS);
 });
 
@@ -71,6 +81,34 @@ test("add a model, make it the default, chat with it; the key appears nowhere", 
   for (const service of ["api", "worker", "ui"]) {
     for (const id of containers(service)) expect(docker("logs", id)).not.toContain(key);
   }
+});
+
+test("H2: set a model's price in Settings; a turn on it costs by that price", async ({ page, request }) => {
+  const stamp = Date.now().toString(36);
+  const name = `Priced ${stamp}`;
+  const card = await addModel(page, name, `e2e-key-${stamp}`, "fake-a");
+  await card.getByRole("button", { name: /Prices, per 1 million tokens/ }).click(); // folded by default
+  const row = card.getByTestId("model-prices").getByRole("row").filter({ hasText: "fake-a" });
+  await row.getByRole("button", { name: "Set the price of fake-a" }).click();
+  await row.getByLabel("Input price of fake-a").fill("1000");
+  await row.getByLabel("Output price of fake-a").fill("2000");
+  await row.getByRole("button", { name: "Save" }).click();
+  await expect(row).toContainText("$1000");
+  await expect(row).toContainText("set here");
+
+  await page.getByRole("combobox", { name: "Default model" }).selectOption({ label: `${name} · fake-a` });
+  const sid = await startChat(page, "Plan a day in Lisbon");
+  await expect(page.getByTestId("assistant-message").last()).toContainText("Answered by fake-a", { timeout: 60_000 });
+  await waitTurnOver(request, sid);
+  const runId = (await transcript(request, sid)).find((m) => m.run_id)?.run_id;
+  expect(runId).toBeTruthy();
+  const turn = (await (await request.get(`/api/activity/turns/${String(runId)}`)).json()) as { cost: number };
+  expect(turn.cost).toBeGreaterThan(0); // 20 in + 8 out per call at $1000 / $2000 per 1M tokens
+
+  await page.goto("/#/settings/models");
+  await card.getByRole("button", { name: /Prices, per 1 million tokens/ }).click(); // folded again
+  await card.getByRole("button", { name: "Use the default price of fake-a" }).click();
+  await expect(row).not.toContainText("set here");
 });
 
 test("AC44: an agent and its helper answer through two different connections", async ({ page, request }) => {

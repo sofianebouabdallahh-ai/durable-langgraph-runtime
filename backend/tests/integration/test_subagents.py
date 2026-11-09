@@ -439,14 +439,19 @@ async def test_the_runs_budget_bounds_its_subagents_soft_then_hard(
     requests: list[list[BaseMessage]],
 ) -> None:  # fmt: skip
     """AC42: max_model_calls=6 for the whole run. At 80 % the scribe is asked to wrap
-    up; at 6 the run's hard limit stops it and the run fails."""
+    up; at 6 the run's hard limit stops it. The main agent still gets its one wrap-up
+    call past the limit (H2), so the run ends failed(budget) WITH an answer."""
     script = [turn(spawn("scribe")), turn(wait(0)), say("ok")]
     subs = {"scribe": [turn(call("report_progress", message="started"))]
             + [turn(call("save_note", text=f"n{i}")) for i in range(6)]}  # fmt: skip
     done, _ = await run_delegator(pool, test_settings, script, subs, {"max_model_calls": 6})
     assert (done.status, done.reason) == (S.FAILED, "budget:model_calls")
     model_calls, _ = await counters(pool, done.id)
-    assert model_calls == 6  # never past the run's limit, across main + sub-agent
+    # The limit across main + sub-agent, plus the main agent's one wrap-up call (H2).
+    assert model_calls == 6 + 1
+    async with pool.connection() as conn:
+        output = await RunRepository(conn).get_result(done.id)
+    assert output is not None and output["output"]["budget_limited"] is True  # an answer
     # The main agent spends 2 calls (spawn, wait) and then blocks in wait_subagents
     # until the scribe ends, so the scribe is always the one that hits the limit:
     # its 5th call would be the run's 7th.

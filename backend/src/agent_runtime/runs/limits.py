@@ -75,14 +75,15 @@ def resolve_limits(
     """ceiling ≥ profile ≥ options. An option above its CEILING is rejected (422);
     otherwise the effective limit is the tightest of the three that are set."""
     profile = profile or Profile()
-    agent = profile.max_model_calls is not None  # agent graphs have a model-call profile
+    # Every ceiling always applies (phase H2): one that depended on the profile setting
+    # its own limit let an agent with no `limits` run with none, and any option pass.
     ceilings: dict[str, float | None] = {
         "timeout_s": settings.run_timeout_s,
         "max_steps": settings.run_max_steps,
-        "max_model_calls": settings.ceiling_model_calls if profile.max_model_calls else None,
-        "max_tool_calls": settings.ceiling_tool_calls if profile.max_tool_calls else None,
-        "max_tokens": settings.ceiling_tokens if agent else None,
-        "max_cost_usd": settings.ceiling_cost_usd if agent else None,
+        "max_model_calls": settings.ceiling_model_calls,
+        "max_tool_calls": settings.ceiling_tool_calls,
+        "max_tokens": settings.ceiling_tokens,
+        "max_cost_usd": settings.ceiling_cost_usd,
         "max_children": settings.run_max_children,
     }
     resolved: dict[str, Any] = {}

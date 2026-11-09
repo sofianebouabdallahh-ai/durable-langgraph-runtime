@@ -5,6 +5,7 @@ import { api, unwrap, type Schemas } from "../api/client";
 
 export type Connection = Schemas["ConnectionView"];
 export type Kind = Connection["kind"];
+export type Price = Schemas["PriceView"];
 
 export const modelKeys = { connections: ["models", "connections"] as const, default: ["models", "default"] as const };
 

@@ -4,6 +4,26 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### H2 — Budgets that bind
+#### Fixed
+- **Cost budgets work with real models.** Every model had cost $0 unless `MODEL_PRICES`
+  listed its exact (often dated) id, so cost budgets and the $2 ceiling never fired.
+  Each turn now pins a price per model: the connection's own (new: Settings → Models →
+  Prices), `MODEL_PRICES`, Nuria's dated price list (matched by prefix), free for a local
+  model, or a deliberately high **estimate**, shown as "estimated" in Activity.
+- **Every ceiling applies to every run.** An agent with no limits of its own had no
+  tool-call ceiling, and `max_tool_calls: 1000000` was accepted; now it's a 422.
+- **Reaching a limit ends with an answer.** The wrap-up turn is the one call allowed past
+  a limit; a tool call over budget isn't made (the model is told why) instead of failing
+  the step; helpers wrap up on tokens and cost too, not only on calls.
+- **Usage is never lost.** A model call's tokens and cost are written the moment it
+  returns, so a call made by a step that a crash then lost is still counted.
+- **A failed tool call can be retried** without counting as a loop; the third identical
+  failure ends the run.
+
+#### Changed
+- **Migration 0023:** `model_connections.prices`, `run_model_usage.estimated`.
+
 ### H1 — Approvals you can trust
 #### Fixed
 - **A crash can no longer turn into an approval.** If a worker died after a tool asked

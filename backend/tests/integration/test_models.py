@@ -361,3 +361,43 @@ async def test_a_turn_on_a_local_model_gets_more_time(
     assert limits["timeout_s"] == expected  # the default is 300
     assert all(b["local"] for b in bindings.values())
     await c("PUT", "/models/default", json={"connection_id": None})
+
+
+async def test_h2_a_turn_is_priced_by_its_connection_and_keeps_that_price(
+    api: Server, fake: Fake, pool: Pool, test_settings: Settings
+) -> None:
+    """Phase H2: a model on this machine starts free; a price set in Settings → Models
+    wins; a turn keeps the price it started with, even if the price changes."""
+    c = Seen(api.client)
+    added = await connect(c, fake, "Priced", KEY_A, "fake-a")
+    assert added["prices"]["fake-a"]["source"] == "local"  # the fake runs on 127.0.0.1
+    priced = await c("PATCH", f"/models/connections/{added['id']}", json={
+        "prices": {"fake-a": {"input_per_mtok": 1000.0, "output_per_mtok": 2000.0}}})  # fmt: skip
+    assert priced.status_code == 200, priced.text
+    assert priced.json()["prices"]["fake-a"] == {
+        "input_per_mtok": 1000.0, "output_per_mtok": 2000.0, "source": "connection"}  # fmt: skip
+    bad = await c("PATCH", f"/models/connections/{added['id']}", json={
+        "prices": {"fake-a": {"input_per_mtok": -1, "output_per_mtok": 1}}})  # fmt: skip
+    assert bad.status_code == 422
+
+    await c("PUT", "/models/default", json={"connection_id": added["id"], "model": "fake-a"})
+    session = (await c("POST", "/sessions", json={"agent": "assistant"})).json()
+    queued = (await c("POST", f"/sessions/{session['id']}/messages", json={"content": "hi"})).json()
+    # The price changes after the turn was created: the turn keeps the one it started with.
+    await c("PATCH", f"/models/connections/{added['id']}", json={"prices": {"fake-a": None}})
+    done = await run(pool, test_settings, queued["run_id"])
+    assert done.status is S.COMPLETED
+    assert done.model_bindings  # pinned when the turn was created, with its price
+    assert {b["price"]["source"] for b in done.model_bindings.values()} == {"connection"}
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT tokens_in, tokens_out, cost, estimated FROM run_model_usage WHERE run_id = %s",
+            (done.id,),
+        )
+        rows = await cur.fetchall()
+    tokens_in = sum(r["tokens_in"] for r in rows)
+    tokens_out = sum(r["tokens_out"] for r in rows)
+    expected = (tokens_in * 1000.0 + tokens_out * 2000.0) / 1e6
+    assert tokens_in > 0 and float(sum(r["cost"] for r in rows)) == pytest.approx(expected)
+    assert not any(r["estimated"] for r in rows)
+    await c("PUT", "/models/default", json={"connection_id": None})

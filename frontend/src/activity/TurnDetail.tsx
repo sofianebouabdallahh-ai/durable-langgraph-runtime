@@ -6,7 +6,7 @@ import { href } from "../app/route";
 import { WhatHappened } from "../chat/WhatHappened";
 import { Pill, Spinner } from "../ui/primitives";
 import { agentLabel, failureReason } from "../ui/words";
-import { money, seconds } from "./ActivityPage";
+import { Cost, money, seconds } from "./ActivityPage";
 import { useTurn } from "./api";
 import { compact } from "./charts";
 
@@ -57,7 +57,9 @@ export function TurnDetail({ runId }: { runId: string }) {
                     <td className="py-2 pr-4">{u.calls}</td>
                     <td className="py-2 pr-4">{compact(u.tokens_in)} · {compact(u.tokens_out)}</td>
                     <td className="py-2 pr-4">{seconds(u.duration_ms / 1000)}</td>
-                    <td className="py-2 pr-4">{money(u.cost)}</td>
+                    <td className="py-2 pr-4">
+                      <Cost value={u.cost} estimated={u.estimated} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
