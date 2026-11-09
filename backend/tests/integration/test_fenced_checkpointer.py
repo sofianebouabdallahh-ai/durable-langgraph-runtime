@@ -12,7 +12,7 @@ import operator
 import uuid
 from collections import Counter
 from collections.abc import Awaitable, Callable
-from typing import Annotated, Protocol, TypedDict
+from typing import Annotated, Any, Protocol, TypedDict
 
 import psycopg
 import pytest
@@ -162,28 +162,45 @@ async def test_fence_check_serialises_with_a_takeover(pool: Pool) -> None:
 
 
 async def test_concurrent_zombie_and_owner_never_both_commit(pool: Pool) -> None:
-    """Race a stale-epoch write against a takeover many times: the stale write
-    either commits before the takeover or is rejected after it, never after."""
+    """Race a stale-epoch write against a takeover many times: the stale write either
+    commits before the takeover or is rejected after it, never after.
+
+    Checked in the database, not by the order Python records the outcomes in (the
+    takeover's UPDATE can commit before its `append` runs, so that order says nothing):
+    the zombie writes a marker inside its fenced transaction, and the takeover's UPDATE
+    returns what it saw. A zombie may only have committed if the takeover saw its write."""
     for _ in range(25):
         run_id = await _run_with_epoch(pool, epoch=1)
-        order: list[str] = []
+        outcome: dict[str, Any] = {}
 
-        async def zombie_write(rid: uuid.UUID = run_id, log: list[str] = order) -> None:
+        async def zombie_write(rid: uuid.UUID = run_id, out: dict[str, Any] = outcome) -> None:
             async with pool.connection() as conn:
                 try:
                     async with conn.transaction():
                         await check_fence(conn, Fence(rid, epoch=1))
-                        log.append("zombie-committed")
+                        await conn.execute(
+                            'UPDATE runs SET options = \'{"zombie": "wrote"}\' WHERE id = %s',
+                            (rid,),
+                        )
+                    out["zombie"] = "committed"
                 except FencedError:
-                    log.append("zombie-rejected")
+                    out["zombie"] = "rejected"
 
-        async def takeover(rid: uuid.UUID = run_id, log: list[str] = order) -> None:
+        async def takeover(rid: uuid.UUID = run_id, out: dict[str, Any] = outcome) -> None:
             async with pool.connection() as conn:
-                await conn.execute("UPDATE runs SET epoch = epoch + 1 WHERE id = %s", (rid,))
-                log.append("takeover")
+                cur = await conn.execute(
+                    "UPDATE runs SET epoch = epoch + 1 WHERE id = %s "
+                    "RETURNING options->>'zombie' AS zombie",
+                    (rid,),
+                )
+                row = await cur.fetchone()
+                out["takeover_saw"] = row["zombie"] if row else None
 
         await asyncio.gather(zombie_write(), takeover())
-        assert order in (["zombie-committed", "takeover"], ["takeover", "zombie-rejected"])
+        if outcome["zombie"] == "committed":
+            assert outcome["takeover_saw"] == "wrote"  # it committed BEFORE the takeover
+        else:
+            assert outcome["takeover_saw"] is None  # rejected: it wrote nothing, ever
 
 
 async def test_unknown_run_is_fenced(pool: Pool) -> None:
