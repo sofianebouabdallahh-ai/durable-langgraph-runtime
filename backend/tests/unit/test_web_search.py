@@ -48,3 +48,23 @@ async def test_nothing_found_by_engines_that_answered_is_just_nothing(
     monkeypatch.setattr(search, "_request", answering({"results": [], "unresponsive_engines": []}))
     hits = await SearxngProvider("http://searxng:8080").search("qzxv", 5)
     assert hits == [] and unanswered_note(hits) is None
+
+
+async def test_the_settings_test_names_the_engines_that_didnt_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Settings → Tools said "answered, but with no results" while every engine refused it.
+    from agent_runtime.web.settings import ToolSettings
+
+    monkeypatch.setattr(
+        search, "_request", answering({"results": [], "unresponsive_engines": BLOCKED})
+    )
+    settings = object.__new__(ToolSettings)
+
+    async def provider() -> SearxngProvider:
+        return SearxngProvider("http://searxng:8080")
+
+    monkeypatch.setattr(settings, "provider", provider)
+    ok, message, hits = await settings.test()
+    assert (ok, hits) == (False, [])
+    assert message.startswith("No results: brave, duckduckgo didn't answer")

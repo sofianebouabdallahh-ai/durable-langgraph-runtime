@@ -110,6 +110,9 @@ function addMessage(state: ChatState, message: Message): ChatState {
   const next = [...messages.slice(0, i), message, ...messages.slice(i)];
   let lastSeq = state.lastSeq;
   for (let j = i; j < next.length && next[j]?.seq === lastSeq + 1; j++) lastSeq += 1;
+  // A tool call ends the draft too (see the invariants). A step's text is its own
+  // `assistant` row, before its tool calls, so nothing streamed is lost; an earlier step's
+  // rows arriving late (a reconnect's back-fill) clear the live draft until its reply lands.
   const replacesDraft = (message.type === "assistant" || message.type === "tool_call") && state.draft?.runId === message.runId;
   return { ...state, messages: next, lastSeq, draft: replacesDraft ? null : state.draft };
 }

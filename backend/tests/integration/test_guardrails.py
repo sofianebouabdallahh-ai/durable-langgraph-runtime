@@ -326,8 +326,9 @@ async def test_a_claim_after_the_tool_ran_or_twice_is_left_alone(
 
 
 async def test_near_a_limit_a_claim_stands_rather_than_fail_the_turn(
-    pool: Pool, test_settings: Settings, checkpoint_tables: None
-) -> None:
+    pool: Pool, test_settings: Settings, checkpoint_tables: None,
+    requests: list[tuple[list[BaseMessage], int]],
+) -> None:  # fmt: skip
     """Asking once more could cross the limit and fail a turn whose answer is in hand
     (the review): at the soft limit, the reply stands."""
     claim = {"content": "I've saved that in my notes."}
@@ -336,6 +337,7 @@ async def test_near_a_limit_a_claim_stands_rather_than_fail_the_turn(
     )
     assert done.status is S.COMPLETED
     assert (await counters(pool, done.id))["model_calls"] == 1
+    assert not any("Call save_note now" in str(m.content) for ms, _ in requests for m in ms)
 
 
 # ---------------------------------------------------------- R14.7: retries

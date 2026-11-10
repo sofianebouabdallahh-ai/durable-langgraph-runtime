@@ -392,6 +392,7 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
         """The model asked once more, after a reply saying `tool` did what it didn't. If
         that call can't be made (a budget, the provider), the first reply stands: a turn
         that ends with it beats one that fails."""
+        from agent_runtime.runs.executor import CancelRequested, LeaseLost, ReleaseRequested
         from agent_runtime.subagents.orchestrator import SubagentCancelled
 
         logs.event(log, "a reply says a tool did what it didn't: asking once more",
@@ -404,8 +405,8 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
 
         try:
             return await self._call(ctx, honest, charge, attempts)
-        except (FencedError, SubagentCancelled):
-            raise  # taken over, or stopped: never a fallback
+        except (FencedError, LeaseLost, CancelRequested, ReleaseRequested, SubagentCancelled):
+            raise  # taken over, stopped (Stop raises from the token stream), handed over
         except Exception:
             log.warning("asking once more failed; keeping the first reply", exc_info=True)
             return reply
@@ -619,7 +620,8 @@ def _tool_names(request: ModelRequest[RunContext]) -> set[str]:
 
 _CALL_OPEN = re.compile(r"([A-Za-z_][\w-]*)\s*\(\s*")
 _FENCE = re.compile(r"^```[\w-]*\s*|\s*```$")
-_TAGGED = re.compile(r"<tool_call>(.*?)</tool_call>", re.DOTALL)
+# A last block may lack its closing tag (a small model stops, or is cut off).
+_TAGGED = re.compile(r"<tool_call>(.*?)(?:</tool_call>|\Z)", re.DOTALL)
 
 
 def _text_calls(text: str, names: set[str]) -> list[dict[str, Any]] | None:
@@ -697,36 +699,49 @@ def _from_text_calls(response: ModelResponse[Any], names: set[str]) -> ModelResp
 # What a reply may claim a tool did ("I've saved that", "has been sent"), by tool; what
 # the person's message asks for, for that claim to be one; and words that undo a claim
 # ("nothing has been saved", "as I noted").
-_I = r"\b(?:I(?:'ve|\u2019ve| have| just)?\s+"
+_APOS = "['\u2019]"
+_I = r"\b(?:I(?:" + _APOS + r"ve| have| just)?\s+(?:\w+ly\s+|also\s+|now\s+|just\s+)?"
 # A reply that names the tool as called ("save_note called with…") claims it too.
 _CALLED = r"|called\s+{t}|{t}\s+(?:was\s+|has\s+been\s+)?called"
 _CLAIMS = {
     "save_note": re.compile(
-        _I + r"(?:saved|noted|stored|remembered)|(?:has|have)\s+been\s+(?:saved|noted|stored)"
+        _I + r"(?:saved|noted|stored|recorded|remembered)"
+        r"|(?:has|have)\s+been\s+(?:saved|noted|stored)"
         + _CALLED.format(t="save_note") + r")\b", re.IGNORECASE,
     ),
     "notify": re.compile(
-        _I + r"(?:sent|notified)|(?:has|have)\s+been\s+sent" + _CALLED.format(t="notify")
-        + r")\b", re.IGNORECASE,
+        _I + r"(?:sent|notified|let\s+\w+(?:\s+\w+)?\s+know)"
+        r"|(?:has|have)\s+been\s+(?:sent|notified)|\b(?:message|notification)\s+sent"
+        + _CALLED.format(t="notify") + r")\b", re.IGNORECASE,
     ),
 }  # fmt: skip
+# Asked of the agent: not "send me…" or "tell me…", the answer itself; not "keep it short".
 _ASKS = {
     "save_note": re.compile(
-        r"\b(?:remember|note|notes|save|keep|don'?t\s+forget|write\s+(?:it|this|that)\s+down"
-        r"|jot)\b", re.IGNORECASE,
+        r"\b(?:remember|note|notes|save|keep\s+in\s+mind|keep\s+track|don" + _APOS
+        + r"?t\s+forget|write\s+(?:it|this|that)\s+down|jot)\b", re.IGNORECASE,
     ),
     "notify": re.compile(
-        r"\b(?:notify|notification|send|tell|message|let\s+\w+\s+know|ping|email|text)\b",
-        re.IGNORECASE,
+        r"\b(?:notify|notification|(?:send|tell|text|message|ping|email)(?!\s+me\b)"
+        r"|let\s+(?!me\b)\w+\s+know)\b", re.IGNORECASE,
     ),
 }  # fmt: skip
-_UNDONE = re.compile(
-    r"\b(?:no|not|nothing|never|yet\s+to)\b|n(?:'|\u2019)t\b|\bas\s*$", re.IGNORECASE
+# A question about what was done before ("Did you save that?", "Do you remember…?").
+_ABOUT_BEFORE = re.compile(
+    r"^\W*(?:did|have|has|had|was|were|what\s+did|when\s+did|do\s+you\s+(?:still\s+)?"
+    r"remember|can\s+you\s+remember\s+what)\b",
+    re.IGNORECASE,
 )
-
-
+_UNDONE = re.compile(
+    r"\b(?:no|not|nothing|never|yet\s+to)\b|n" + _APOS + r"t\b|\bas\s*$", re.IGNORECASE
+)
+_QUOTED = re.compile(r"\"[^\"]*\"|\u201c[^\u201d]*\u201d")
 # "I" that starts a clause ("Great, I've sent it"), not one inside it ("the link I sent").
-_CLAUSE = re.compile(r"(?:^|[,:;]|\b(?:and|so|ok|okay|great|done|sure|yes|alright))\s*$", re.I)
+_CLAUSE = re.compile(
+    r"(?:^|[,:;\u2014\u2013-]|\b(?:and|so|ok|okay|great|done|sure|yes|alright|thanks))\s*$",
+    re.IGNORECASE,
+)
+_CLAUSE_BREAK = re.compile(r"[,;:\u2014\u2013]|\s-\s")
 
 
 def _claimed(tool: str, text: str) -> bool:
@@ -734,7 +749,13 @@ def _claimed(tool: str, text: str) -> bool:
         start = max(text.rfind(c, 0, found.start()) for c in ".!?\n") + 1
         before = text[start : found.start()]
         first_person = found.group(0)[:1] in "Ii" and found.group(0)[1:2] in " '\u2019"
-        if _UNDONE.search(before) or (first_person and not _CLAUSE.search(before)):
+        if first_person and not _CLAUSE.search(before):
+            continue
+        # Only this clause can undo it, and not words in quotes: "No problem, I've saved
+        # it" and 'Note: "Sam does not eat meat" has been saved' are claims.
+        clause = _QUOTED.sub("", before)
+        breaks = list(_CLAUSE_BREAK.finditer(clause))
+        if _UNDONE.search(clause[breaks[-1].end() :] if breaks else clause):
             continue
         return True
     return False
@@ -746,9 +767,9 @@ def _claims_undone(
     """The tool a final reply says did something (a note saved, a message sent) that it
     didn't, else None: the person asked for it in their message, the agent has the tool,
     and no such call succeeded since that message. What qwen2.5:7b says instead of
-    calling save_note, often; it's asked once more, naming the tool (measured: naming it
-    got the note saved; a general note didn't). An answer about notes it read back this
-    turn (recall_notes) isn't a claim."""
+    calling save_note, often; it's asked once more, naming the tool. Not a claim: an
+    answer to a question about what was done before ("Did you save that?"), nor one
+    about notes it read back this turn (recall_notes)."""
     if not _is_final(response):
         return None
     done: set[str] = set()
@@ -759,8 +780,10 @@ def _claims_undone(
             break
         if isinstance(m, ToolMessage) and m.status != "error" and isinstance(m.name, str):
             done.add(m.name)
-    if "recall_notes" in done:
+    if _ABOUT_BEFORE.search(asked):
         return None
+    if "recall_notes" in done:
+        done.add("save_note")  # what it says it saved, it read back
     text = [m for m in response.result if isinstance(m, AIMessage)][-1].text
     return next((t for t in _CLAIMS if t in names and t not in done
                  and _ASKS[t].search(asked) and _claimed(t, text)), None)  # fmt: skip
@@ -782,8 +805,9 @@ EMPTY_REPLY = (
     "call one of your tools."
 )
 # Asked only when the person's message asked for it (see _claims_undone), so it can say
-# plainly that it isn't done: measured on qwen2.5:7b, a note that left the model a way out
-# ("if they asked you to…") got no note saved; this one, 6 of 8.
+# plainly that it isn't done. Measured on qwen2.5:7b, over 15 "remember…" messages: 8
+# claims were asked again; a note that left a way out ("if they asked you to…") got none
+# saved, this one 6 (13 of 15 saved in all).
 CLAIMED = {
     "save_note": "[runtime] Your reply says it was saved, but save_note wasn't called in "
     "this turn, so it isn't saved yet. Call save_note now with what they asked you to "
