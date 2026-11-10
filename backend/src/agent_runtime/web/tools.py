@@ -20,7 +20,7 @@ from agent_runtime.config import get_settings
 from agent_runtime.db import Pool
 from agent_runtime.tools.spec import ToolArgs, ToolContext, ToolRegistry
 from agent_runtime.web.fetch import FetchRefused, fetch
-from agent_runtime.web.search import SearchUnavailable
+from agent_runtime.web.search import Hit, SearchUnavailable
 from agent_runtime.web.settings import ToolSettings
 
 WEB_TOOLS = ("web_search", "read_webpage")
@@ -62,7 +62,29 @@ async def web_search(args: SearchArgs, ctx: ToolContext) -> dict[str, Any]:
         hits = await provider.search(args.query, args.k)
     except SearchUnavailable as exc:
         raise WebToolError(f"Search isn't available: {exc}.") from exc
-    return {"query": args.query, "results": [h.as_json() for h in hits], "source": provider.name}
+    found: dict[str, Any] = {
+        "query": args.query,
+        "results": [h.as_json() for h in hits],
+        "source": provider.name,
+    }
+    if note := unanswered_note(hits):
+        found["note"] = note
+    return found
+
+
+def unanswered_note(hits: list[Hit]) -> str | None:
+    """Why no results may not mean nothing's there: some engines didn't answer. Seen
+    from one home connection: SearXNG's engines all refused it, and the model said
+    nothing on the web matched."""
+    unanswered = getattr(hits, "unanswered", ())
+    if hits or not unanswered:
+        return None
+    return (
+        f"No results, but {len(unanswered)} search engine(s) didn't answer "
+        f"({', '.join(unanswered)}): they limit how often they can be asked. This doesn't "
+        "mean nothing is out there. Say so, and suggest trying again in a few minutes or "
+        "using Tavily or Brave with a key (Settings → Tools)."
+    )
 
 
 async def read_webpage(args: ReadArgs, ctx: ToolContext) -> dict[str, Any]:

@@ -64,10 +64,10 @@ def requests(monkeypatch: pytest.MonkeyPatch) -> list[tuple[list[BaseMessage], i
 
 async def run_assistant(
     pool: Pool, settings: Settings, script: list[dict[str, Any]],
-    options: dict[str, Any] | None = None, **kw: Any,
+    options: dict[str, Any] | None = None, message: str = "go", **kw: Any,
 ) -> tuple[Run, RunExecutor]:  # fmt: skip
     run = await RunService(pool, settings, GRAPHS).create_run(
-        "assistant", {"message": "go", "script": script}, options
+        "assistant", {"message": message, "script": script}, options
     )
     executor = RunExecutor(pool, settings, GRAPHS, **kw)
     return await executor.execute(run.id), executor
@@ -245,6 +245,9 @@ async def test_an_empty_reply_twice_is_not_retried_forever(
     assert (await counters(pool, done.id))["model_calls"] == 2  # once more, not again
 
 
+REMEMBER = "Remember that the demo is on Friday"
+
+
 async def notes_of(pool: Pool, run: Run) -> list[str]:
     async with pool.connection() as conn:
         cur = await conn.execute("SELECT text FROM notes WHERE run_id = %s", (run.id,))
@@ -300,7 +303,7 @@ async def test_a_reply_that_says_it_saved_what_nothing_saved_is_asked_again(
     calling save_note. It's asked once more; the false claim never reaches the chat."""
     honest = "I haven't saved it yet: I didn't call the tool. Shall I?"
     script = [{"content": "I've saved that in my notes."}, {"content": honest}]
-    done, _ = await run_assistant(pool, test_settings, script)
+    done, _ = await run_assistant(pool, test_settings, script, message=REMEMBER)
     assert done.status is S.COMPLETED
     assert (await counters(pool, done.id))["model_calls"] == 2  # charged like any call
     assert "Call save_note now" in str(requests[1][0][-1].content)
@@ -312,12 +315,27 @@ async def test_a_claim_after_the_tool_ran_or_twice_is_left_alone(
     pool: Pool, test_settings: Settings, checkpoint_tables: None
 ) -> None:
     save = {"tool_calls": [{"name": "save_note", "args": {"text": "x"}}]}
-    done, _ = await run_assistant(pool, test_settings, [save, {"content": "I've saved it."}])
+    done, _ = await run_assistant(
+        pool, test_settings, [save, {"content": "I've saved it."}], message=REMEMBER
+    )
     assert (await counters(pool, done.id))["model_calls"] == 2  # it did: no question
     claim = {"content": "I have saved it."}
-    done, _ = await run_assistant(pool, test_settings, [claim, claim])
+    done, _ = await run_assistant(pool, test_settings, [claim, claim], message=REMEMBER)
     assert done.status is S.COMPLETED
     assert (await counters(pool, done.id))["model_calls"] == 2  # once more, not again
+
+
+async def test_near_a_limit_a_claim_stands_rather_than_fail_the_turn(
+    pool: Pool, test_settings: Settings, checkpoint_tables: None
+) -> None:
+    """Asking once more could cross the limit and fail a turn whose answer is in hand
+    (the review): at the soft limit, the reply stands."""
+    claim = {"content": "I've saved that in my notes."}
+    done, _ = await run_assistant(
+        pool, test_settings, [claim, {"content": "x"}], {"max_model_calls": 1}, message=REMEMBER
+    )
+    assert done.status is S.COMPLETED
+    assert (await counters(pool, done.id))["model_calls"] == 1
 
 
 # ---------------------------------------------------------- R14.7: retries

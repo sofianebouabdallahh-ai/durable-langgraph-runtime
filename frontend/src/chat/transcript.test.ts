@@ -68,6 +68,14 @@ describe("the streamed draft", () => {
     expect(s.draft).toBeNull();
   });
 
+  it("drops a draft the runtime made into a tool call: it was never the answer", () => {
+    // qwen2.5:7b streams `save_note({...})`, or "I've sent it", and the runtime makes the
+    // call instead: without this the text stayed under the card (until a reload).
+    let s = fold([{ kind: "sent", runId: RUN }, { kind: "token", runId: RUN, text: 'save_note({"text": "x"})' }]);
+    s = chat(s, m(call(2, "save_note", "c1", { text: "x" })));
+    expect(s.draft).toBeNull();
+  });
+
   it("a new turn's tokens start a new draft; sending clears an old one", () => {
     let s = fold([{ kind: "token", runId: RUN, text: "old" }, { kind: "token", runId: RUN2, text: "new" }]);
     expect(s.draft).toEqual({ runId: RUN2, text: "new" });

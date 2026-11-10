@@ -111,6 +111,10 @@ class ScriptedChatModel(BaseChatModel):
         return self  # the script decides which tools are called
 
     def _reply(self, messages: list[BaseMessage]) -> AIMessage:
+        # The turn is the AI replies in the input. A call the runtime makes once more (an
+        # empty reply, a false claim, the helpers' guard) has the reply it drops in its
+        # input but not in the state, so the step after it plays the same entry again:
+        # a script for those repairs ends with the repaired call's answer.
         turn = sum(isinstance(m, AIMessage) for m in messages) - self.offset
         if turn >= len(self.script):
             step = ScriptTurn(content="(script finished)")

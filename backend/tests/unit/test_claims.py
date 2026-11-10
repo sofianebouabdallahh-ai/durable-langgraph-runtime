@@ -1,40 +1,86 @@
-"""Which tool a reply says did something it didn't (the claim check, small-model repairs)."""
+"""The small-model repairs' readers: which tool a reply says did something it didn't (the
+claim check), and which replies are tool calls written out as text."""
 
 import pytest
 from langchain.agents.middleware.types import ModelResponse
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 
-from agent_runtime.tools.middleware import _claims_undone
+from agent_runtime.tools.middleware import _claims_undone, _from_text_calls, _text_calls
 
-TOOLS = {"save_note", "notify", "web_search"}
+TOOLS = {"save_note", "notify", "recall_notes", "web_search"}
+REMEMBER = HumanMessage("Remember that the demo is on Friday")
+SEND = HumanMessage("Tell the team the build is green")
 
 
 def reply(text: str) -> ModelResponse[None]:
     return ModelResponse(result=[AIMessage(content=text)])
 
 
+def claim(messages: list[BaseMessage], text: str, tools: set[str] = TOOLS) -> str | None:
+    return _claims_undone(messages, reply(text), tools)
+
+
 @pytest.mark.parametrize(
-    ("text", "tool"),
+    ("asked", "text", "tool"),
     [
-        ("I've saved that in my notes.", "save_note"),
-        ("I noted that Sam prefers tea.", "save_note"),
-        ("Note: it has been saved.", "save_note"),
-        ("I\u2019ve sent it to the team.", "notify"),  # a curly apostrophe
-        ('save_note called with the message: "Sam prefers tea."', "save_note"),
-        ("The demo is on Friday.", None),  # no claim
-        ("You sent me the file yesterday.", None),  # not the agent's own
+        (REMEMBER, "I've saved that in my notes.", "save_note"),
+        (REMEMBER, "I noted that the demo is on Friday.", "save_note"),
+        (REMEMBER, 'Note: "the demo is on Friday" has been saved.', "save_note"),
+        (REMEMBER, 'save_note called with the message: "Sam prefers tea."', "save_note"),
+        (SEND, "I\u2019ve sent it to the team.", "notify"),  # a curly apostrophe
+        (REMEMBER, "The demo is on Friday.", None),  # no claim
+        # Sentences that only look like claims (found by the review):
+        (REMEMBER, "Nothing has been saved yet.", None),
+        (REMEMBER, "I haven't saved it: should I?", None),
+        (REMEMBER, "As I noted earlier, it's on Friday.", None),
+        (HumanMessage("Where is it hottest?"), "The record has been noted in Death Valley.", None),
+        (HumanMessage("What did I send?"), "The link I sent you is below.", None),
     ],
 )
-def test_the_claimed_tool(text: str, tool: str | None) -> None:
-    assert _claims_undone([HumanMessage("go")], reply(text), TOOLS) == tool
+def test_the_claimed_tool(asked: HumanMessage, text: str, tool: str | None) -> None:
+    assert claim([asked], text) == tool
 
 
 def test_a_tool_that_ran_since_the_message_or_one_it_lacks_is_no_claim() -> None:
-    ran = [HumanMessage("go"), ToolMessage("ok", tool_call_id="c1", name="save_note")]
-    assert _claims_undone(ran, reply("I've saved it."), TOOLS) is None
-    failed = [HumanMessage("go"), ToolMessage("Error", tool_call_id="c1", name="save_note",
-                                              status="error")]  # fmt: skip
-    assert _claims_undone(failed, reply("I've saved it."), TOOLS) == "save_note"
-    before = [ToolMessage("ok", tool_call_id="c0", name="save_note"), HumanMessage("again")]
-    assert _claims_undone(before, reply("I've saved it."), TOOLS) == "save_note"
-    assert _claims_undone([HumanMessage("go")], reply("I've saved it."), {"web_search"}) is None
+    ran = [REMEMBER, ToolMessage("ok", tool_call_id="c1", name="save_note")]
+    assert claim(ran, "I've saved it.") is None
+    failed = [REMEMBER, ToolMessage("Error", tool_call_id="c1", name="save_note", status="error")]
+    assert claim(failed, "I've saved it.") == "save_note"
+    before = [ToolMessage("ok", tool_call_id="c0", name="save_note"), REMEMBER]
+    assert claim(before, "I've saved it.") == "save_note"
+    assert claim([REMEMBER], "I've saved it.", {"web_search"}) is None
+
+
+def test_an_answer_from_notes_read_back_is_no_claim() -> None:
+    # "What did I tell you?": it reads its notes, and answers "I saved a note that…".
+    # Asked again, it would save the note twice.
+    read = [HumanMessage("Remember what I said about the demo?"),
+            ToolMessage('{"notes": []}', tool_call_id="c1", name="recall_notes")]  # fmt: skip
+    assert claim(read, "I saved a note that the demo is on Friday.") is None
+
+
+@pytest.mark.parametrize(
+    ("text", "calls"),
+    [
+        ('save_note({"text": "x"})', [("save_note", {"text": "x"})]),
+        ("recall_notes()", [("recall_notes", {})]),
+        ('<tool_call>{"name": "save_note", "arguments": {"text": "a <tool_call> b"}}</tool_call>',
+         [("save_note", {"text": "a <tool_call> b"})]),  # tags inside the text are kept
+        ('```\n{"name": "save_note", "arguments": "{\\"text\\": \\"y\\"}"}\n```',
+         [("save_note", {"text": "y"})]),
+        ('{"name": {"first": "Ada", "last": "Lovelace"}, "born": 1815}', None),  # an answer
+        ('["save_note"]', None),
+        ('Sure: <tool_call>{"name": "save_note", "arguments": {}}</tool_call>', None),
+    ],
+)  # fmt: skip
+def test_what_reads_as_a_tool_call(
+    text: str, calls: list[tuple[str, dict[str, str]]] | None
+) -> None:
+    found = _text_calls(text, TOOLS)
+    assert (None if found is None else [(c["name"], c["args"]) for c in found]) == calls
+
+
+def test_a_json_answer_never_fails_the_turn() -> None:
+    answer = '{"name": {"first": "Ada"}}'
+    repaired = _from_text_calls(reply(answer), TOOLS)
+    assert repaired.result[0].content == answer  # the review: TypeError before

@@ -10,7 +10,10 @@
  * - `lastSeq` is the highest seq with no hole below it: a reconnect resumes there,
  *   so a missing message is always asked for again;
  * - the streamed draft of a reply is replaced by the persisted reply, never shown
- *   twice; a stopped reply is kept (the server persists it as `interrupted`).
+ *   twice; a stopped reply is kept (the server persists it as `interrupted`);
+ * - a draft the runtime threw away (a tool call written as text, made into the call; a
+ *   reply saying it saved or sent what it hadn't, asked again into the call) goes when
+ *   that run's tool call arrives: it was never the answer.
  */
 import type { Message } from "../api/messages";
 import { type HelperStatus, type StreamAction, TERMINAL, type TurnStatus } from "../stream/events";
@@ -107,7 +110,7 @@ function addMessage(state: ChatState, message: Message): ChatState {
   const next = [...messages.slice(0, i), message, ...messages.slice(i)];
   let lastSeq = state.lastSeq;
   for (let j = i; j < next.length && next[j]?.seq === lastSeq + 1; j++) lastSeq += 1;
-  const replacesDraft = message.type === "assistant" && state.draft?.runId === message.runId;
+  const replacesDraft = (message.type === "assistant" || message.type === "tool_call") && state.draft?.runId === message.runId;
   return { ...state, messages: next, lastSeq, draft: replacesDraft ? null : state.draft };
 }
 

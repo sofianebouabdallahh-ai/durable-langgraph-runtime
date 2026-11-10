@@ -32,6 +32,12 @@ class Hit:
         return asdict(self)
 
 
+class Hits(list[Hit]):
+    """A search's hits, and the engines that didn't answer it (SearXNG's)."""
+
+    unanswered: tuple[str, ...] = ()
+
+
 class SearchProvider(Protocol):
     @property
     def name(self) -> Provider: ...
@@ -78,20 +84,18 @@ class SearxngProvider:
     base_url: str
     name: Provider = "searxng"
 
-    async def search(self, query: str, k: int) -> list[Hit]:
+    async def search(self, query: str, k: int) -> Hits:
         body = await _request(
             "GET",
             self.base_url.rstrip("/") + "/search",
             params={"q": query, "format": "json", "safesearch": 1},
         )
-        hits = _hits(list(body.get("results") or []), "content", k)
         # SearXNG answers 200 with no results when the engines it asks refuse it (rate
-        # limits, CAPTCHAs): that's search not working, not "nothing on the web".
-        if not hits and body.get("unresponsive_engines"):
-            raise SearchUnavailable(
-                "the search engines didn't answer (they limit how often they can be asked): "
-                "try again in a few minutes, or use Tavily or Brave with a key in Settings → Tools"
-            )
+        # limits, CAPTCHAs): kept, so "nothing found" isn't read as "nothing on the web".
+        hits = Hits(_hits(list(body.get("results") or []), "content", k))
+        hits.unanswered = tuple(
+            str(e[0]) for e in body.get("unresponsive_engines") or [] if isinstance(e, list) and e
+        )
         return hits
 
 

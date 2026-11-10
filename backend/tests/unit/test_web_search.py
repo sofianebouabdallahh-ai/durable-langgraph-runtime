@@ -1,12 +1,13 @@
-"""SearXNG's answers, read honestly: no results because its engines refused it is search
-not working, not "nothing on the web"."""
+"""SearXNG's answers, read honestly: no results while its engines refused it isn't
+"nothing on the web", and the model is told so."""
 
 from typing import Any
 
 import pytest
 
 from agent_runtime.web import search
-from agent_runtime.web.search import SearchUnavailable, SearxngProvider
+from agent_runtime.web.search import SearxngProvider
+from agent_runtime.web.tools import unanswered_note
 
 BLOCKED = [["brave", "Suspended: too many requests"], ["duckduckgo", "CAPTCHA"]]
 ROW = {"title": "Redis Streams", "url": "https://redis.io/docs/streams/", "content": "Logs."}
@@ -19,14 +20,15 @@ def answering(body: dict[str, Any]) -> Any:
     return fake
 
 
-async def test_no_results_because_every_engine_refused_is_unavailable(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_no_results_while_engines_refused_says_so(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         search, "_request", answering({"results": [], "unresponsive_engines": BLOCKED})
     )
-    with pytest.raises(SearchUnavailable, match="didn't answer"):
-        await SearxngProvider("http://searxng:8080").search("Redis Streams", 5)
+    hits = await SearxngProvider("http://searxng:8080").search("Redis Streams", 5)
+    assert hits == [] and hits.unanswered == ("brave", "duckduckgo")
+    note = unanswered_note(hits)
+    assert note is not None and "2 search engine(s) didn't answer (brave, duckduckgo)" in note
+    assert "doesn't mean nothing is out there" in note
 
 
 async def test_results_from_the_engines_that_answered_are_used(
@@ -37,10 +39,12 @@ async def test_results_from_the_engines_that_answered_are_used(
     )
     hits = await SearxngProvider("http://searxng:8080").search("Redis Streams", 5)
     assert [h.url for h in hits] == [ROW["url"]]
+    assert unanswered_note(hits) is None  # results: nothing to explain
 
 
 async def test_nothing_found_by_engines_that_answered_is_just_nothing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(search, "_request", answering({"results": [], "unresponsive_engines": []}))
-    assert await SearxngProvider("http://searxng:8080").search("qzxv", 5) == []
+    hits = await SearxngProvider("http://searxng:8080").search("qzxv", 5)
+    assert hits == [] and unanswered_note(hits) is None
