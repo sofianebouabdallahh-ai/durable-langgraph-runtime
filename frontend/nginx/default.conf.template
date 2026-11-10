@@ -49,9 +49,10 @@ server {
 
 server {
     listen 8080;
-    # localhost and loopback, host.docker.internal (the UI dev server's proxy), and the
-    # names in UI_HOSTNAMES (the Kubernetes ingress host; `ui` for the browser tests).
-    server_name localhost 127.0.0.1 [::1] host.docker.internal ${UI_HOSTNAMES};
+    # localhost and loopback, host.docker.internal (the UI dev server's proxy), `ui` (its
+    # own name in the stack: setup's smoke test and the browser tests call it that), and
+    # the names in UI_HOSTNAMES (the Kubernetes ingress host and the chart's ui.hostnames).
+    server_name localhost 127.0.0.1 [::1] host.docker.internal ui ${UI_HOSTNAMES};
     server_tokens off;
     access_log /dev/stdout upstreams;
     root /usr/share/nginx/html;

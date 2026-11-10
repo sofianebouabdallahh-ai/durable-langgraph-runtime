@@ -36,9 +36,9 @@ spec:
             - name: API_UPSTREAM
               value: {{ include "nuria.fullname" . }}-api-pods.{{ .Release.Namespace }}.svc.cluster.local:8000
             # Host names nginx answers to besides localhost (H3, DNS rebinding): the
-            # ingress host. Any other Host gets 421.
+            # ingress host and ui.hostnames. Any other Host gets 421.
             - name: UI_HOSTNAMES
-              value: {{ .Values.ingress.host | default "" | quote }}
+              value: {{ include "nuria.uiHostnames" . | quote }}
           ports:
             - { name: http, containerPort: 8080 }
           readinessProbe:
