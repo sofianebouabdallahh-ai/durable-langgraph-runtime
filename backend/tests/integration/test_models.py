@@ -401,3 +401,25 @@ async def test_h2_a_turn_is_priced_by_its_connection_and_keeps_that_price(
     assert tokens_in > 0 and float(sum(r["cost"] for r in rows)) == pytest.approx(expected)
     assert not any(r["estimated"] for r in rows)
     await c("PUT", "/models/default", json={"connection_id": None})
+
+
+async def test_h3_a_saved_key_never_follows_the_address_somewhere_new(
+    api: Server, fake: Fake, pool: Pool
+) -> None:
+    c = Seen(api.client)
+    added = await connect(c, fake, "Bound key", KEY_A, "fake-a")
+    elsewhere = fake.url.replace("127.0.0.1", "localhost") + "/v1"  # another host name
+    moved = await c("PATCH", f"/models/connections/{added['id']}", json={"base_url": elsewhere})
+    assert moved.status_code == 422 and "Enter the key again" in moved.text
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT base_url FROM model_connections WHERE id = %s", (added["id"],)
+        )
+        row = await cur.fetchone()
+    assert row is not None and row["base_url"] == added["base_url"]  # unchanged
+    rekeyed = await c("PATCH", f"/models/connections/{added['id']}",
+                      json={"base_url": elsewhere, "api_key": KEY_A})  # fmt: skip
+    assert rekeyed.status_code == 200 and rekeyed.json()["base_url"] == elsewhere
+    metadata = await c("PATCH", f"/models/connections/{added['id']}",
+                       json={"base_url": "http://2852039166/v1", "api_key": KEY_A})  # fmt: skip
+    assert metadata.status_code == 422 and "metadata" in metadata.text

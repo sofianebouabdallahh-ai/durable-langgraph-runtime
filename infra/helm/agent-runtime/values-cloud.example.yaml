@@ -14,6 +14,7 @@ ingress:
   className: nginx # or your controller
   host: nuria.example.com
   tls: [{ hosts: [nuria.example.com], secretName: nuria-tls }] # e.g. from cert-manager
+  basicAuthSecret: nuria-basic-auth # Nuria has no login yet: a password in front (docs/kubernetes.md)
 
 networkPolicy:
   ingressNamespace: ingress-nginx

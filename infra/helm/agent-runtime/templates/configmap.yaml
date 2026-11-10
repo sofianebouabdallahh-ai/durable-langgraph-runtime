@@ -9,4 +9,11 @@ data:
   {{- range $k, $v := .Values.config }}
   {{ $k }}: {{ $v | quote }}
   {{- end }}
+  # Phase H3: the names browser requests may carry (the ingress host), and the names of
+  # Nuria's own Services, which outbound requests (MCP, models, search) never reach.
+  UI_HOSTNAMES: {{ include "nuria.uiHostnames" . | quote }}
+  INTERNAL_HOSTS: {{ include "nuria.internalHosts" . | quote }}
+  {{- if not (hasKey .Values.config "ADMIN_API_ENABLED") }}
+  ADMIN_API_ENABLED: "false"  # the kill switch works through the agents API
+  {{- end }}
   {{- include "nuria.toolsConfig" . | nindent 2 }}

@@ -35,6 +35,10 @@ spec:
             # nginx's resolver doesn't apply search domains: the full name.
             - name: API_UPSTREAM
               value: {{ include "nuria.fullname" . }}-api-pods.{{ .Release.Namespace }}.svc.cluster.local:8000
+            # Host names nginx answers to besides localhost (H3, DNS rebinding): the
+            # ingress host and ui.hostnames. Any other Host gets 421.
+            - name: UI_HOSTNAMES
+              value: {{ include "nuria.uiHostnames" . | quote }}
           ports:
             - { name: http, containerPort: 8080 }
           readinessProbe:

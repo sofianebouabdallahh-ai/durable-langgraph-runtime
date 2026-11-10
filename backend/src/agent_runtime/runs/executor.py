@@ -106,7 +106,7 @@ from agent_runtime.tools.hooks import (
 from agent_runtime.tools.invocations import BudgetExceeded, LoopDetected
 from agent_runtime.tools.middleware import RunContext, TurnDenied, TurnInfo, UsageRecorder
 from agent_runtime.tools.pipeline import Grant, ToolPipeline, ToolRunContext
-from agent_runtime.tools.policy import RiskClassPolicy, ToolPolicy
+from agent_runtime.tools.policy import ProvenancePolicy, RiskClassPolicy, ToolPolicy
 from agent_runtime.tools.spec import ToolRegistry
 
 log = logging.getLogger(__name__)
@@ -284,7 +284,8 @@ class RunExecutor:
         self._bindings: dict[str, Any] = {}  # the run's model bindings, with their prices
         self._breaker_name: str | None = None
         self._hooks = hooks or default_hooks()
-        self._policy = policy or RiskClassPolicy()
+        # A page address nobody gave the agent asks first (H3), on top of the risk classes.
+        self._policy = policy or ProvenancePolicy(RiskClassPolicy())
         self._enqueue = enqueue  # send a run that became queued (children, fanned-in parent)
         self._orchestrator: SubagentOrchestrator | None = None  # set for agents with sub-agents
         self._transcript: TranscriptWriter | None = None  # set for chat turns

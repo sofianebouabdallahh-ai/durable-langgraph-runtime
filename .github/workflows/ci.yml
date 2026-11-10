@@ -187,7 +187,9 @@ jobs:
           docker compose --file infra/compose/docker-compose.yml --env-file .env --profile test up -d --wait fake-model
           # the fake web (L6a): the page reader may read from fake-model, tests only
           echo "FETCH_ALLOW_HOSTS=fake-model" >> .env
-          docker compose --file infra/compose/docker-compose.yml --env-file .env up -d --wait fetcher
+          # the browser container reaches the UI as `ui`: one of its names (H3, else 421)
+          echo "UI_HOSTNAMES=ui" >> .env
+          docker compose --file infra/compose/docker-compose.yml --env-file .env up -d --wait fetcher api ui
           make ui-e2e
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
@@ -234,6 +236,11 @@ jobs:
               | /tmp/kubeconform -strict -summary -kubernetes-version 1.37.0 -ignore-missing-schemas
           done
           .tools/bin/helm template nuria-data infra/helm/nuria-data | /tmp/kubeconform -strict -summary -kubernetes-version 1.37.0
+          # H3: a public host with nothing asking for a password must refuse to render
+          if .tools/bin/helm template nuria infra/helm/agent-runtime -f infra/helm/agent-runtime/values-cloud.example.yaml \
+               --set ingress.basicAuthSecret= >/dev/null 2>&1; then
+            echo "::error::the chart rendered a public ingress host with no password in front"; exit 1
+          fi
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - name: First run on Kubernetes, as a tester does it (cluster, images, charts, smoke turn)
         run: ./setup.sh --non-interactive --model scripted --kubernetes

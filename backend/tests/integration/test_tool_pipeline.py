@@ -331,10 +331,10 @@ async def test_h1_approved_edits_go_through_the_hooks(pool: Pool, fence: Fence) 
 
 async def test_h1_approved_edits_go_through_the_policy(pool: Pool, fence: Fence) -> None:
     class NoInterns(RiskClassPolicy):
-        async def check(self, spec: Any, args: dict[str, Any]) -> Any:
+        async def check(self, spec: Any, args: dict[str, Any], ctx: Any = None) -> Any:
             if args.get("to") == "interns":
                 return PolicyDeny("nobody messages the interns")
-            return await super().check(spec, args)
+            return await super().check(spec, args, ctx)
 
     h = Harness(
         resume={"decision": "approve", "edits": {"args": {"to": "interns", "message": "x"}}}

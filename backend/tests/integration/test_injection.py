@@ -29,7 +29,7 @@ from agent_runtime.skills import tools as skill_tools
 from agent_runtime.skills.store import SkillVersion
 from agent_runtime.tools.builtin import NotifyArgs, notify
 from agent_runtime.tools.pipeline import Grant, ToolCall, ToolPipeline, ToolRunContext
-from agent_runtime.tools.policy import RiskClassPolicy
+from agent_runtime.tools.policy import ProvenancePolicy, RiskClassPolicy
 from agent_runtime.tools.spec import ToolArgs, ToolContext, ToolRegistry
 
 pytestmark = pytest.mark.integration
@@ -68,6 +68,10 @@ class Lab:
             self.ran["echo"] += 1
             return args.text
 
+        # The page reader: reading a page is "read", but its address can carry data out.
+        self.registry.tool("read_webpage", args=Anything, risk_class="read", side_effect=False)(
+            self._spy("read_webpage")
+        )
         for name in ("run_python", "fetch_secrets"):  # exist, but this agent isn't granted them
             self.registry.tool(name, args=Anything, risk_class="read", side_effect=False)(
                 self._spy(name)
@@ -90,10 +94,14 @@ class Lab:
         return {"decision": "reject", "reason": "not what I asked for"}  # the person says no
 
     def pipeline(self) -> ToolPipeline:
-        return ToolPipeline(self.registry, RiskClassPolicy(), interrupt=self.interrupt)
+        return ToolPipeline(
+            self.registry, ProvenancePolicy(RiskClassPolicy()), interrupt=self.interrupt
+        )
 
     def ctx(self, fence: Fence, pool: Pool) -> ToolRunContext:
-        grants = {n: Grant() for n in ("fetch_page", "echo", "notify", "load_skill")}
+        grants = {
+            n: Grant() for n in ("fetch_page", "echo", "notify", "load_skill", "read_webpage")
+        }
         skill = SkillVersion(
             "a" * 64,
             "field-notes",
@@ -160,6 +168,7 @@ async def test_planted_instructions_change_nothing(
                 "SELECT count(*) AS n FROM outbox_notifications WHERE run_id = %s", (fence.run_id,)
             )
             assert (await cur.fetchone() or {}).get("n") == 0  # refused: nothing sent
+        assert lab.ran[tool] == 0  # nothing was read either
     elif expect == "over_limit":
         await pipeline.run(obey, ctx)
         await pipeline.run(ToolCall(id="c2", name=tool, args={"text": "more"}, index=2), ctx)

@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 from psycopg.types.json import Jsonb
 
@@ -18,6 +19,7 @@ from agent_runtime.config import Settings
 from agent_runtime.db import Conn, Pool
 from agent_runtime.keys import Sealed, fingerprint, open_secret, seal, secret_aad
 from agent_runtime.models.connections import kek_for
+from agent_runtime.net import DestinationRefused, Guard
 from agent_runtime.web.search import (
     BraveProvider,
     Hit,
@@ -117,10 +119,14 @@ class ToolSettings:
                 raise ToolSettingsInvalid(f"{provider.title()} needs an API key")
             if searxng_url is not None:
                 url = searxng_url.strip().rstrip("/") or None
-                if url and not url.startswith(("http://", "https://")):
-                    raise ToolSettingsInvalid(
-                        "the SearXNG address must start with http:// or https://"
-                    )
+                if url:  # resolved and checked (phase H3): the stack's own searxng is fine
+                    try:
+                        stack = urlsplit(self._settings.searxng_url).hostname or "searxng"
+                        url = await Guard.of(self._settings).check(
+                            url, allowed_services=("searxng", stack)
+                        )
+                    except DestinationRefused as exc:
+                        raise ToolSettingsInvalid(f"the SearXNG address: {exc}") from exc
                 sets["searxng_url"] = url
             if web_allowlist is not None:
                 sites = sorted({s.strip().lower().lstrip(".") for s in web_allowlist if s.strip()})

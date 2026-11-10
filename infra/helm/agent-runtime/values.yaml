@@ -73,6 +73,9 @@ worker:
     limits: { memory: 640Mi }
 
 ui:
+  # More host names browsers (and in-cluster checks) may use for Nuria, besides
+  # localhost and ingress.host (H3: any other Host gets 421, DNS rebinding).
+  hostnames: []
   replicas: 2
   pdb: { minAvailable: 1 }
   resources:
@@ -125,6 +128,10 @@ ingress:
   enabled: true
   className: traefik
   host: "" # "" = any host (local); set your domain in the cloud
+  # Nuria has no login yet (H3): with a host, a password in front of it is required.
+  # An htpasswd Secret (key `auth` for nginx, `users` for Traefik): docs/kubernetes.md.
+  basicAuthSecret: ""
+  unauthenticated: false # true only if something else (VPN, SSO proxy) protects it
   annotations: {}
   tls: []
 

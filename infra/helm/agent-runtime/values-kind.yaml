@@ -17,3 +17,7 @@ monitoring:
 
 sandbox:
   image: { repository: nuria/sandbox, tag: dev } # built and loaded by cluster.sh
+
+# The smoke test (cluster.sh) reaches the Ingress by the node's name.
+ui:
+  hostnames: [nuria-control-plane]

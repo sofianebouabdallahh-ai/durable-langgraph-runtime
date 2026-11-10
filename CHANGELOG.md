@@ -4,6 +4,24 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### H3 — An API only you can drive
+#### Security
+- **Only Nuria's own pages reach it.** nginx answers only to `localhost`, `127.0.0.1` and
+  `UI_HOSTNAMES` (421 otherwise), so a DNS-rebinding page is refused; the API refuses
+  cross-site browser requests (`Sec-Fetch-Site`, `Origin`). The CLI and scripts are unchanged.
+- **The cloud chart can't expose Nuria without a password:** with `ingress.host` set it
+  refuses to render unless `ingress.basicAuthSecret` (nginx or Traefik basic auth) or
+  `ingress.unauthenticated: true` is set; the admin API is off by default in the chart.
+- **A saved key stays with its address:** changing a model's host, or an MCP server's
+  address or header, asks for the key again.
+- **Every address Nuria is given is resolved and checked** (`net.py`): MCP servers, model
+  connections and SearXNG can't lead to cloud metadata or Nuria's own services, in any
+  form (decimal, hex, octal, IPv4-mapped, NAT64, a name that resolves there). Inside the
+  containers 127.0.0.1 is Nuria itself: use `host.docker.internal`.
+- **A page address nobody gave the agent asks first:** `read_webpage` reads what you named,
+  what a search found and allowed sites without asking; anything else (an address planted
+  in a page, which could carry your chat out) waits for your approval, full address shown.
+
 ### H2 — Budgets that bind
 #### Fixed
 - **Cost budgets work with real models.** Every model had cost $0 unless `MODEL_PRICES`

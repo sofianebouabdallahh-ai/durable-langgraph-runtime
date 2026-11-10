@@ -316,12 +316,44 @@ def privilege() -> bool:
     return not c.failed
 
 
+def outsiders() -> bool:
+    """H3: only Nuria's own pages drive it. A rebinding page (a foreign Host) gets 421
+    from nginx; a cross-site browser request gets 403 from the API and changes nothing;
+    the CLI (no browser headers) still works; a model server in Nuria's container's own
+    loopback is refused."""
+    c = Check("only Nuria's own pages drive it (H3)")
+    ui = API.removesuffix("/api")
+    with httpx.Client(timeout=10) as raw:
+        rebound = raw.get(f"{ui}/api/sessions", headers={"Host": "rebound.evil.example"})
+        c("a foreign Host name gets 421 (DNS rebinding)", rebound.status_code == 421,
+          str(rebound.status_code))  # fmt: skip
+        probe = raw.get(f"{ui}/healthz", headers={"Host": "10.0.0.7"})
+        c("the health check answers any name (probes)", probe.status_code == 200)
+        before = sql("SELECT count(*) FROM runs WHERE status = 'cancelled'")
+        forged = raw.post(f"{API}/admin/cancel-all", headers={
+            "Sec-Fetch-Site": "cross-site", "Origin": "https://evil.example"})  # fmt: skip
+        c("a cross-site request gets 403", forged.status_code == 403, str(forged.status_code))
+        after = sql("SELECT count(*) FROM runs WHERE status = 'cancelled'")
+        c("…and changed nothing", before == after, f"{before} → {after}")
+        mine = raw.get(f"{API}/sessions", headers={"Sec-Fetch-Site": "same-origin"})
+        c("Nuria's own page is served", mine.status_code == 200, str(mine.status_code))
+        cli = raw.get(f"{API}/sessions")
+        c("the CLI (no browser headers) is served", cli.status_code == 200, str(cli.status_code))
+        local = raw.post(f"{API}/models/connections", json={
+            "display_name": "Itself", "kind": "compatible",
+            "base_url": "http://127.0.0.1:8000/v1", "models": ["x"]})  # fmt: skip
+        c("127.0.0.1 inside Nuria's container is refused", local.status_code == 422
+          and "host.docker.internal" in local.text, local.text[:160])  # fmt: skip
+    return not c.failed
+
+
 SCENARIOS = {
     "crash": crash,
     "graceful": graceful,
     "sandbox": sandbox,
     "mcp": mcp,
     "privilege": privilege,
+    "outsiders": outsiders,
 }
 
 

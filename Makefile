@@ -54,6 +54,8 @@ ui-api: ## Regenerate the UI's API types from the backend's OpenAPI spec
 	$(BACKEND) runtime openapi --out ../frontend/openapi.json
 	$(call UI_RUN,,pnpm api)
 
+# The browser container reaches the UI as `ui`: the stack needs UI_HOSTNAMES=ui in .env
+# (H3: any other Host name gets 421), then `docker compose … up -d api ui`.
 ui-e2e: ## Browser tests (Playwright, in a container) against the running stack: ./setup.sh first
 	$(DOCKER) build -q -t agent-runtime-e2e:local frontend/e2e >/dev/null
 	$(DOCKER) run --rm --network $(STACK)_default -v /var/run/docker.sock:/var/run/docker.sock \

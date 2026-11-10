@@ -130,3 +130,35 @@ async def test_changing_a_server_needs_a_new_test_and_never_logs_the_token(
     (entry,) = trail
     assert entry.before["key"] == "set" and entry.before["key_fingerprint"] == added.key_fingerprint  # type: ignore[index]
     assert "old-token-1" not in str(entry.before) and MCP_TOKEN not in str(entry.after)
+
+
+async def test_h3_a_token_never_follows_the_server_somewhere_new(
+    service: McpService, served_mcp: ServedMcp
+) -> None:
+    added = await service.add(display_name="Bound", url=served_mcp.url, token=MCP_TOKEN)
+    moved = served_mcp.url.replace("127.0.0.1", "localhost")  # another host name
+    with pytest.raises(McpInvalid, match="Enter the token again"):
+        await service.change(added.id, url=moved)
+    with pytest.raises(McpInvalid, match="Enter the token again"):
+        await service.change(added.id, header_name="X-Leak")
+    again = await service.change(added.id, url=moved, token=MCP_TOKEN)  # entered again: fine
+    assert again.url == moved
+    same = await service.change(added.id, url=moved + "?v=2")  # same host and port: fine
+    assert same.url.endswith("?v=2")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://2852039166/mcp",  # 169.254.169.254, in decimal
+        "http://0xa9fea9fe/mcp",
+        "http://[::ffff:169.254.169.254]/mcp",
+        "http://metadata.google.internal./mcp",
+        "http://redis:6379/",
+    ],
+)
+async def test_h3_every_form_of_metadata_and_own_services_is_refused(
+    service: McpService, url: str
+) -> None:
+    with pytest.raises(McpInvalid):
+        await service.add(display_name="Bad", url=url)

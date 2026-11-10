@@ -33,9 +33,22 @@ excepted, as above).
   - Feedback opens GitHub's page only when you click. You see the text first, and submit it there yourself.
   - The usage counts (**Settings → Privacy**, off unless you turn them on) are only ever attached to feedback you send.
 
+## Who can drive it
+
+- **Only Nuria's own pages.** The app answers only to `localhost`, `127.0.0.1` and the
+  names you add in `UI_HOSTNAMES`; any other name gets "421". A web page that
+  rebinds its domain to your computer (DNS rebinding) still sends its own name, so it
+  is refused. The API refuses any request your browser makes on another site's behalf
+  (cross-site, checked with the browser's `Sec-Fetch-Site` and `Origin`).
+- **Nuria has no login yet.** Another program running on your computer can use the API,
+  as with any local tool. Accounts come with the hosted version. On Kubernetes with a
+  public address, the chart refuses to install without a password in front
+  ([guide](kubernetes.md)).
+
 ## Where your keys are
 
 - **Model keys** you add under **Models**, and a **search key** (Tavily, Brave) under **Tools**, are stored in the database, **encrypted** with `NURIA_SECRET_KEY` from `.env`. They're never shown again and never written to logs.
+- **A key stays with its address.** Changing a model's address to another host, or an MCP server's address or header, asks for the key again: a saved key is only ever sent where you entered it for.
 - **Local passwords** for Postgres and Grafana, SearXNG's secret and sandboxd's token are generated for this machine at setup, and kept only in `.env`. The sandboxes never see any of them.
 - **`.env` holds the secrets.** It's readable only by you, and never part of a backup or a diagnostics file. Keep it safe: anyone with `.env` and a backup can open your saved keys.
 - **Diagnostics** (`./setup.sh --doctor`) remove every password and key before writing the file.
@@ -49,6 +62,8 @@ excepted, as above).
 - **Other content is treated as data.** Text that comes back from tools, web pages and MCP servers, and skills the agent loads when it needs them, is marked as data, never instructions. A planted "ignore your instructions" in a page or a skill can't grant a tool or skip an approval.
 - **A skill set to Always use is your own instruction** when its check (below) found nothing: the agent gets it as plain guidance, because small local models skip guidance marked as data (in our tests, 1 time in 10 followed). A skill the check flagged stays data. Either way it can't grant a tool, change a limit or skip an approval: those are enforced by the app, not by the model.
 - **Pages only from public websites.** The page reader refuses this computer, your network, Nuria's own services and cloud metadata addresses, after every redirect, and connects only to the address it checked. **Sites agents may read** narrows it to a list.
+- **A page address nobody gave the agent asks first.** An agent reads, without asking, pages you named in the chat, pages a web search found, and sites on your list. Any other address (one planted in a page, which could carry your chat out in its query string) waits for your **Approve**, with the full address shown.
+- **Addresses you give Nuria are checked.** An MCP server, a model address or a SearXNG address is resolved and refused if it leads to cloud metadata or Nuria's own services, whatever form it's written in (decimal, hex, a name that resolves there). Inside Nuria's containers, `127.0.0.1` is Nuria itself: for a server on your computer use `host.docker.internal`. These are checked when saved, tested and used; the model and MCP libraries resolve the name again when they connect.
 - **MCP tools follow the same rules** ([guide](setup/tools.md#mcp-servers-tools-from-other-services)):
   - Every call asks first unless you chose "runs without asking" for a read-only tool.
   - Results are treated as data, and descriptions are checked when the server is tested.
@@ -56,7 +71,8 @@ excepted, as above).
     they were published with.
   - Server tokens are stored encrypted, like model keys, and never shown, logged or put in
     the audit trail (a fingerprint only).
-  - Nuria refuses its own services and cloud metadata addresses as MCP servers.
+  - Nuria refuses its own services and cloud metadata addresses as MCP servers, and a
+    token is only sent to the address and header it was entered for.
 - **Code runs in a sandbox**, never in Nuria's own containers: no network, no keys, no files of yours, limits on CPU, memory, processes and time, a fresh one per turn.
 - **Skills are checked when saved, and again when the checks improve.** A skill that hands over keys or tries to steer the agent is flagged, and attaching it asks you first. Skills with scripts are kept, but their scripts never run.
 - **You can stop them.** **Stop** ends a reply at once (the tool or code it's running too); **Turn off** stops one agent everywhere, and **Stop all agents** every agent, until you turn them back on.

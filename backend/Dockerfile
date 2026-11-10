@@ -51,10 +51,12 @@ COPY --chown=root:root migrations ./migrations
 COPY --chown=root:root agents ./agents
 COPY --chown=root:root skills ./skills
 COPY --chown=root:root fixtures ./fixtures
+# NURIA_IN_CONTAINER: here 127.0.0.1 is Nuria itself, never your computer (H3, net.py).
 ENV PATH=/app/.venv/bin:$PATH \
     RUNTIME_HOME=/app \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    NURIA_IN_CONTAINER=1
 USER 10001:10001
 ENTRYPOINT ["tini", "--", "runtime"]
 CMD ["--help"]
