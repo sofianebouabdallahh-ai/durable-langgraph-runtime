@@ -655,13 +655,17 @@ def _from_text_calls(response: ModelResponse[Any], names: set[str]) -> ModelResp
 
 # What a reply may claim a tool did ("I've saved that", "has been sent"), by tool.
 _I = r"\b(?:I(?:'ve|\u2019ve| have| just)?\s+"
+# A reply that names the tool as called ("save_note called with…") claims it too.
+_CALLED = r"|called\s+{t}|{t}\s+(?:was\s+|has\s+been\s+)?called"
 _CLAIMS = {
     "save_note": re.compile(
         _I + r"(?:saved|noted|stored|recorded|remembered)|(?:has|have)\s+been\s+"
-        r"(?:saved|noted|stored|recorded))\b", re.IGNORECASE,
+        r"(?:saved|noted|stored|recorded)" + _CALLED.format(t="save_note") + r")\b",
+        re.IGNORECASE,
     ),
     "notify": re.compile(
-        _I + r"(?:sent|notified)|(?:has|have)\s+been\s+sent)\b", re.IGNORECASE
+        _I + r"(?:sent|notified)|(?:has|have)\s+been\s+sent" + _CALLED.format(t="notify")
+        + r")\b", re.IGNORECASE,
     ),
 }  # fmt: skip
 

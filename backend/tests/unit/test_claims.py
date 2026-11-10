@@ -20,6 +20,7 @@ def reply(text: str) -> ModelResponse[None]:
         ("I noted that Sam prefers tea.", "save_note"),
         ("Note: it has been saved.", "save_note"),
         ("I\u2019ve sent it to the team.", "notify"),  # a curly apostrophe
+        ('save_note called with the message: "Sam prefers tea."', "save_note"),
         ("The demo is on Friday.", None),  # no claim
         ("You sent me the file yesterday.", None),  # not the agent's own
     ],
