@@ -87,6 +87,13 @@ SANDBOXD_URL: {{ if .Values.sandbox.enabled }}{{ printf "http://%s-sandboxd:8070
 {{- end }}
 
 {{/* Nuria's own Service names, short and full (H3: outbound requests never go there). */}}
+{{/* The names a browser may use for Nuria (H3): the ingress host and ui.hostnames. */}}
+{{- define "nuria.uiHostnames" -}}
+{{- $names := .Values.ui.hostnames | default list -}}
+{{- if .Values.ingress.host -}}{{- $names = prepend $names .Values.ingress.host -}}{{- end -}}
+{{- join " " $names -}}
+{{- end -}}
+
 {{- define "nuria.internalHosts" -}}
 {{- $f := include "nuria.fullname" . -}}
 {{- $ns := .Release.Namespace -}}
