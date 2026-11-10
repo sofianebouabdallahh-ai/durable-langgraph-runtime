@@ -54,6 +54,15 @@ class NotWaitingForApproval(Exception):
         self.run = run
 
 
+class NotRedrivable(Exception):
+    """The run can't be tried again (phase H4), in plain words (→ 409)."""
+
+    def __init__(self, run: Run, why: str) -> None:
+        super().__init__(why)
+        self.run = run
+        self.why = why
+
+
 class FanOutRejected(Exception):
     """A fan-out breached a limit (R14.6) or was malformed. Nothing was created; the
     spawning node sees this as an error it can handle, never as a crash."""
@@ -152,6 +161,9 @@ class Run:
     agent_version: int | None = None
     tokens: int = 0
     cost: float = 0.0
+    # Phase H4: releases because the infrastructure failed (bounded), and redrives.
+    infra_retries: int = 0
+    redrives: int = 0
 
     @property
     def root_id(self) -> uuid.UUID:
@@ -195,6 +207,8 @@ class Run:
             agent_version=row.get("agent_version"),
             tokens=row.get("tokens") or 0,
             cost=float(row.get("cost") or 0),
+            infra_retries=row.get("infra_retries") or 0,
+            redrives=row.get("redrives") or 0,
             child_total=row["child_total"],
             child_done=row["child_done"],
         )
@@ -247,7 +261,8 @@ _RUN_COLUMNS = """
     input, options, limits, steps, parent_run_id, session_id,
     created_at, started_at, finished_at, cancel_requested, reclaims, releases, message_id,
     interrupt_payload, resume_value, root_run_id, depth, child_key, child_total, child_done,
-    agent_hash, model_bindings, traceparent, waited_s, agent_name, agent_version, tokens, cost
+    agent_hash, model_bindings, traceparent, waited_s, agent_name, agent_version, tokens, cost,
+    infra_retries, redrives
 """
 
 
@@ -615,6 +630,70 @@ class RunRepository:
             run_id, RunStatus.CANCELLED, event=EventType.RUN_CANCELLED,
             reason="cancel_requested", payload={"reason": "cancel_requested"},
         )  # fmt: skip
+
+    async def redrive(self, run_id: uuid.UUID, *, redrivable: frozenset[str]) -> Run:
+        """Phase H4: a person tries a failed run again. `failed` → `queued`, to resume from
+        its last checkpoint; the ledger keeps done tool calls from running again.
+
+        Not in the state machine (`_ALLOWED`): no worker can ever do this. One guarded
+        UPDATE, under the run's row lock (and the chat's, for a turn). Resets the
+        reclaim and infrastructure counters, the working time and a Stop pressed before
+        it failed (trying again is a new decision); the budgets already spent still
+        count. Raises RunNotFound or NotRedrivable (→ 409)."""
+        async with self._conn.transaction():
+            cur = await self._conn.execute(
+                f"SELECT {_RUN_COLUMNS} FROM runs WHERE id = %s FOR NO KEY UPDATE", (run_id,)
+            )
+            row = await cur.fetchone()
+            if row is None:
+                raise RunNotFound(run_id)
+            run = Run.from_row(row)
+            if run.status is not RunStatus.FAILED:
+                raise NotRedrivable(run, f"Only a failed run can be tried again; this one is "
+                                         f"{run.status}")  # fmt: skip
+            if run.reason not in redrivable:
+                raise NotRedrivable(run, f"It would fail the same way again ({run.reason})")
+            if run.parent_run_id is not None:
+                raise NotRedrivable(run, "Try the run it belongs to again instead")
+            if run.session_id is not None:
+                cur = await self._conn.execute(
+                    "SELECT status FROM sessions WHERE id = %s FOR NO KEY UPDATE",
+                    (run.session_id,),
+                )
+                session = await cur.fetchone()
+                if session is None or session["status"] != "active":
+                    raise NotRedrivable(run, "This chat has ended")
+                cur = await self._conn.execute(
+                    """
+                    SELECT id, status FROM runs WHERE session_id = %s AND parent_run_id IS NULL
+                    AND kind = 'turn' ORDER BY created_at DESC, id DESC LIMIT 1
+                    """,
+                    (run.session_id,),
+                )
+                latest = await cur.fetchone()
+                if latest is None or latest["id"] != run.id:
+                    raise NotRedrivable(run, "Only the chat's latest message can be tried again")
+            cur = await self._conn.execute(
+                f"""
+                UPDATE runs SET status = 'queued', reason = NULL, finished_at = NULL,
+                    started_at = NULL, waited_s = 0, waiting_since = NULL,
+                    reclaims = 0, infra_retries = 0, redrives = redrives + 1,
+                    owner = NULL, lease_expires_at = NULL, cancel_requested = false
+                WHERE id = %s AND status = 'failed' AND reason = ANY(%s)
+                RETURNING {_RUN_COLUMNS}
+                """,
+                (run_id, list(redrivable)),
+            )
+            row = await cur.fetchone()
+            if row is None:  # can't happen under the row lock; never redrive blindly
+                raise NotRedrivable(await self.get(run_id), "It changed meanwhile")
+            redriven = Run.from_row(row)
+            await self.append_event(
+                run_id, epoch=run.epoch, type=EventType.RUN_REDRIVEN,
+                payload={"after": run.reason, "redrives": redriven.redrives},
+            )  # fmt: skip
+            self.ready.append(run_id)
+            return redriven
 
     async def set_interrupt(self, run_id: uuid.UUID, payload: dict[str, Any] | None) -> None:
         """Record what the run waits on. Call inside the pause's fenced transaction."""

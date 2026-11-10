@@ -1,5 +1,5 @@
 /** Presentational cards (Pattern: container / presentational): props in, markup out. */
-import { AlertTriangle, Check, ChevronDown, CircleStop, Hand, Hourglass, Users } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, CircleStop, Hand, Hourglass, RotateCcw, Users } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
 import type { Message } from "../api/messages";
@@ -208,7 +208,9 @@ export function ApprovalCard({
   );
 }
 
-export function ErrorNote({ message }: { message: Of<"error"> }) {
+/** `onRetry`: the turn can be tried again from where it stopped (phase H4). */
+export function ErrorNote({ message, onRetry }: { message: Of<"error">; onRetry?: (() => void) | undefined }) {
+  const [retrying, setRetrying] = useState(false);
   if (message.reason === "cancel_requested") {
     return (
       <div className="inline-flex items-center gap-1.5 text-sm text-stone-500">
@@ -219,7 +221,34 @@ export function ErrorNote({ message }: { message: Of<"error"> }) {
   return (
     <div role="alert" className="flex items-start gap-2 rounded-xl bg-rose-50 px-3.5 py-2.5 text-sm text-rose-800 ring-1 ring-rose-200 dark:bg-rose-950/40 dark:text-rose-200 dark:ring-rose-900">
       <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0" />
-      {errorText(message.reason, message.budgetLimited)}
+      <div className="min-w-0 flex-1">
+        {errorText(message.reason, message.budgetLimited)}
+        {onRetry && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              disabled={retrying}
+              data-testid="try-again"
+              onClick={() => {
+                setRetrying(true);
+                onRetry();
+              }}
+            >
+              <RotateCcw aria-hidden className="size-3.5" /> Try again
+            </Button>
+            <span className="text-xs text-rose-700/80 dark:text-rose-300/80">It continues from where it stopped; nothing it already did runs twice.</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** A failed turn someone tried again (phase H4). */
+export function RetriedNote() {
+  return (
+    <div className="inline-flex items-center gap-1.5 text-sm text-stone-500" data-testid="retried">
+      <RotateCcw aria-hidden className="size-4" /> Tried again
     </div>
   );
 }

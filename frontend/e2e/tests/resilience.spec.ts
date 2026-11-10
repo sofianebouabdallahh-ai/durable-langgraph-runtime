@@ -99,3 +99,28 @@ test("a chat with your own agent survives a worker crash, on the same version", 
   const events = await getJson<{ events: { type: string }[] }>(request, `/api/runs/${runId}/events?limit=500`);
   expect(events.events.filter((e) => e.type === "run.reclaimed")).toHaveLength(1);
 });
+
+test("H4: a reply that ran out of time is tried again, and continues where it stopped", async ({ page, request }) => {
+  const sid = await openEmptyChat(page, request);
+  // Two slow notes in a 6 s turn: the first is saved, the second is cut off by the limit.
+  const sent = await request.post(`/api/sessions/${sid}/messages`, {
+    data: { content: "keep both", options: { timeout_s: 6 }, script: [
+      { tool_calls: [{ name: "save_note", args: { text: "first", linger_s: 4 } }] },
+      { tool_calls: [{ name: "save_note", args: { text: "second", linger_s: 4 } }] },
+      { content: "Kept both." },
+    ] },
+  });
+  expect(sent.status()).toBe(202);
+  const runId = ((await sent.json()) as { run_id: string }).run_id;
+  await expect(page.getByTestId("try-again")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole("alert").filter({ hasText: "took too long" })).toBeVisible();
+  await page.getByTestId("try-again").click();
+  await expect(page.getByTestId("retried")).toBeVisible();
+  await expect(page.getByTestId("assistant-message")).toContainText("Kept both.", { timeout: 60_000 });
+  await expect(page.getByTestId("try-again")).toHaveCount(0); // tried: not offered again
+  const run = await getJson<{ status: string; redrives: number }>(request, `/api/runs/${runId}`);
+  expect([run.status, run.redrives]).toEqual(["completed", 1]);
+  // From where it stopped: the first note's step wasn't run again.
+  const events = await getJson<{ events: { type: string; payload: Record<string, unknown> }[] }>(request, `/api/runs/${runId}/events?limit=500`);
+  expect(events.events.filter((e) => e.type === "tool.completed").length).toBe(2);
+});

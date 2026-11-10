@@ -116,8 +116,11 @@ def _transcript_of(messages: list[BaseMessage], run_id: uuid.UUID) -> list[NewMe
                 out.append(NewMessage(make_id(run_id, "messages", f"{i}.{j}", "tool_call"),
                                       "tool_call", call))  # fmt: skip
         elif isinstance(m, ToolMessage):
-            out.append(NewMessage(make_id(run_id, "messages", i, "tool_result"), "tool_result",
-                                  _result(m)))  # fmt: skip
+            # A repair is named by its own id, not its place: a compaction at the start of
+            # the turn moves it, and it must not be written twice (H5).
+            where: int | str = m.id if m.id and m.id.startswith(repairs) else i
+            out.append(NewMessage(make_id(run_id, "messages", where, "tool_result"),
+                                  "tool_result", _result(m)))  # fmt: skip
         elif isinstance(m, SystemMessage):
             out.append(NewMessage(make_id(run_id, "messages", i, "system"), "system",
                                   {"text": _text(m.content)}))  # fmt: skip

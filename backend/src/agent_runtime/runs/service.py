@@ -23,11 +23,14 @@ from agent_runtime.config import AgentSettings, Settings
 from agent_runtime.db import Pool
 from agent_runtime.graphs import GraphRegistry, GraphSpec
 from agent_runtime.models.connections import ModelRouter, any_local
+from agent_runtime.runs.failures import REDRIVABLE
 from agent_runtime.runs.limits import RunOptions, local_model_limits, profile_of, resolve_limits
 from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.state import RunStatus
 from agent_runtime.runs.store import Run, RunRepository, RunTerminal
 from agent_runtime.runs.switches import ensure_on
+from agent_runtime.sessions.store import NewMessage, SessionRepository, message_id
+from agent_runtime.sessions.transcript import publish_messages
 from agent_runtime.streaming.bus import EventBus, publish_events
 from agent_runtime.tools.builtin import default_tools
 
@@ -255,6 +258,32 @@ class RunService:
         )
         if (run.status is RunStatus.QUEUED or orphaned) and self._relay is not None:
             await self._relay.enqueue(run.id)
+        return run
+
+    async def redrive(self, run_id: uuid.UUID) -> Run:
+        """Phase H4: try a failed run again, from its last checkpoint (a person's call,
+        once the cause is fixed). A chat turn shows "Tried again" in the chat. Raises
+        RunNotFound (→ 404) or NotRedrivable (→ 409); like any new work, AdmissionPaused,
+        Overloaded or AgentSwitchedOff when Nuria or the agent is stopped or full."""
+        await self.admit()  # the kill switch, the queue's depth, the daily cost ceiling
+        async with self._pool.connection() as conn:
+            repo = RunRepository(conn)
+            sessions = SessionRepository(conn)
+            if (agent := (await repo.get(run_id)).agent_name) is not None:
+                await ensure_on(conn, agent)  # this agent's own switch (L6)
+            async with conn.transaction():
+                run = await repo.redrive(run_id, redrivable=REDRIVABLE)
+                if run.session_id is not None:
+                    await sessions.append(run.session_id, [NewMessage(
+                        message_id(run.id, "redrive", run.redrives, "system"), "system",
+                        {"text": "Tried again", "retry": run.redrives})],
+                        run_id=run.id, epoch=None)  # fmt: skip
+                await AuditLog(conn).record("run.redriven", "run", run_id,
+                                            after={"redrives": run.redrives})  # fmt: skip
+        await publish_events(self._bus, repo.emitted)
+        await publish_messages(self._bus, sessions.created)
+        logs.event(log, "run redriven", run_id=str(run_id), redrives=run.redrives)
+        await self._enqueue(repo.ready)
         return run
 
     async def cancel_all(self) -> int:

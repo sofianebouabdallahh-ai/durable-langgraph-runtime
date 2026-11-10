@@ -5,6 +5,10 @@ Connections are autocommit: LangGraph's setup needs it (CREATE INDEX
 CONCURRENTLY can't run in a transaction), and our code always opens explicit
 transactions (`async with conn.transaction()`) wherever atomicity matters, so
 nothing is ever left half-committed by accident.
+
+Each connection is checked as it leaves the pool (H4): after Postgres restarts, the
+idle connections are dead, and the next `pool.connection()` must get a live one
+instead of failing the next query.
 """
 
 from psycopg import AsyncConnection
@@ -31,5 +35,6 @@ def create_pool(settings: Settings, *, min_size: int = 1, max_size: int = 10) ->
         },
         min_size=min_size,
         max_size=max_size,
+        check=AsyncConnectionPool.check_connection,  # an empty round trip; reconnects
         open=False,
     )

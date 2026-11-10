@@ -71,9 +71,9 @@ async def save_note(args: SaveNoteArgs, ctx: ToolContext) -> dict[str, Any]:
         # The idempotency key is the primary key: re-executing after a crash can't
         # create a second row (R2.6). The fencing trigger rejects a stale epoch.
         await conn.execute(
-            "INSERT INTO notes (key, run_id, text, epoch) VALUES (%s, %s, %s, %s) "
+            "INSERT INTO notes (key, run_id, text, epoch, author) VALUES (%s, %s, %s, %s, %s) "
             "ON CONFLICT (key) DO NOTHING",
-            (ctx.key, ctx.run_id, args.text, ctx.epoch),
+            (ctx.key, ctx.run_id, args.text, ctx.epoch, _author(ctx)),
         )
     if args.linger_s:
         await asyncio.sleep(args.linger_s)
@@ -91,14 +91,59 @@ class NotifyArgs(ToolArgs):
 async def notify(args: NotifyArgs, ctx: ToolContext) -> dict[str, Any]:
     """Send a notification to someone. Requires human approval."""
     async with ctx.pool.connection() as conn:
-        # Transactional outbox: a delivery process (out of scope) sends these. The
-        # key makes the external effect happen once no matter how often we retry.
+        # Transactional outbox: every worker's relay sends these to the webhook
+        # (notifications/delivery.py, H4). The key makes the external effect happen once
+        # no matter how often we retry, and is the delivery's `webhook-id`.
         await conn.execute(
             "INSERT INTO outbox_notifications (key, run_id, recipient, message, epoch) "
             "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (key) DO NOTHING",
             (ctx.key, ctx.run_id, args.to, args.message, ctx.epoch),
         )
-    return {"queued": True, "notification_id": ctx.key[:16]}
+    sent = bool(getattr(ctx.settings, "notify_webhook_url", ""))
+    return {
+        "queued": True, "notification_id": ctx.key[:16],
+        # Honest about where it goes (H4): with no webhook it's kept, not sent.
+        "delivery": "sending to the notifications webhook" if sent
+        else "kept, not sent: no notifications webhook is set up",
+    }  # fmt: skip
+
+
+# --------------------------------------------------------------- recall_notes
+
+
+def _author(ctx: ToolContext) -> str | None:
+    """Who keeps the note: the helper calling the tool, or None for the agent itself."""
+    sub = ctx.subagent
+    return str(sub.defn.frontmatter.name) if sub is not None else None
+
+
+class RecallNotesArgs(ToolArgs):
+    query: Annotated[str | None, Field(max_length=200)] = None
+    limit: Annotated[int, Field(ge=1, le=20)] = 10
+
+
+async def recall_notes(args: RecallNotesArgs, ctx: ToolContext) -> dict[str, Any]:
+    """Read back the notes you saved with save_note, in any chat with you: newest first,
+    optionally only those containing `query`."""
+    async with ctx.pool.connection() as conn:
+        # Notes this same agent (or this same helper of it) saved, in any chat (H4).
+        cur = await conn.execute(
+            """
+            SELECT n.text, n.created_at FROM notes n JOIN runs r ON r.id = n.run_id
+            JOIN runs me ON me.id = %(run)s
+            WHERE coalesce(r.agent_name, r.graph_name) = coalesce(me.agent_name, me.graph_name)
+              AND n.author IS NOT DISTINCT FROM %(author)s
+              AND (%(q)s::text IS NULL OR strpos(lower(n.text), lower(%(q)s)) > 0)
+            ORDER BY n.created_at DESC LIMIT %(n)s
+            """,
+            {"run": ctx.run_id, "author": _author(ctx), "q": args.query or None,
+             "n": args.limit},
+        )  # fmt: skip
+        rows = await cur.fetchall()
+    return {
+        "notes": [{"text": r["text"], "saved_at": r["created_at"].isoformat()} for r in rows],
+        "count": len(rows),
+    }
 
 
 class SearchArgs(ToolArgs):
@@ -125,6 +170,13 @@ def default_tools() -> ToolRegistry:
     registry.tool(
         "save_note", args=SaveNoteArgs, risk_class="write_internal", side_effect=True, max_calls=20
     )(save_note)
+    registry.tool(
+        "recall_notes",
+        args=RecallNotesArgs,
+        risk_class="read",
+        side_effect=False,
+        repeatable=True,
+    )(recall_notes)
     registry.tool(
         "notify", args=NotifyArgs, risk_class="external_side_effect", side_effect=True, max_calls=5
     )(notify)

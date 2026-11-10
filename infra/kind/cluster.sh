@@ -98,7 +98,8 @@ secrets() {
   tmp=$(mktemp)
   chmod 600 "$tmp"
   for key in POSTGRES_PASSWORD API_POSTGRES_PASSWORD WORKER_POSTGRES_PASSWORD NURIA_SECRET_KEY \
-             SEARXNG_SECRET SANDBOXD_TOKEN OPENAI_API_KEY GRAFANA_ADMIN_PASSWORD; do
+             SEARXNG_SECRET SANDBOXD_TOKEN OPENAI_API_KEY NOTIFY_WEBHOOK_SECRET \
+             GRAFANA_ADMIN_PASSWORD; do
     value=$(env_get "$key")
     value=${value#\'}; value=${value%\'}; value=${value#\"}; value=${value%\"}
     [ -n "$value" ] && printf '%s=%s\n' "$key" "$value" >> "$tmp"

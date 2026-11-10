@@ -20,6 +20,7 @@ def test_default_registry_declares_risk_and_side_effects() -> None:
         "search": "read",
         "notify": "external_side_effect",
         "save_note": "write_internal",
+        "recall_notes": "read",  # what save_note kept (H4), granted with it
         # sub-agent tools (CR-005), granted by the harness
         "spawn_subagent": "write_internal",
         "subagent_status": "read",
@@ -99,3 +100,16 @@ def test_return_result_accepts_any_json_value() -> None:
 
     for value in (48, 4.5, "48 slots", [1, 2], {"total": 48}, None):
         assert ReturnArgs.model_validate({"summary": "s", "result": value}).result == value
+
+
+def test_a_helper_keeps_its_own_notes() -> None:
+    """recall_notes (H4) reads back only the notes of whoever saved them: the agent
+    itself (None) or one of its helpers, by name."""
+    from types import SimpleNamespace
+
+    from agent_runtime.tools.builtin import _author
+
+    base: dict[str, object] = {"run_id": uuid.uuid4(), "epoch": 1, "key": "k" * 64, "pool": None}
+    assert _author(ToolContext(**base)) is None  # type: ignore[arg-type]
+    helper = SimpleNamespace(defn=SimpleNamespace(frontmatter=SimpleNamespace(name="scribe")))
+    assert _author(ToolContext(**base, subagent=helper)) == "scribe"  # type: ignore[arg-type]

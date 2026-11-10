@@ -65,6 +65,12 @@ function Set-EnvValue($key, $value) {
   [IO.File]::WriteAllLines((Resolve-Path $EnvFile), $lines)
 }
 function New-Secret { -join ((1..24) | ForEach-Object { "{0:x2}" -f (Get-Random -Maximum 256) }) }
+# A Standard Webhooks signing secret: whsec_ and 32 random bytes in base64 (H4).
+function New-WebhookSecret {
+  $bytes = New-Object byte[] 32
+  [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+  "whsec_" + [Convert]::ToBase64String($bytes)
+}
 function Protect-EnvFile {  # readable by this user only
   $acl = Get-Acl $EnvFile; $acl.SetAccessRuleProtection($true, $false)
   $rule = New-Object Security.AccessControl.FileSystemAccessRule($env:USERNAME, "FullControl", "Allow")
@@ -128,6 +134,7 @@ function Initialize-EnvFile {
   foreach ($key in @("NURIA_SECRET_KEY", "SEARXNG_SECRET", "SANDBOXD_TOKEN")) {
     if (-not (Get-EnvValue $key)) { Set-EnvValue $key (New-Secret); $changed++ }
   }
+  if (-not (Get-EnvValue "NOTIFY_WEBHOOK_SECRET")) { Set-EnvValue "NOTIFY_WEBHOOK_SECRET" (New-WebhookSecret); $changed++ }
   if ($changed -gt 0) { Ok "generated $changed local secret(s) (only on this machine, in .env)" }
   if (-not (Get-EnvValue "COMPOSE_PROFILES")) { Set-EnvValue "COMPOSE_PROFILES" "app" }
   # The release this checkout is: Compose pulls exactly these images (L5).

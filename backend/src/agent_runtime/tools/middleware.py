@@ -39,23 +39,39 @@ from langchain.agents.middleware.types import (
     ToolCallRequest,
 )
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    HumanMessage,
+    RemoveMessage,
+    SystemMessage,
+    ToolMessage,
+)
+from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.runtime import Runtime
 from langgraph.types import Command
 
 from agent_runtime import genai, logs, metrics, telemetry
+from agent_runtime.context import compact
+from agent_runtime.context.fit import ContextOverflow, estimate, fit, overflow
+from agent_runtime.fencing import FencedError
 from agent_runtime.models.retry import ModelCaller
 from agent_runtime.models.scripted import ScriptedChatModel, ScriptTurn
+from agent_runtime.runs.events import EventType
 from agent_runtime.sessions.turns import script_offset
 from agent_runtime.tools.hooks import (
+    Continue,
     Deny,
     HookSpec,
+    ModelHookInput,
+    ModelReplyInput,
     SessionHookInput,
     TurnHookInput,
     run_context_hooks,
+    run_model_hooks,
 )
-from agent_runtime.tools.invocations import LoopDetected, charge_model_call
-from agent_runtime.tools.pipeline import ToolCall, ToolPipeline, ToolRunContext
+from agent_runtime.tools.invocations import BudgetExceeded, LoopDetected, charge_model_call
+from agent_runtime.tools.pipeline import ToolCall, ToolPipeline, ToolRunContext, truncate
+from agent_runtime.untrusted import as_data
 
 log = logging.getLogger(__name__)
 
@@ -91,6 +107,8 @@ class TurnInfo:
     message: str
     session_start: list[HookSpec] = field(default_factory=list)
     turn_start: list[HookSpec] = field(default_factory=list)
+    pre_model: list[HookSpec] = field(default_factory=list)  # H4
+    post_model: list[HookSpec] = field(default_factory=list)
 
 
 class RuntimeState(AgentState[Any]):
@@ -116,6 +134,10 @@ class RunContext:
     # The chat model for one call (the provider's; R3.1). Given the scripted model's
     # offset; the default is the scripted model with this run's script.
     chat_model: Callable[[int], BaseChatModel] | None = None
+    # The model's context window (tokens), pinned with the run's bindings (phase H5);
+    # lowered for the rest of the run when the provider states a smaller one.
+    context_tokens: int = 128_000
+    trim_reported: int = 0  # how much fitting was last reported (no event per call)
 
     def model_for(self, offset: int) -> BaseChatModel:
         if self.chat_model is not None:
@@ -174,6 +196,7 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
         if turn is None:
             return None
         texts: list[str] = []
+        session_texts: list[str] = []
         update: dict[str, Any] = {}
         if turn.session_id is not None and not state.get("session_started"):
             started = await run_context_hooks(
@@ -181,7 +204,7 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
             )
             if isinstance(started, Deny):
                 raise TurnDenied(started.reason)
-            texts += started.texts
+            session_texts = started.texts
             update["session_started"] = True
         begun = await run_context_hooks(turn.turn_start, TurnHookInput(
             str(turn.run_id), str(turn.session_id) if turn.session_id else None,
@@ -190,9 +213,68 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
         if isinstance(begun, Deny):
             raise TurnDenied(begun.reason)
         texts += begun.texts
-        if texts:
-            update["messages"] = [SystemMessage(content=t) for t in texts]
+        # session_start's context is said once per chat: its id marks it, so compaction
+        # keeps it word for word (H5); turn_start's is per turn.
+        added = [SystemMessage(content=t, id=compact.session_context_id(turn.run_id, k))
+                 for k, t in enumerate(session_texts)]  # fmt: skip
+        added += [SystemMessage(content=t) for t in texts]
+        # A long chat's older turns become one summary, here: before this turn writes a
+        # transcript row or records a tool call, so every id and key it makes is computed
+        # from the compacted thread (phase H5, context/compact.py).
+        kept = await self._compact(runtime.context, list(state.get("messages", [])), turn)
+        if kept is not None:
+            update["messages"] = [RemoveMessage(id=REMOVE_ALL_MESSAGES), *kept, *added]
+        elif added:
+            update["messages"] = added
         return update or None
+
+    async def _compact(
+        self, ctx: RunContext, messages: list[Any], turn: TurnInfo
+    ) -> list[Any] | None:
+        """The thread's messages after compaction, or None when it fits."""
+        planned = compact.plan(messages, ctx.context_tokens, run_id=turn.run_id)
+        if planned is None:
+            return None
+        text, how = await self._summarise(ctx, planned.old)
+        kept = [compact.summary_message(text, turn.run_id), *planned.keep]
+        after = estimate(kept)
+        ctx.tools.emit(EventType.CONTEXT_COMPACTED, {
+            "turns": planned.turns, "tokens_before": planned.tokens_before,
+            "tokens_after": after, "how": how, "window": ctx.context_tokens,
+        })  # fmt: skip
+        logs.event(log, f"context compacted: {planned.turns} turn(s) summarised", how=how,
+                   tokens_before=planned.tokens_before, tokens_after=after)  # fmt: skip
+        return kept
+
+    async def _summarise(self, ctx: RunContext, old: list[Any]) -> tuple[str, str]:
+        """The summary of `old`: by the agent's own model (charged like any call, its
+        retries and breaker; nothing streamed), else extracted without a model (the
+        scripted model, or the call failed)."""
+        max_chars = max(int(ctx.context_tokens * 4 * 0.15), 1_000)  # ≤ ~15% of the window
+        model = ctx.model_for(0)
+        if not isinstance(model, ScriptedChatModel):
+            room = max(int((ctx.context_tokens - 2_000) * 4 * 0.8), 4_000)
+            history = compact.transcript(old)
+            if len(history) > room:  # the start (an earlier summary) and the latest turns
+                history = f"{history[: room // 3]}\n…\n{history[-(room * 2 // 3) :]}"
+            prompt = [SystemMessage(content=compact.SUMMARY_PROMPT),
+                      HumanMessage(content=as_data("conversation", history))]  # fmt: skip
+
+            async def call() -> Any:
+                return await model.ainvoke(prompt, config={"callbacks": []})
+
+            try:
+                reply = await ctx.caller.call(call, charge=lambda: self._charge(ctx))
+                await self._account(ctx, ModelResponse(result=[reply]))
+                text = str(reply.text).strip()
+                if text:
+                    return text[:max_chars], "model"
+            except (BudgetExceeded, FencedError):
+                raise  # the budget is spent or the run was taken over: not a fallback
+            except Exception:
+                log.warning("summarising with the model failed; extracting instead",
+                            exc_info=True)  # fmt: skip
+        return compact.extract(old, max_chars=max_chars), "extract"
 
     async def awrap_model_call(
         self,
@@ -209,6 +291,8 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
         sub = ctx.subagent
         if sub is not None and sub.returned is not None:  # return_result: end the loop here
             return ModelResponse(result=[AIMessage(content=str(sub.returned["summary"]))])
+        turn = ctx.turn if sub is None else None
+        await _pre_model(turn, request, request.messages)
         model = ctx.model_for(script_offset(request.state.get("messages", [])))
         wrap_up: list[str | None] = [None]
 
@@ -246,34 +330,38 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
             elif (kind := wrap_up[0]) is not None:  # R14.2: one wrap-up call, with no tools
                 req = req.override(tools=[], messages=[*req.messages, SystemMessage(
                     content=WRAP_UP_TURN.format(kind=kind.removeprefix("budget:")))])  # fmt: skip
-            return await handler(req)
+            return await _send(ctx, handler, req)
 
         response = await self._call(ctx, attempt, charge, attempts)
         if _is_empty(response) and wrap_up[0] is None:  # once, charged like any call
             logs.event(log, "empty model reply: asking once more", level=logging.WARNING)
             nudged: list[Any] = [*request.messages, *response.result, HumanMessage(EMPTY_REPLY)]
+            await _pre_model(turn, request, nudged)  # every call the model gets
 
             async def again() -> ModelResponse[Any]:
-                return await handler(request.override(model=model, messages=nudged))
+                return await _send(ctx, handler, request.override(model=model, messages=nudged))
 
             response = await self._call(ctx, again, charge_again, attempts)
         _check_progress(request.state.get("messages", []), response)
         if wrap_up[0] is not None:
-            return _budget_limited(response, wrap_up[0])
+            return await _post_model(turn, _budget_limited(response, wrap_up[0]))
         orchestrator = ctx.orchestrator
         if orchestrator is not None and _is_final(response) and orchestrator.running():
             outcomes = await orchestrator.wait_all()
+            # The outcomes are the helpers' words: data, like wait_subagents' output (H4).
+            results = truncate(json.dumps(outcomes, default=str), ctx.pipeline.max_result_chars)
             note = HumanMessage(
                 content="[runtime] Your sub-agents were still running, so the runtime waited "
-                "for them before you finish. Their results: " + json.dumps(outcomes, default=str)
+                "for them before you finish. Their results:\n" + as_data("subagents", results)
             )
             messages: list[Any] = [*request.messages, *response.result, note]
+            await _pre_model(turn, request, messages)  # it carries the helpers' words
 
             async def guarded() -> ModelResponse[Any]:
-                return await handler(request.override(model=model, messages=messages))
+                return await _send(ctx, handler, request.override(model=model, messages=messages))
 
             response = await self._call(ctx, guarded, charge_again, attempts)
-        return response
+        return await _post_model(turn, response)
 
     async def _call(
         self,
@@ -361,6 +449,103 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
         return ToolMessage(
             content=result.content, tool_call_id=call.id, name=call.name, status=result.status
         )
+
+
+async def _send(
+    ctx: RunContext,
+    handler: Callable[[ModelRequest[RunContext]], Awaitable[ModelResponse[Any]]],
+    req: ModelRequest[RunContext],
+) -> ModelResponse[Any]:
+    """Send `req` fitted to the model's context window (phase H5): old tool results
+    cleared, then long older messages cut, in what's SENT only. A provider that still
+    says it's too long gets it fitted again, smaller, once; then ContextOverflow."""
+    system = estimate([req.system_message]) if req.system_message else 0
+    window = ctx.context_tokens - system
+    fitted = fit(req.messages, window, req.tools)
+    if fitted.changed and fitted.cleared + fitted.shortened > ctx.trim_reported:
+        ctx.trim_reported = fitted.cleared + fitted.shortened  # an event when it grows only
+        ctx.tools.emit(EventType.CONTEXT_TRIMMED, {
+            "cleared": fitted.cleared, "shortened": fitted.shortened,
+            "tokens_before": fitted.tokens_before, "tokens_after": fitted.tokens_after,
+        })  # fmt: skip
+    try:
+        return await handler(req.override(messages=fitted.messages) if fitted.changed else req)
+    except Exception as exc:
+        too_long, stated = overflow(exc)
+        if not too_long:
+            raise
+        if stated:  # the model's real window: the rest of the run is fitted to it
+            ctx.context_tokens = min(ctx.context_tokens, stated)
+        smaller = int(min((stated or ctx.context_tokens) - system, window) * 0.7)
+        refit = fit(req.messages, smaller, req.tools, trim_at=0.4, shorten_at=0.6,
+                    keep_results=0, protect_latest=False)  # fmt: skip
+        logs.event(log, "the model said the request was too long: fitting it again",
+                   level=logging.WARNING, window=stated, tokens=refit.tokens_after)  # fmt: skip
+        ctx.tools.emit(EventType.CONTEXT_TRIMMED, {
+            "cleared": refit.cleared, "shortened": refit.shortened, "refused": True,
+            "tokens_before": refit.tokens_before, "tokens_after": refit.tokens_after,
+        })  # fmt: skip
+        try:
+            return await handler(req.override(messages=refit.messages))
+        except Exception as again:
+            if overflow(again)[0]:
+                raise ContextOverflow(str(again)[:500]) from again
+            raise
+
+
+async def _pre_model(
+    turn: TurnInfo | None, request: ModelRequest[RunContext], messages: list[Any]
+) -> None:
+    """pre_model hooks (H4), before each of a main agent's model calls (with the
+    messages that call sends): continue, or deny the turn. Fail closed."""
+    if turn is None or not turn.pre_model:
+        return
+    last = messages[-1] if messages else None
+    tools = [str(getattr(t, "name", None) or (t.get("name") if isinstance(t, dict) else ""))
+             for t in request.tools]  # fmt: skip
+    decided = await run_model_hooks(turn.pre_model, ModelHookInput(
+        str(turn.run_id), str(turn.session_id) if turn.session_id else None, turn.agent,
+        last.text if last is not None else "", tools,
+    ))  # fmt: skip
+    if isinstance(decided, Deny):
+        logs.event(log, "a pre_model hook denied the turn", reason=decided.reason,
+                   level=logging.WARNING)  # fmt: skip
+        raise TurnDenied(decided.reason)
+
+
+async def _post_model(turn: TurnInfo | None, response: ModelResponse[Any]) -> ModelResponse[Any]:
+    """post_model hooks (H4): continue, change the reply's text (its tool calls stay),
+    or deny the turn. Fail closed."""
+    if turn is None or not turn.post_model:
+        return response
+    at = next((i for i in range(len(response.result) - 1, -1, -1)
+               if isinstance(response.result[i], AIMessage)), None)  # fmt: skip
+    if at is None:
+        return response
+    reply = response.result[at]
+    assert isinstance(reply, AIMessage)
+    decided = await run_model_hooks(turn.post_model, ModelReplyInput(
+        str(turn.run_id), str(turn.session_id) if turn.session_id else None, turn.agent,
+        reply.text, [{"name": c["name"], "args": c["args"]} for c in reply.tool_calls],
+    ))  # fmt: skip
+    if isinstance(decided, Deny):
+        logs.event(log, "a post_model hook denied the reply", reason=decided.reason,
+                   level=logging.WARNING)  # fmt: skip
+        raise TurnDenied(decided.reason)
+    if isinstance(decided, Continue):
+        return response
+    result = list(response.result)
+    result[at] = reply.model_copy(update={"content": _with_text(reply.content, decided.value)})
+    return ModelResponse(result=result, structured_response=response.structured_response)
+
+
+def _with_text(content: str | list[Any], text: str) -> str | list[Any]:
+    """The reply's content with its text replaced by `text`, its other blocks (a
+    provider's reasoning, its signatures) kept as they were."""
+    if isinstance(content, str):
+        return text
+    kept = [b for b in content if isinstance(b, dict) and b.get("type") != "text"]
+    return [*kept, {"type": "text", "text": text}]
 
 
 def _is_empty(response: ModelResponse[Any]) -> bool:

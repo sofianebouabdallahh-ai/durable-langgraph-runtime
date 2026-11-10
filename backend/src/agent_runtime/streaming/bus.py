@@ -44,6 +44,7 @@ TURN_STATUS_OF = {
     "run.reclaimed": "running",  # taken over by another worker after a crash
     "run.released": "queued",  # handed back on a graceful shutdown
     "run.resumed": "queued",  # approved or rejected: back in the queue
+    "run.redriven": "queued",  # a failed turn, tried again (H4)
     "interrupt.raised": "waiting_approval",
     "run.completed": "completed",
     "run.failed": "failed",

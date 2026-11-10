@@ -94,6 +94,7 @@ class Connection:
     created_at: datetime
     updated_at: datetime
     archived_at: datetime | None
+    context_tokens: int | None = None  # its models' context window, if set (H5)
 
     @property
     def has_key(self) -> bool:
@@ -127,12 +128,13 @@ class Connection:
             created_at=r["created_at"],
             updated_at=r["updated_at"],
             archived_at=r["archived_at"],
+            context_tokens=r.get("context_tokens"),
         )
 
 
 _COLUMNS = """id, name, display_name, kind, base_url, key_ciphertext, key_nonce, wrapped_key,
     wrapped_nonce, kek_version, key_fingerprint, models, prices, test_status, test_detail,
-    tested_model, tested_at, created_at, updated_at, archived_at"""
+    tested_model, tested_at, created_at, updated_at, archived_at, context_tokens"""
 
 
 def _aad(connection_id: uuid.UUID) -> str:
@@ -361,10 +363,12 @@ class ConnectionService:
         api_key: str | None = None,
         models: list[str] | None = None,
         prices: dict[str, dict[str, float] | None] | None = None,
+        context_tokens: int | None = None,
     ) -> Connection:
         """A new key replaces the old one (the old ciphertext is gone); no key keeps it.
         A changed address or key needs a new test. `prices`: per model, USD per 1M tokens
-        (input, output); None removes a model's price (phase H2)."""
+        (input, output); None removes a model's price (phase H2). `context_tokens`: its
+        models' context window (H5); 0 goes back to the default."""
         async with self._pool.connection() as conn, conn.transaction():
             store = ConnectionStore(conn)
             current = await store.get(cid)
@@ -375,6 +379,12 @@ class ConnectionService:
                 changes["models"] = _clean(models)
             if prices is not None:
                 changes["prices"] = _priced(current.prices, prices)
+            if context_tokens is not None:
+                if context_tokens and not MIN_CONTEXT <= context_tokens <= MAX_CONTEXT:
+                    raise ConnectionInvalid(
+                        f"A context window is between {MIN_CONTEXT:,} and {MAX_CONTEXT:,} tokens"
+                    )
+                changes["context_tokens"] = context_tokens or None
             if base_url is not None and normalise_url(current.kind, base_url) != current.base_url:
                 changes["base_url"] = await self._checked(normalise_url(current.kind, base_url))
                 moved = not same_destination(current.base_url, changes["base_url"])
@@ -481,6 +491,10 @@ class ConnectionService:
             return await Guard.of(self._settings).check(url)
         except DestinationRefused as exc:
             raise ConnectionInvalid(str(exc)) from exc
+
+    def window_of(self, c: Connection) -> int:
+        """Its models' context window, as a turn will pin it (H5)."""
+        return context_window(self._settings, local=_local(c), own=c.context_tokens)
 
     def prices_of(self, c: Connection) -> dict[str, Price]:
         """What a call to each of the connection's models costs, and why (phase H2)."""
@@ -653,6 +667,7 @@ class ModelRouter:
                     "model": model_id,
                     "local": _local(connection),
                     "price": self._price(model_id, connection).as_dict(),
+                    "context_tokens": self._window(connection),
                 }
             elif default is not None:
                 connection = await store.get(default[0])
@@ -662,6 +677,7 @@ class ModelRouter:
                     "model": default[1],
                     "local": _local(connection),
                     "price": self._price(default[1], connection).as_dict(),
+                    "context_tokens": self._window(connection),
                 }
             else:
                 local = self._setup_is_local()
@@ -672,6 +688,7 @@ class ModelRouter:
                     "price": resolve_price(
                         model_id, settings_prices=self._settings.model_prices, local=local
                     ).as_dict(),
+                    "context_tokens": context_window(self._settings, local=local),
                 }
         return bindings
 
@@ -681,6 +698,11 @@ class ModelRouter:
             model_id, connection_prices=connection.prices,
             settings_prices=self._settings.model_prices, local=_local(connection),
         )  # fmt: skip
+
+    def _window(self, connection: Connection) -> int:
+        """A turn's context window for this connection, pinned with its binding (H5)."""
+        return context_window(self._settings, local=_local(connection),
+                              own=connection.context_tokens)  # fmt: skip
 
     def _setup_model(self, role: str) -> str:
         """The model the setup's provider uses for `role` (its name for the scripted one)."""
@@ -719,12 +741,25 @@ class ModelRouter:
 def _audited(c: Connection) -> dict[str, Any]:
     """A connection as the audit trail shows it: never the key, only that one is set."""
     return {"display_name": c.display_name, "kind": c.kind, "base_url": c.base_url,
-            "models": c.models, "prices": c.prices,
+            "models": c.models, "prices": c.prices, "context_tokens": c.context_tokens,
             **key_change(c.key_fingerprint)}  # fmt: skip
 
 
 def _local(c: Connection) -> bool:
     return c.kind == "ollama" or is_local(c.base_url)
+
+
+MIN_CONTEXT, MAX_CONTEXT = 2_048, 10_000_000
+
+
+def context_window(settings: Settings, *, local: bool, own: int | None = None) -> int:
+    """How many tokens a model takes in one request (phase H5): the connection's own
+    setting, else a cautious default (a model on this machine is often run with a small
+    window; a hosted one takes far more). A provider's "maximum context length is N"
+    corrects it for a call (context/fit.py)."""
+    if own:
+        return own
+    return settings.local_context_tokens if local else settings.context_tokens
 
 
 def any_local(bindings: dict[str, Any] | None) -> bool:

@@ -539,6 +539,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The latest notifications and their delivery */
+        get: operations["list_notifications_notifications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/onboarding": {
         parameters: {
             query?: never;
@@ -682,6 +699,26 @@ export interface paths {
         post?: never;
         /** Take a rating back */
         delete: operations["delete_feedback_runs__run_id__feedback_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/redrive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Try a failed run again (from its last checkpoint)
+         * @description H4. `failed` → `queued`: it resumes from its last saved step, and tool calls already done aren't run again. For failures that might not happen again (`error`, `infrastructure`, `max_reclaims`, `timeout`) of a top-level run; a chat turn only if it is the chat's latest. The budgets already used still count. 409 otherwise.
+         */
+        post: operations["redrive_run_runs__run_id__redrive_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1718,6 +1755,16 @@ export interface components {
         ConnectionView: {
             /** Base Url */
             base_url: string;
+            /**
+             * Context Tokens
+             * @description How many tokens its models take in one request (phase H5): what a chat is fitted and compacted to
+             */
+            context_tokens: number;
+            /**
+             * Context Tokens Set
+             * @description Set on this connection, not the default
+             */
+            context_tokens_set: boolean;
             /** Display Name */
             display_name: string;
             /**
@@ -1941,6 +1988,11 @@ export interface components {
             api_key?: string | null;
             /** Base Url */
             base_url?: string | null;
+            /**
+             * Context Tokens
+             * @description Its models' context window in tokens; 0 goes back to the default
+             */
+            context_tokens?: number | null;
             /** Display Name */
             display_name?: string | null;
             /** Models */
@@ -2426,6 +2478,59 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** NotificationView */
+        NotificationView: {
+            /** Agent */
+            agent: string | null;
+            /** Attempts */
+            attempts: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Delivered At */
+            delivered_at: string | null;
+            /**
+             * Id
+             * @description The notification's id, as the chat shows it
+             */
+            id: string;
+            /** Last Error */
+            last_error: string | null;
+            /**
+             * Last Status
+             * @description The webhook's last HTTP status
+             */
+            last_status: number | null;
+            /**
+             * Message
+             * @description Its first 300 characters
+             */
+            message: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "sending" | "delivered" | "failed" | "skipped";
+            /** To */
+            to: string;
+        };
+        /** NotificationsView */
+        NotificationsView: {
+            /** Notifications */
+            notifications: components["schemas"]["NotificationView"][];
+            /**
+             * Signed
+             * @description Deliveries carry a webhook-signature
+             */
+            signed: boolean;
+            /**
+             * Webhook
+             * @description The webhook's host, if one is set up
+             */
+            webhook: string | null;
+        };
         /** Now */
         Now: {
             /** Queued */
@@ -2612,6 +2717,12 @@ export interface components {
              */
             id: string;
             /**
+             * Infra Retries
+             * @description Releases because Postgres or Redis failed (H4), bounded
+             * @default 0
+             */
+            infra_retries: number;
+            /**
              * Interrupt Payload
              * @description The next approval a waiting_approval run waits on (R1.4): its `approval_id`, `tool`, `args` (secrets redacted), `call_id` and `reason`. Several can be pending; once this one is decided, the next one shows here.
              */
@@ -2643,6 +2754,12 @@ export interface components {
              * @description Times taken over after a worker died (R2.4)
              */
             reclaims: number;
+            /**
+             * Redrives
+             * @description Times a person tried it again (H4)
+             * @default 0
+             */
+            redrives: number;
             /**
              * Releases
              * @description Graceful hand-offs on worker shutdown (R10.7)
@@ -4474,6 +4591,37 @@ export interface operations {
             };
         };
     };
+    list_notifications_notifications_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationsView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_onboarding_onboarding_get: {
         parameters: {
             query?: never;
@@ -4801,6 +4949,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    redrive_run_runs__run_id__redrive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunView"];
+                };
             };
             /** @description Validation Error */
             422: {

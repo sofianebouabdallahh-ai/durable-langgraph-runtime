@@ -11,7 +11,7 @@ import type { TurnStatus } from "../stream/events";
 import { Markdown } from "../ui/Markdown";
 import { Avatar, Typing } from "../ui/primitives";
 import { agentLabel, turnLabel } from "../ui/words";
-import { ApprovalCard, ErrorNote, HelperCards, StepList, ToolCard } from "./cards";
+import { ApprovalCard, ErrorNote, HelperCards, RetriedNote, StepList, ToolCard } from "./cards";
 import { Composer } from "./Composer";
 import { problemText } from "./problems";
 import { type Item, pendingApprovals, type TurnView, turns } from "./selectors";
@@ -80,6 +80,21 @@ export function ChatView({
     }
   };
 
+  // A failed turn, tried again from its last saved step (phase H4). The turn is live
+  // again BEFORE the request: its first stream events and tokens can arrive before the
+  // 202, and a turn still marked failed would drop them. Refused: it's failed again.
+  const retry = async (runId: string) => {
+    setNotice(null);
+    const before = state.turn;
+    dispatch({ kind: "sent", runId });
+    try {
+      await unwrap(api.POST("/runs/{run_id}/redrive", { params: { path: { run_id: runId } } }));
+    } catch (e) {
+      dispatch({ kind: "turn", runId, status: "failed", reason: before?.runId === runId ? before.reason : null });
+      setNotice(problemText(e));
+    }
+  };
+
   const decide = async (request: Interrupt, decision: "approve" | "reject", reason: string | null) => {
     // The approval's own id: you decide the call you were shown, even with several waiting.
     const body = { decision, reason, ...(request.approvalId ? { approval_id: request.approvalId } : {}) };
@@ -117,6 +132,7 @@ export function ChatView({
         brand={agentId === "chat"}
         waitingIds={new Set(waiting.map((m) => m.messageId))}
         onDecide={(request, decision, reason) => void decide(request, decision, reason)}
+        onRetry={busy ? undefined : (runId) => void retry(runId)}
         status={state.turn?.status}
         sentCount={sentCount}
       />
@@ -147,6 +163,7 @@ function MessageList({
   brand,
   waitingIds,
   onDecide,
+  onRetry,
   status,
   sentCount,
 }: {
@@ -155,6 +172,8 @@ function MessageList({
   brand: boolean;
   waitingIds: ReadonlySet<string>;
   onDecide: Decide;
+  /** Only the latest turn can be tried again, and only while nothing runs. */
+  onRetry: ((runId: string) => void) | undefined;
   status: TurnStatus | undefined;
   sentCount: number;
 }) {
@@ -189,7 +208,16 @@ function MessageList({
           </div>
         )}
         {views.map((v) => (
-          <TurnBlock key={v.runId} view={v} agent={agent} brand={brand} waitingIds={waitingIds} onDecide={onDecide} status={v.active ? status : undefined} />
+          <TurnBlock
+            key={v.runId}
+            view={v}
+            agent={agent}
+            brand={brand}
+            waitingIds={waitingIds}
+            onDecide={onDecide}
+            onRetry={v === last && onRetry ? () => { onRetry(v.runId); } : undefined}
+            status={v.active ? status : undefined}
+          />
         ))}
         <div ref={end} />
       </div>
@@ -206,6 +234,7 @@ function TurnBlock({
   brand,
   waitingIds,
   onDecide,
+  onRetry,
   status,
 }: {
   view: TurnView;
@@ -213,6 +242,7 @@ function TurnBlock({
   brand: boolean;
   waitingIds: ReadonlySet<string>;
   onDecide: Decide;
+  onRetry: (() => void) | undefined;
   status: TurnStatus | undefined;
 }) {
   const [details, setDetails] = useState(false);
@@ -237,7 +267,7 @@ function TurnBlock({
               {agent}
               {answeredBy(view) && <span className="ml-1.5 text-xs font-normal text-stone-500" data-testid="answered-by">· {answeredBy(view)}</span>}
             </div>
-            {renderItems(view.items, agent, waitingIds, onDecide)}
+            {renderItems(view.items, agent, waitingIds, onDecide, view.active ? undefined : onRetry)}
             {view.draft && (
               <div data-testid="draft">
                 <Markdown text={view.draft} />
@@ -283,8 +313,17 @@ function answeredBy(view: TurnView): string | null {
 }
 
 /** Items in order; consecutive tool steps share one frame. */
-function renderItems(items: Item[], agent: string, waitingIds: ReadonlySet<string>, onDecide: Decide): ReactNode[] {
+function renderItems(
+  items: Item[],
+  agent: string,
+  waitingIds: ReadonlySet<string>,
+  onDecide: Decide,
+  onRetry: (() => void) | undefined,
+): ReactNode[] {
   const out: ReactNode[] = [];
+  const lastError = items.findLast((i) => i.kind === "error");
+  // Try again: on the turn's last error, if nothing came after it (not tried already).
+  const retryable = lastError?.kind === "error" && lastError.message.canRetry && items.at(-1) === lastError;
   let steps: Extract<Item, { kind: "tool" }>[] = [];
   const flush = () => {
     if (steps.length === 0) return;
@@ -331,7 +370,10 @@ function renderItems(items: Item[], agent: string, waitingIds: ReadonlySet<strin
         );
         break;
       case "error":
-        out.push(<ErrorNote key={item.key} message={item.message} />);
+        out.push(<ErrorNote key={item.key} message={item.message} onRetry={retryable && item === lastError ? onRetry : undefined} />);
+        break;
+      case "retried":
+        out.push(<RetriedNote key={item.key} />);
         break;
     }
   }

@@ -175,8 +175,11 @@ def _bound(
 def granted_tools(agent: AgentDefinition | SubAgentDefinition) -> list[str]:
     """What the harness grants (R14.9): the file's tools, plus the sub-agent tools
     (CR-005 R16.4/R16.5) for a main agent with sub-agents, and for every sub-agent, plus
-    the skill tools for an agent or helper that has skills (CR-006 R17.4)."""
+    the skill tools for an agent or helper that has skills (CR-006 R17.4), plus
+    `recall_notes` wherever `save_note` is (notes it can read back, H4)."""
     names = [t.name for t in agent.frontmatter.tools]
+    if "save_note" in names and "recall_notes" not in names:
+        names.append("recall_notes")
     if agent.frontmatter.skills:
         names += SKILL_TOOLS
     if isinstance(agent, SubAgentDefinition):

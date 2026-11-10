@@ -9,6 +9,10 @@ under their least-privilege database logins.
     privilege  the worker's login can't drop a table or delete runs (R14.13)
     sandbox    docker kill the worker while its turn runs Python in the sandbox (L6 SC5)
     mcp        docker kill the worker during an MCP tool call (L8 SC5; profile `test`)
+    outsiders  only Nuria's own pages drive it: a foreign Host, a cross-site request (H3)
+    outage     docker restart Postgres mid-turn: the turn completes, its side effect once (H4)
+    notify     an approved notification reaches the webhook once, signed, after a retry
+               (H4; profile `test`; NOTIFY_WEBHOOK_URL=http://fake-model:9999/webhook)
 
 Usage (the stack must be up):
     COMPOSE_PROJECT_NAME=agent-runtime UI_PORT=3000 \\
@@ -18,6 +22,7 @@ Usage (the stack must be up):
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -347,6 +352,89 @@ def outsiders() -> bool:
     return not c.failed
 
 
+def _status(client: httpx.Client, run_id: str) -> str | None:
+    """The run's status, or None while the API can't answer (its database restarts)."""
+    try:
+        resp = client.get(f"/runs/{run_id}")
+    except httpx.HTTPError:
+        return None
+    return str(resp.json()["status"]) if resp.status_code == 200 else None
+
+
+def outage() -> bool:
+    """H4: Postgres restarts while a turn's tool call runs (a failover, an upgrade).
+    Nothing fails for good: the turn completes, its side effect once."""
+    c = Check("docker restart Postgres mid-turn (H4)")
+    with httpx.Client(base_url=API, timeout=30) as client:
+        sid, run_id = turn_with_slow_tool(client)
+        owner_container(client, run_id)
+        time.sleep(1.5)  # inside the 6 s tool call
+        restarted = time.monotonic()
+        compose("restart", "postgres")
+        wait(lambda: _status(client, run_id) is not None, 120, "the API to reach Postgres again")
+        c("Postgres was back within a minute", time.monotonic() - restarted < 60,
+          f"{time.monotonic() - restarted:.1f}s")  # fmt: skip
+        got = finish(client, sid, run_id, c)
+        types = [e["type"] for e in got["events"]]
+        c("the run never failed", "run.failed" not in types, str(types[-8:]))
+    return not c.failed
+
+
+def _receiver(path: str, method: str = "GET") -> Any:
+    """The fixture webhook receiver (inside its container: it has no host port)."""
+    probe = (
+        "import json, urllib.request\n"
+        f"r = urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:9999{path}', "
+        f"method='{method}'))\n"
+        "print(r.read().decode())\n"
+    )
+    try:
+        out = compose("--profile", "test", "exec", "-T", "fake-model", "python", "-c", probe)
+    except subprocess.CalledProcessError:
+        return None
+    return json.loads(out)
+
+
+def notify() -> bool:
+    """H4: an approved notification goes to the webhook. The receiver is down for the
+    first attempt: it gets it again, with the same webhook-id, signed, and never a third
+    time."""
+    c = Check("an approved notification reaches the webhook once, signed (H4)")
+    compose("--profile", "test", "up", "-d", "--wait", "fake-model")
+    wait(lambda: _receiver("/webhook/received", "DELETE") is not None, 60, "the receiver")
+    _receiver("/webhook/fail?times=1", "POST")
+    with httpx.Client(base_url=API, timeout=30) as client:
+        state = client.get("/notifications").json()
+        c("the stack sends to the fixture receiver, signed",
+          state["webhook"] == "fake-model" and state["signed"], str(state)[:160])  # fmt: skip
+        if c.failed:
+            return False
+        sid = client.post("/sessions", json={"agent": "chat"}).json()["id"]
+        sent = client.post(f"/sessions/{sid}/messages", json={"content": "tell ops", "script": [
+            {"tool_calls": [{"name": "notify", "args": {"to": "ops", "message": "deploy done"}}]},
+            {"content": "Told them."},
+        ]}).json()  # fmt: skip
+        run_id = sent["run_id"]
+        wait(lambda: _status(client, run_id) == "waiting_approval", 60, "the approval")
+        c("nothing is sent before you approve", _receiver("/webhook/received") == [])
+        client.post(f"/sessions/{sid}/approve", json={"decision": "approve"}).raise_for_status()
+        wait(lambda: _status(client, run_id) == "completed", 60, "the turn")
+        wait(lambda: any(r["answered"] == 200 for r in _receiver("/webhook/received") or []),
+             90, "the delivery")  # fmt: skip
+        time.sleep(5)  # more sweeps: it must not be sent again
+        got = _receiver("/webhook/received") or []
+        c("tried twice: down, then delivered", [r["answered"] for r in got] == [500, 200],
+          str([r["answered"] for r in got]))  # fmt: skip
+        c("the same webhook-id both times", len({r["id"] for r in got}) == 1)
+        c("the signature verifies", bool(got) and all(r["verified"] for r in got))
+        data = got[-1]["body"]["data"] if got else {}
+        c("it says who and what", (data.get("to"), data.get("message")) == ("ops", "deploy done"))
+        listed = client.get("/notifications").json()["notifications"][0]
+        c("Settings shows it delivered", (listed["status"], listed["attempts"]) == (
+            "delivered", 2), str(listed)[:160])  # fmt: skip
+    return not c.failed
+
+
 SCENARIOS = {
     "crash": crash,
     "graceful": graceful,
@@ -354,6 +442,8 @@ SCENARIOS = {
     "mcp": mcp,
     "privilege": privilege,
     "outsiders": outsiders,
+    "outage": outage,
+    "notify": notify,
 }
 
 
