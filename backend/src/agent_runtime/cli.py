@@ -338,6 +338,32 @@ def _execute(args: argparse.Namespace) -> int:
     return asyncio.run(_execute_and_report(settings, args.run_id))
 
 
+# ------------------------------------------------------------------- evals
+
+
+def _eval(args: argparse.Namespace) -> int:
+    """Run the built-in agents' test suites (agents/<name>/evals/*.yaml), H6. Exits 1 if
+    any case didn't pass: what CI runs."""
+    settings = get_settings()
+    _setup_logging(settings)
+    return asyncio.run(_eval_suites(settings, list(args.agents)))
+
+
+async def _eval_suites(settings: Settings, names: list[str]) -> int:
+    from agent_runtime.db import create_pool
+    from agent_runtime.evals.runner import report, run_suite, suites
+    from agent_runtime.graphs import default_registry
+
+    graphs = default_registry()
+    passed = True
+    async with create_pool(settings) as pool:
+        for agent, cases in suites(settings.agents_dir, names or None).items():
+            text, ok = report(agent, await run_suite(pool, settings, graphs, agent, cases))
+            print(text)
+            passed &= ok
+    return 0 if passed else 1
+
+
 # ------------------------------------------------------------------ worker
 
 
@@ -499,6 +525,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="runtime", description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(title="commands", required=True, metavar="COMMAND")
 
+    evals = commands.add_parser("eval", help="run the built-in agents' test suites (H6)")
+    evals.add_argument("agents", nargs="*", help="which agents (default: every suite)")
+    evals.set_defaults(handler=_eval)
     agents = commands.add_parser("agents", help="agent definitions").add_subparsers(
         required=True, metavar="ACTION"
     )

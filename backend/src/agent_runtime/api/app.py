@@ -60,9 +60,11 @@ from agent_runtime.api.sessions import sessions as sessions_router
 from agent_runtime.api.skills import skills_router
 from agent_runtime.api.studio import studio as studio_router
 from agent_runtime.api.telemetry import telemetry_router
+from agent_runtime.api.tests import tests_router
 from agent_runtime.api.tools import tools_router
 from agent_runtime.config import Settings, get_agent_settings, get_settings
 from agent_runtime.db import Pool, create_pool
+from agent_runtime.evals.service import EvalService
 from agent_runtime.graphs import GraphRegistry, GraphSpec, default_registry
 from agent_runtime.mcp.service import McpService
 from agent_runtime.models.connections import ConnectionService
@@ -466,6 +468,7 @@ def create_app(
             app.state.service,
             sandbox=bool(settings.sandboxd_url),
         )
+        app.state.evals = EvalService(p, app.state.sessions)  # the Tests tab (H6)
         app.state.connections = ConnectionService(p, settings)
         app.state.skills = SkillService(p)
         app.state.tool_settings = ToolSettings(p, settings)
@@ -503,6 +506,7 @@ def create_app(
     app.include_router(audit_router)
     app.include_router(mcp_router)
     app.include_router(notifications_router)
+    app.include_router(tests_router)
     app.include_router(telemetry_router)
     app.include_router(client_errors_router)
     app.include_router(graphs_router)

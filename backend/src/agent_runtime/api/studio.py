@@ -109,6 +109,10 @@ class DraftView(BaseModel):
     issues: list[IssueView]
     tested: bool = Field(description="A test-chat reply completed on exactly this draft")
     blockers: list[str] = Field(description="What stands between this draft and publishing")
+    tests: int = Field(default=0, description="Its test cases (H6): with any, they're the gate")
+    tests_failing: list[str] = Field(
+        default_factory=list, description="Cases not passed on exactly this draft"
+    )
 
 
 class StudioAgentView(BaseModel):
@@ -145,6 +149,7 @@ class StudioAgentView(BaseModel):
                 issues=[IssueView(where=i.where, field=i.field, message=i.message)
                         for i in s.draft.issues],
                 tested=s.draft.tested, blockers=s.draft.blockers,
+                tests=s.draft.tests, tests_failing=s.draft.tests_failing,
             ) if s.draft else None,
             versions=[VersionView.of(v) for v in s.versions],
         )  # fmt: skip

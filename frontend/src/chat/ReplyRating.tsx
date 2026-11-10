@@ -14,7 +14,8 @@ type Rating = "up" | "down";
 const button =
   "inline-flex items-center rounded-lg p-1.5 text-stone-500 transition hover:bg-stone-100 hover:text-stone-700 focus-visible:outline-2 focus-visible:outline-sun-500 aria-pressed:text-stone-900 dark:hover:bg-stone-800 dark:hover:text-stone-200 dark:aria-pressed:text-stone-100";
 
-export function ReplyRating({ runId }: { runId: string }) {
+/** `canTest`: one of your own agents: a 👎 reply can become one of its tests (H6). */
+export function ReplyRating({ runId, canTest = false }: { runId: string; canTest?: boolean }) {
   const client = useQueryClient();
   const key = ["feedback", runId];
   const current = useQuery({
@@ -24,6 +25,15 @@ export function ReplyRating({ runId }: { runId: string }) {
   });
   const [asking, setAsking] = useState(false);
   const [reason, setReason] = useState("");
+  const [made, setMade] = useState<string | null>(null);
+  const makeTest = async () => {
+    try {
+      await unwrap(api.POST("/runs/{run_id}/make-test", { params: { path: { run_id: runId } } }));
+      setMade("Added to its tests (Agents → this agent → Tests)");
+    } catch (e) {
+      setMade(e instanceof Error ? e.message : "Couldn't make a test");
+    }
+  };
   const save = useMutation({
     mutationFn: async (next: { rating: Rating | null; reason?: string }) => {
       const path = { params: { path: { run_id: runId } } };
@@ -78,6 +88,16 @@ export function ReplyRating({ runId }: { runId: string }) {
         </form>
       )}
       {current.data?.reason && !asking && <span className="ml-1 max-w-56 truncate text-xs text-stone-500" title={current.data.reason}>“{current.data.reason}”</span>}
+      {canTest && rating === "down" && !asking && !made && (
+        <button type="button" className="ml-1 rounded-lg px-2 py-1 text-xs font-medium text-stone-600 hover:bg-stone-100 dark:text-stone-300 dark:hover:bg-stone-800" onClick={() => void makeTest()}>
+          Make this a test
+        </button>
+      )}
+      {made && (
+        <span className="ml-1 text-xs text-stone-500" role="status">
+          {made}
+        </span>
+      )}
     </span>
   );
 }

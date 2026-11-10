@@ -29,6 +29,12 @@ export function useAgentName(name: string | null): string {
   return agents.data?.find((a) => a.name === name)?.display_name ?? agentLabel(name);
 }
 
+/** Is it one of your own agents (Studio)? Only those have tests a reply can become (H6). */
+function useIsOwnAgent(name: string | null): boolean {
+  const agents = useQuery({ queryKey: ["agents"], queryFn: () => unwrap(api.GET("/agents")), staleTime: 30_000 });
+  return agents.data?.find((a) => a.name === name)?.source === "user";
+}
+
 export function ChatView({
   sessionId,
   compact = false,
@@ -50,6 +56,7 @@ export function ChatView({
   const agentId = session.data?.agent ?? null;
   const listedName = useAgentName(agentId);
   const label = agentName ?? listedName;
+  const ownAgent = useIsOwnAgent(agentId);
   const busy = isBusy(state);
   const waiting = pendingApprovals(state);
   const ended = state.turn && !busy ? `${state.turn.runId}:${state.turn.status}` : null;
@@ -133,6 +140,7 @@ export function ChatView({
         waitingIds={new Set(waiting.map((m) => m.messageId))}
         onDecide={(request, decision, reason) => void decide(request, decision, reason)}
         onRetry={busy ? undefined : (runId) => void retry(runId)}
+        canTest={ownAgent}
         status={state.turn?.status}
         sentCount={sentCount}
       />
@@ -164,6 +172,7 @@ function MessageList({
   waitingIds,
   onDecide,
   onRetry,
+  canTest,
   status,
   sentCount,
 }: {
@@ -174,6 +183,7 @@ function MessageList({
   onDecide: Decide;
   /** Only the latest turn can be tried again, and only while nothing runs. */
   onRetry: ((runId: string) => void) | undefined;
+  canTest: boolean;
   status: TurnStatus | undefined;
   sentCount: number;
 }) {
@@ -216,6 +226,7 @@ function MessageList({
             waitingIds={waitingIds}
             onDecide={onDecide}
             onRetry={v === last && onRetry ? () => { onRetry(v.runId); } : undefined}
+            canTest={canTest}
             status={v.active ? status : undefined}
           />
         ))}
@@ -235,6 +246,7 @@ function TurnBlock({
   waitingIds,
   onDecide,
   onRetry,
+  canTest,
   status,
 }: {
   view: TurnView;
@@ -243,6 +255,7 @@ function TurnBlock({
   waitingIds: ReadonlySet<string>;
   onDecide: Decide;
   onRetry: (() => void) | undefined;
+  canTest: boolean;
   status: TurnStatus | undefined;
 }) {
   const [details, setDetails] = useState(false);
@@ -288,7 +301,7 @@ function TurnBlock({
                   <Info aria-hidden className="size-3.5" />
                   {details ? "Hide details" : "What happened?"}
                 </button>
-                <ReplyRating runId={view.runId} />
+                <ReplyRating runId={view.runId} canTest={canTest} />
                 </div>
                 {details && (
                   <div className="mt-2">

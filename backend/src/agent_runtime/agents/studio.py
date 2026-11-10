@@ -42,6 +42,7 @@ from agent_runtime.agents.studio_store import AgentStore, NameTaken, StoredAgent
 from agent_runtime.audit import Action, AuditLog
 from agent_runtime.config import AgentSettings
 from agent_runtime.db import Conn, Pool
+from agent_runtime.evals.store import EvalStore
 from agent_runtime.ids import new_id
 from agent_runtime.mcp import tools as mcp_tools
 from agent_runtime.runs.service import RunService
@@ -129,6 +130,9 @@ class Draft:
     issues: list[PlainIssue]
     tested: bool
     untested_models: list[str] = field(default_factory=list)  # connections not ready (R17.3)
+    tests: int = 0  # its test cases (H6)
+    tests_failing: list[str] = field(default_factory=list)  # not passed on this draft
+    digest: str | None = None  # the bundle a test chat runs now (tests are graded on it)
 
     @property
     def blockers(self) -> list[str]:
@@ -136,7 +140,12 @@ class Draft:
         if self.issues:
             out.append("Fix the highlighted fields")
         out += [f"Test the model “{m}” (Settings → Models)" for m in self.untested_models]
-        if not self.tested:
+        if self.tests:  # its tests are the gate (H6); each one is a test-chat reply
+            if self.tests_failing:
+                n = len(self.tests_failing)
+                tests = f"{n} tests haven't" if n > 1 else "1 test hasn't"
+                out.append(f"{tests} passed on this draft: " + ", ".join(self.tests_failing[:5]))
+        elif not self.tested:
             out.append("Try it in the test chat (one complete reply)")
         return out
 
@@ -369,12 +378,16 @@ class StudioService:
                 # "Tested" means: this exact draft with the library's skills and the MCP
                 # tools as they are now. A skill edited, or an MCP tool approved again,
                 # since the test makes it untested (the hash moves).
-                tested = False
+                tested, current = False, None
+                cases = await EvalStore(conn).cases(agent_id)
+                failing = [c.case.name for c in cases]
                 if definition is not None and not skill_issues:
                     mcp = mcp_tools.lock(available, mcp_tools.granted(definition))
                     current = bundle_digest(definition, await bind(conn, definition, None), mcp)
                     tested = await store.tested(agent_id, current)
-                draft = Draft(draft_version, issues + model_issues + skill_issues, tested, untested)
+                    failing = await EvalStore(conn).failing(agent_id, current)
+                draft = Draft(draft_version, issues + model_issues + skill_issues, tested, untested,
+                              tests=len(cases), tests_failing=failing, digest=current)  # fmt: skip
         return AgentState(agent, draft, published, versions)
 
     async def save_draft(
@@ -458,7 +471,11 @@ class StudioService:
             skills = await bind(conn, definition, None)
             mcp = mcp_tools.lock(available, mcp_tools.granted(definition))
             digest = await snapshot_bundle(conn, definition, skills, mcp)
-            if not await store.tested(agent_id, digest):  # changed since get()
+            if state.draft.tests:  # its tests are the gate (H6), on exactly this bundle
+                if failing := await EvalStore(conn).failing(agent_id, digest):
+                    raise PublishBlocked([f"Its tests haven't all passed on this draft: "
+                                          f"{', '.join(failing[:5])}"])  # fmt: skip
+            elif not await store.tested(agent_id, digest):  # changed since get()
                 raise PublishBlocked(["A skill or an MCP tool changed since the test: "
                                       "test it again"])  # fmt: skip
             note = (changelog or "").strip()[:500] or None

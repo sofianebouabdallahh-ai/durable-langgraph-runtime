@@ -704,6 +704,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/make-test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Make a test from a reply: its message, the 👎 reason */
+        post: operations["make_test_runs__run_id__make_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}/redrive": {
         parameters: {
             query?: never;
@@ -1199,6 +1216,59 @@ export interface paths {
         /** A test chat with the draft */
         post: operations["test_chat_studio_agents__agent_id__test_chat_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/agents/{agent_id}/tests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Its tests, each with its latest result */
+        get: operations["list_tests_studio_agents__agent_id__tests_get"];
+        put?: never;
+        /** Add a test */
+        post: operations["add_test_studio_agents__agent_id__tests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/agents/{agent_id}/tests/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run every test on the draft, each in its own test chat */
+        post: operations["run_tests_studio_agents__agent_id__tests_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/studio/agents/{agent_id}/tests/{case_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Change a test (its earlier results no longer count) */
+        put: operations["change_test_studio_agents__agent_id__tests__case_id__put"];
+        post?: never;
+        /** Remove a test */
+        delete: operations["remove_test_studio_agents__agent_id__tests__case_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1716,6 +1786,44 @@ export interface components {
             /** Trace Id */
             trace_id: string | null;
         };
+        /** Case */
+        Case: {
+            /**
+             * Approve
+             * @description the test's answer when the agent asks
+             * @default true
+             */
+            approve: boolean;
+            expect?: components["schemas"]["Expect"];
+            /** Message */
+            message: string;
+            /** Name */
+            name: string;
+            /** Script */
+            script?: components["schemas"]["ScriptTurn"][];
+            /** Subagent Scripts */
+            subagent_scripts?: {
+                [key: string]: components["schemas"]["ScriptTurn"][];
+            };
+        };
+        /** CaseView */
+        CaseView: {
+            case: components["schemas"]["Case"];
+            /** From Run */
+            from_run: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** @description Its latest result, current or not */
+            result: components["schemas"]["agent_runtime__api__tests__ResultView"] | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** ChangeServer */
         ChangeServer: {
             /** Display Name */
@@ -1726,6 +1834,23 @@ export interface components {
             token?: string | null;
             /** Url */
             url?: string | null;
+        };
+        /** CheckView */
+        CheckView: {
+            /** Check */
+            check: string;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /**
+             * Error
+             * @default false
+             */
+            error: boolean;
+            /** Ok */
+            ok: boolean;
         };
         /** ClientError */
         ClientError: {
@@ -1978,6 +2103,17 @@ export interface components {
              * @description A test-chat reply completed on exactly this draft
              */
             tested: boolean;
+            /**
+             * Tests
+             * @description Its test cases (H6): with any, they're the gate
+             * @default 0
+             */
+            tests: number;
+            /**
+             * Tests Failing
+             * @description Cases not passed on exactly this draft
+             */
+            tests_failing?: string[];
         };
         /** EditConnection */
         EditConnection: {
@@ -2068,6 +2204,59 @@ export interface components {
              * @description Pass as `after_seq` to fetch the next page
              */
             next_after_seq: number;
+        };
+        /**
+         * Expect
+         * @description What the turn must do. Every field set is one check; none set: it completed.
+         */
+        Expect: {
+            /**
+             * Answer Contains
+             * @description case-insensitive
+             */
+            answer_contains?: string[];
+            /**
+             * Answer Matches
+             * @description a regular expression the answer matches (search)
+             */
+            answer_matches?: string | null;
+            /** Answer Not Contains */
+            answer_not_contains?: string[];
+            /**
+             * Answer Schema
+             * @description the answer is JSON, valid against this JSON Schema
+             */
+            answer_schema?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Approvals
+             * @description it asked before calling each of these
+             */
+            approvals?: string[];
+            /**
+             * Judge
+             * @description a rubric the agent's own model grades the answer against
+             */
+            judge?: string | null;
+            /** Max Tool Calls */
+            max_tool_calls?: number | null;
+            /**
+             * Not Tools
+             * @description none of these was
+             */
+            not_tools?: string[];
+            /**
+             * Status
+             * @default completed
+             * @enum {string}
+             */
+            status: "completed" | "failed" | "cancelled";
+            /**
+             * Tools
+             * @description all of these were called
+             */
+            tools?: string[];
         };
         /** FeedbackIn */
         FeedbackIn: {
@@ -2652,20 +2841,6 @@ export interface components {
             /** Changelog */
             changelog?: string | null;
         };
-        /** ResultView */
-        ResultView: {
-            /** Output */
-            output: {
-                [key: string]: unknown;
-            };
-            /** Partial */
-            partial: boolean;
-            /**
-             * Run Id
-             * Format: uuid
-             */
-            run_id: string;
-        };
         /** ResumeRequest */
         ResumeRequest: {
             /**
@@ -2673,6 +2848,16 @@ export interface components {
              * @description None: every agent
              */
             agent?: string | null;
+        };
+        /** RunStarted */
+        RunStarted: {
+            /**
+             * Batch
+             * Format: uuid
+             */
+            batch: string;
+            /** Cases */
+            cases: number;
         };
         /**
          * RunStatus
@@ -2798,6 +2983,28 @@ export interface components {
              * @enum {string}
              */
             status: "clean" | "review" | "blocked";
+        };
+        /**
+         * ScriptTurn
+         * @description One model reply: text, tool calls, or both.
+         */
+        ScriptTurn: {
+            /**
+             * Content
+             * @default
+             */
+            content: string;
+            /** Tool Calls */
+            tool_calls?: components["schemas"]["ScriptedToolCall"][];
+        };
+        /** ScriptedToolCall */
+        ScriptedToolCall: {
+            /** Args */
+            args?: {
+                [key: string]: unknown;
+            };
+            /** Name */
+            name: string;
         };
         /** SearchTest */
         SearchTest: {
@@ -3229,6 +3436,21 @@ export interface components {
             /** Seconds */
             seconds: number;
         };
+        /** TestsView */
+        TestsView: {
+            /**
+             * Blocking
+             * @description Publishing waits for these tests
+             */
+            blocking: boolean;
+            /** Cases */
+            cases: components["schemas"]["CaseView"][];
+            /**
+             * Passing
+             * @description Cases passed on this draft, as they are now
+             */
+            passing: number;
+        };
         /** ToolChoice */
         ToolChoice: {
             /** Max Calls */
@@ -3534,6 +3756,52 @@ export interface components {
             field: string;
             /** Message */
             message: string;
+        };
+        /** ResultView */
+        agent_runtime__api__schemas__ResultView: {
+            /** Output */
+            output: {
+                [key: string]: unknown;
+            };
+            /** Partial */
+            partial: boolean;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+        };
+        /** ResultView */
+        agent_runtime__api__tests__ResultView: {
+            /** Checks */
+            checks: components["schemas"]["CheckView"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Current
+             * @description On this draft, and the case as it is now
+             */
+            current: boolean;
+            /** Finished At */
+            finished_at: string | null;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Session Id
+             * @description Its test chat, to see what happened
+             */
+            session_id: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "passed" | "failed" | "error";
         };
     };
     responses: never;
@@ -4961,6 +5229,37 @@ export interface operations {
             };
         };
     };
+    make_test_runs__run_id__make_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     redrive_run_runs__run_id__redrive_post: {
         parameters: {
             query?: never;
@@ -5042,7 +5341,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ResultView"];
+                    "application/json": components["schemas"]["agent_runtime__api__schemas__ResultView"];
                 };
             };
             /** @description Validation Error */
@@ -6153,6 +6452,169 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SessionView"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tests_studio_agents__agent_id__tests_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestsView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_test_studio_agents__agent_id__tests_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Case"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_tests_studio_agents__agent_id__tests_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunStarted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_test_studio_agents__agent_id__tests__case_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Case"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_test_studio_agents__agent_id__tests__case_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

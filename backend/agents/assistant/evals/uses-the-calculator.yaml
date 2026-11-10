@@ -1,0 +1,11 @@
+# Arithmetic goes through the calculator, and nothing reaches outside.
+name: uses the calculator
+message: What is 6 times 7?
+script:
+  - tool_calls: [{name: calculator, args: {expression: "6*7"}}]
+  - content: It is 42.
+expect:
+  tools: [calculator]
+  not_tools: [notify]
+  answer_contains: ["42"]
+  max_tool_calls: 1

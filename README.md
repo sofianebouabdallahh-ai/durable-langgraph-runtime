@@ -98,7 +98,7 @@ Guides for each OS, models, tools and troubleshooting: [docs/setup/](docs/setup/
 - **A form, not code.** Name, instructions, model, tools, limits. No Markdown, no YAML, no Python ([guide](docs/setup/agents.md)).
 - **Helpers (sub-agents).** The main agent hands focused tasks to helpers, each with its own instructions and tools, and they run in parallel.
 - **Describe your agent.** Write a sentence ("an agent that plans trips and checks the weather"), and a builder agent drafts the whole thing: instructions, tools and helpers. **Improve** reviews the instructions you wrote.
-- **Test, then publish.** Try a draft in a test chat. Publishing freezes a version, so later edits never change the agent people already use. Import and export agents as files.
+- **Test, then publish.** Try a draft in a test chat, and give it **tests**: the tools it should use, the approvals it asks for, what its answer says, or a rubric a model grades. With tests, publishing waits until each one passes on that exact draft; a 👎 on a reply can become a test. Publishing freezes a version, so later edits never change the agent people already use. Import and export agents as files.
 - **Bring your own model.** Ollama, OpenAI, Azure AI Foundry, or any OpenAI-compatible service. Keys are stored encrypted and never shown again. Each agent, or each helper, can use a different model ([models](docs/setup/models.md)).
 - **Skills.** Reusable know-how in the [Agent Skills](https://agentskills.io) format: written in a form, uploaded, or imported. Every skill is checked for hidden instructions and leaked credentials when it's saved. An agent loads a skill when it needs it, or always uses it ([skills](docs/setup/skills.md)).
 
@@ -332,6 +332,8 @@ The harness assumes the model **will** follow injected instructions sometimes.
 
 A **scripted model** replays a fixed sequence of replies and tool calls. Every guardrail is tested with it: a runaway agent that never stops calling tools, an agent that repeats itself, an agent that follows injected instructions, a worker killed mid-tool-call. CI needs no key, and no luck.
 
+**Agents have test suites** ([H6](docs/progress/phase-H6.md)). A case is a message and what should happen: tools called or never called, approvals asked, what the answer says or its JSON shape, and an optional rubric graded by the agent's own model. Each case runs as an ordinary turn, so it's durable and costed like one; a worker grades it when it ends. The built-in agents' suites (`backend/agents/<name>/evals/`) run in CI with `runtime eval`, and a harness change that, say, stops asking before `notify` fails them. A Studio agent with tests publishes only when every one passed on exactly that draft.
+
 ## Safety by design
 
 Nuria assumes that **the model can be tricked**, and puts every safety decision in code the model can't talk its way past.
@@ -360,11 +362,11 @@ Details, what runs where, and how to delete everything: [docs/security.md](docs/
 
 | Suite | What it covers | Size |
 |---|---|---|
-| Backend unit + integration | Against real Postgres and Redis, never mocks of them: the state machine, fencing (including a control test proving an unfenced zombie *does* corrupt a run), the pipeline, the stream merger, migrations | 843 tests |
+| Backend unit + integration | Against real Postgres and Redis, never mocks of them: the state machine, fencing (including a control test proving an unfenced zombie *does* corrupt a run), the pipeline, the stream merger, migrations | 864 tests |
 | Runtime e2e (`make demo-e2e`) | Real worker and API processes, killed, frozen and drained mid-run | 15 scenarios |
 | Container e2e | The Compose stack as testers run it: a worker killed mid-reply, mid-sandbox and mid-MCP-call; Postgres restarted mid-reply; a notification delivered to a webhook; least-privilege database logins; foreign hosts and cross-site requests refused | 8 scenarios |
 | UI unit | Components and the stream reducer | 78 tests |
-| Browser (Playwright) | The whole app in a real browser, against a scripted model | 59 tests |
+| Browser (Playwright) | The whole app in a real browser, against a scripted model | 60 tests |
 | Kubernetes e2e | The Helm install on kind, a drain mid-reply | |
 
 The tests use a deterministic **scripted model** and a **fake OpenAI-compatible server**, so CI needs no model and no key. Before a release, the whole flow also runs in a browser against a **real local model** (qwen2.5:7b on Ollama). Each phase's summary records what that run found, and how it was fixed ([L8](docs/progress/phase-L8.md)).

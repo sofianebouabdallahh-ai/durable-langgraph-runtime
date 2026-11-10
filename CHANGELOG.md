@@ -4,6 +4,20 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### H6 — Evals and the publish gate
+#### Added
+- **Tests for agents.** A case is a message and what should happen: the tools called (or
+  never), the approvals asked, what the answer says (words, a pattern, a JSON schema), and an
+  optional rubric graded by the agent's own model. Each case runs as an ordinary turn in its
+  own test chat and is graded by the worker when it ends.
+- **Studio → Tests:** add tests, **Run tests**, see what failed and why, open each test chat.
+- **The publish gate:** a draft with tests publishes only once every test passed on exactly
+  that draft (an edited draft or test needs a new run).
+- **Make this a test** on a 👎 reply of your own agent: its message, and your reason as the
+  rubric.
+- **`runtime eval`** runs the built-in agents' suites (`backend/agents/<name>/evals/*.yaml`);
+  CI runs them, so a harness regression fails the build.
+
 ### H5 — Long chats
 #### Fixed
 - **A long chat no longer gets stuck on "too long".** Each model call is fitted to the
