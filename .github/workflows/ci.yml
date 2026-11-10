@@ -236,6 +236,11 @@ jobs:
               | /tmp/kubeconform -strict -summary -kubernetes-version 1.37.0 -ignore-missing-schemas
           done
           .tools/bin/helm template nuria-data infra/helm/nuria-data | /tmp/kubeconform -strict -summary -kubernetes-version 1.37.0
+          # H3: a public host with nothing asking for a password must refuse to render
+          if .tools/bin/helm template nuria infra/helm/agent-runtime -f infra/helm/agent-runtime/values-cloud.example.yaml \
+               --set ingress.basicAuthSecret= >/dev/null 2>&1; then
+            echo "::error::the chart rendered a public ingress host with no password in front"; exit 1
+          fi
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - name: First run on Kubernetes, as a tester does it (cluster, images, charts, smoke turn)
         run: ./setup.sh --non-interactive --model scripted --kubernetes
