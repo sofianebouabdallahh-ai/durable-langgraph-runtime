@@ -76,6 +76,9 @@ worker:
     limits: { memory: 640Mi }
 
 ui:
+  # More host names browsers (and in-cluster checks) may use for Nuria, besides
+  # localhost and ingress.host (H3: any other Host gets 421, DNS rebinding).
+  hostnames: []
   replicas: 2
   pdb: { minAvailable: 1 }
   resources:

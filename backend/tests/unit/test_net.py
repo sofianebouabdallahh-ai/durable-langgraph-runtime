@@ -104,3 +104,18 @@ def test_same_destination() -> None:
     assert not same_destination("https://api.openai.com/v1", "https://evil.example/v1")
     assert not same_destination("http://host:8000", "http://host:9000")
     assert not same_destination("http://host", "https://host")
+
+
+async def test_own_addresses_are_looked_up_even_just_after_boot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """monotonic() counts from boot: on a machine up for under a minute, an empty cache
+    must not pass for a fresh one (it made the check above pass on a fresh CI runner)."""
+    monkeypatch.setattr("agent_runtime.net.time.monotonic", lambda: 5.0)
+
+    async def resolve(host: str, port: int) -> list[net.IP]:
+        return [ipaddress.ip_address("172.18.0.5")] if host in ("redis", "x.example") else []
+
+    monkeypatch.setattr(net, "_resolve", resolve)
+    with pytest.raises(DestinationRefused, match="Nuria's own"):
+        await check_destination("http://x.example:6379/")

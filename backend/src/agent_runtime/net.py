@@ -181,9 +181,10 @@ async def _resolve(host: str, port: int) -> list[IP]:
 async def _own_addresses(names: frozenset[str]) -> frozenset[IP]:
     """The addresses Nuria's own services resolve to now (cached a minute). Names that
     don't resolve (outside Compose) add nothing."""
-    at, cached = _own_cache.get(names, (0.0, frozenset()))
-    if time.monotonic() - at < _OWN_TTL_S:
-        return cached
+    # No entry is never fresh: `monotonic()` counts from boot, so a default of 0.0 would
+    # look a few seconds old on a machine that has just started (a CI runner, a pod).
+    if (entry := _own_cache.get(names)) is not None and time.monotonic() - entry[0] < _OWN_TTL_S:
+        return entry[1]
     results = await asyncio.gather(*(_resolve_quietly(n) for n in sorted(names)))
     own = frozenset(_effective(ip) for found in results for ip in found)
     _own_cache[names] = (time.monotonic(), own)
