@@ -1,6 +1,6 @@
 # Phase H7 — Safe across deploys and side effects
 
-**Completed:** 2026-11-09 · **Branch:** `feat/h7-safe-deploys` · **Plan:** [plans/phase-H7.md](../plans/phase-H7.md) · **Tests:** backend 880 (+16 since H6) · UI unit 78 · browser BROWSER
+**Completed:** 2026-11-09 · **Branch:** `feat/h7-safe-deploys` · **Plan:** [plans/phase-H7.md](../plans/phase-H7.md) · **Tests:** backend 880 (+16 since H6) · UI unit 78 · browser 60/60
 
 Found by the platform review of 2026-11-08 ("Make it solid"). Four ways a side effect could happen twice, or the model be told something false:
 - **The key hashed the arguments.** The idempotency key hashed a call's *validated* arguments, defaults included. So a deploy that added a defaulted argument gave a done call a new key, and a run resumed after it made the call again.
@@ -45,7 +45,7 @@ Found by the platform review of 2026-11-08 ("Make it solid"). Four ways a side e
 | 4 | Retry defaults | ✅ A new side-effecting tool cut off by a crash isn't re-sent ("may have run once"). The built-in reads, `save_note`, `notify`, `spawn_subagent` and `run_python` retry. An MCP tool retries only when it runs without asking |
 | 5 | MCP key | ✅ The fake MCP server records a 64-hex key on every call; the read-only call cut off by a crash and sent again carries the same key |
 | 6 | Repair | ✅ After a turn cut short mid-step: the call that finished → its real result, marked as data, `cached`; the one cut off → "may have run once"; the refused one → "did not run". A replayed result is redacted and can be withheld by post_tool hooks. Calls from before H7 → never "did not run" |
-| 7 | Quality | ✅ Backend 880 passed; e2e `all` × 5: 75/75; container e2e CONTAINER on H7 images; browser BROWSER; UI lint, types, 78 tests, build; mypy `--strict` |
+| 7 | Quality | ✅ Backend 880 passed; e2e `all` × 5: 75/75; container e2e 8/8 on H7 images; browser 60/60; UI lint, types, 78 tests, build; mypy `--strict` |
 
 ## Review
 
