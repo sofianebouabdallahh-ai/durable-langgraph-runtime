@@ -48,6 +48,8 @@ spec:
               valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: NURIA_SECRET_KEY } }
             - name: OPENAI_API_KEY
               valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: OPENAI_API_KEY, optional: true } }
+            - name: NOTIFY_WEBHOOK_SECRET # signs notification deliveries (H4)
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: NOTIFY_WEBHOOK_SECRET, optional: true } }
             {{- if .Values.sandbox.enabled }}
             - name: SANDBOXD_TOKEN # workers ask sandboxd to run code (L6)
               valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: SANDBOXD_TOKEN } }

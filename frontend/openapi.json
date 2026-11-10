@@ -2687,6 +2687,139 @@
         "title": "NewSkill",
         "type": "object"
       },
+      "NotificationView": {
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent"
+          },
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "delivered_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivered At"
+          },
+          "id": {
+            "description": "The notification's id, as the chat shows it",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The webhook's last HTTP status",
+            "title": "Last Status"
+          },
+          "message": {
+            "description": "Its first 300 characters",
+            "title": "Message",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "sending",
+              "delivered",
+              "failed",
+              "skipped"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "to",
+          "message",
+          "agent",
+          "status",
+          "attempts",
+          "last_status",
+          "last_error",
+          "created_at",
+          "delivered_at"
+        ],
+        "title": "NotificationView",
+        "type": "object"
+      },
+      "NotificationsView": {
+        "properties": {
+          "notifications": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationView"
+            },
+            "title": "Notifications",
+            "type": "array"
+          },
+          "signed": {
+            "description": "Deliveries carry a webhook-signature",
+            "title": "Signed",
+            "type": "boolean"
+          },
+          "webhook": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The webhook's host, if one is set up",
+            "title": "Webhook"
+          }
+        },
+        "required": [
+          "webhook",
+          "signed",
+          "notifications"
+        ],
+        "title": "NotificationsView",
+        "type": "object"
+      },
       "Now": {
         "properties": {
           "queued": {
@@ -3128,6 +3261,12 @@
             "title": "Id",
             "type": "string"
           },
+          "infra_retries": {
+            "default": 0,
+            "description": "Releases because Postgres or Redis failed (H4), bounded",
+            "title": "Infra Retries",
+            "type": "integer"
+          },
           "interrupt_payload": {
             "anyOf": [
               {
@@ -3201,6 +3340,12 @@
           "reclaims": {
             "description": "Times taken over after a worker died (R2.4)",
             "title": "Reclaims",
+            "type": "integer"
+          },
+          "redrives": {
+            "default": 0,
+            "description": "Times a person tried it again (H4)",
+            "title": "Redrives",
             "type": "integer"
           },
           "releases": {
@@ -6909,6 +7054,51 @@
         ]
       }
     },
+    "/notifications": {
+      "get": {
+        "operationId": "list_notifications_notifications_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "The latest notifications and their delivery",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
     "/onboarding": {
       "get": {
         "operationId": "get_onboarding_onboarding_get",
@@ -7375,6 +7565,50 @@
         "summary": "Rate a reply",
         "tags": [
           "audit"
+        ]
+      }
+    },
+    "/runs/{run_id}/redrive": {
+      "post": {
+        "description": "H4. `failed` \u2192 `queued`: it resumes from its last saved step, and tool calls already done aren't run again. For failures that might not happen again (`error`, `infrastructure`, `max_reclaims`, `timeout`) of a top-level run; a chat turn only if it is the chat's latest. The budgets already used still count. 409 otherwise.",
+        "operationId": "redrive_run_runs__run_id__redrive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Try a failed run again (from its last checkpoint)",
+        "tags": [
+          "runs"
         ]
       }
     },

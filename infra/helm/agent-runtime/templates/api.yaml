@@ -48,6 +48,8 @@ spec:
               valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: NURIA_SECRET_KEY } }
             - name: OPENAI_API_KEY
               valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: OPENAI_API_KEY, optional: true } }
+            - name: NOTIFY_WEBHOOK_SECRET # signs notification deliveries (H4)
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: NOTIFY_WEBHOOK_SECRET, optional: true } }
             {{- include "nuria.downwardEnv" . | nindent 12 }}
             {{- include "nuria.monitoringEnv" . | nindent 12 }}
           ports:

@@ -25,6 +25,7 @@ from agent_runtime.redaction import redact
 
 Action = Literal[
     "approval.decided",
+    "run.redriven",
     "kill_switch.on",
     "kill_switch.off",
     "agent.created",

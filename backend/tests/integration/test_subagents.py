@@ -334,6 +334,9 @@ async def test_the_main_agent_cannot_finish_while_a_subagent_runs(
     guard = requests[-1][-1]
     assert isinstance(guard, HumanMessage) and "were still running" in str(guard.content)
     assert '"summary": "done"' in str(guard.content)  # the result is in the extra call
+    # The helpers' words are data, like wait_subagents' output (H4, finding 14).
+    assert '<data source="subagents">' in str(guard.content)
+    assert str(guard.content).rstrip().endswith("</data>")
     seqs = {e.type: e.seq for e in await events(pool, done.id)}
     assert seqs[E.SUBAGENT_COMPLETED] < seqs[E.RUN_COMPLETED]
 

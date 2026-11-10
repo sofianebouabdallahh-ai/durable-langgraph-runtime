@@ -50,6 +50,10 @@ class RunView(BaseModel):
     steps: int
     reclaims: int = Field(description="Times taken over after a worker died (R2.4)")
     releases: int = Field(description="Graceful hand-offs on worker shutdown (R10.7)")
+    infra_retries: int = Field(
+        default=0, description="Releases because Postgres or Redis failed (H4), bounded"
+    )
+    redrives: int = Field(default=0, description="Times a person tried it again (H4)")
     cancel_requested: bool
     interrupt_payload: dict[str, Any] | None = Field(
         description="The next approval a waiting_approval run waits on (R1.4): its "
@@ -87,6 +91,8 @@ class RunView(BaseModel):
             steps=run.steps,
             reclaims=run.reclaims,
             releases=run.releases,
+            infra_retries=run.infra_retries,
+            redrives=run.redrives,
             cancel_requested=run.cancel_requested,
             interrupt_payload=run.interrupt_payload,
             limits=run.limits,

@@ -45,8 +45,15 @@ export type Message =
       reason: string | null;
     })
   | (Base & { type: "approval"; approvalId: string | null; decision: "approve" | "reject"; reason: string | null })
-  | (Base & { type: "error"; reason: string; budgetLimited: boolean })
-  | (Base & { type: "system"; text: string });
+  | (Base & {
+      type: "error";
+      reason: string;
+      budgetLimited: boolean;
+      /** It might not happen again: the chat offers Try again (phase H4). */
+      canRetry: boolean;
+    })
+  /** `retry`: the turn was tried again (its count), else context the chat doesn't show. */
+  | (Base & { type: "system"; text: string; retry: number | null });
 
 export type MessageType = Message["type"];
 
@@ -111,9 +118,15 @@ export function parseMessage(view: Schemas["MessageView"]): Message | null {
         reason: strOrNull(c.reason),
       };
     case "error":
-      return { ...base, type: "error", reason: str(c.reason), budgetLimited: c.budget_limited === true };
+      return {
+        ...base,
+        type: "error",
+        reason: str(c.reason),
+        budgetLimited: c.budget_limited === true,
+        canRetry: c.can_retry === true,
+      };
     case "system":
-      return { ...base, type: "system", text: str(c.text) };
+      return { ...base, type: "system", text: str(c.text), retry: typeof c.retry === "number" ? c.retry : null };
     default:
       return null;
   }

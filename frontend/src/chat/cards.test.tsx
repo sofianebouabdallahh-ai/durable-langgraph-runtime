@@ -75,11 +75,23 @@ describe("HelperCards and ErrorNote", () => {
   });
 
   it("says a stop calmly and an error as an alert", () => {
-    const { rerender } = render(<ErrorNote message={msg(1, "error", { reason: "cancel_requested", budgetLimited: false }) as Of<"error">} />);
+    const { rerender } = render(<ErrorNote message={msg(1, "error", { reason: "cancel_requested", budgetLimited: false, canRetry: false }) as Of<"error">} />);
     expect(screen.getByText("Stopped.")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
-    rerender(<ErrorNote message={msg(1, "error", { reason: "max_steps", budgetLimited: true }) as Of<"error">} />);
+    rerender(<ErrorNote message={msg(1, "error", { reason: "max_steps", budgetLimited: true, canRetry: false }) as Of<"error">} />);
     expect(screen.getByRole("alert")).toHaveTextContent("reached its limit");
+    expect(screen.queryByRole("button", { name: /Try again/ })).toBeNull();
+  });
+
+  it("offers Try again once, when given (H4)", async () => {
+    const onRetry = vi.fn();
+    const failed = msg(1, "error", { reason: "infrastructure", budgetLimited: false, canRetry: true }) as Of<"error">;
+    render(<ErrorNote message={failed} onRetry={onRetry} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("the database or the queue kept failing");
+    const button = screen.getByRole("button", { name: /Try again/ });
+    await userEvent.click(button);
+    await userEvent.click(button);
+    expect(onRetry).toHaveBeenCalledTimes(1); // disabled once clicked
   });
 });
 

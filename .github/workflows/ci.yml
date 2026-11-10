@@ -175,9 +175,13 @@ jobs:
           check runtime 10001
           check ui 101
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      - name: Container e2e (kill / stop a worker mid-turn, least privilege)
+      - name: Container e2e (kill / stop a worker mid-turn, least privilege, Postgres restart, webhook)
         working-directory: backend
-        run: uv run --locked python -m tests.e2e.compose_e2e all
+        run: |
+          # the notify scenario's receiver is the fake model (profile `test`, H4)
+          echo "NOTIFY_WEBHOOK_URL=http://fake-model:9999/webhook" >> ../.env
+          docker compose --file ../infra/compose/docker-compose.yml --env-file ../.env up -d --wait api worker
+          uv run --locked python -m tests.e2e.compose_e2e all
       - name: Turn on the observability profile (L4a; the steps above ran with it off)
         run: ./setup.sh --non-interactive --observability
       - name: Browser e2e (Playwright in a container, against the stack, with tracing on)

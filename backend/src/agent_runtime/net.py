@@ -56,6 +56,11 @@ class DestinationRefused(ValueError):
     """The address can't be used, in plain words (shown to the person)."""
 
 
+class Unresolvable(DestinationRefused):
+    """Nothing answers to the name right now: maybe a resolver blip, so a caller that
+    retries (the notification relay) may try again; a form still refuses it."""
+
+
 @dataclass(frozen=True, slots=True)
 class Guard:
     """`check_destination` with this deployment's facts (from the settings)."""
@@ -114,7 +119,7 @@ async def check_destination(
         raise DestinationRefused(f"{host} is one of Nuria's own services")
     addresses = await _resolve(host, parts.port or (443 if parts.scheme == "https" else 80))
     if not addresses:
-        raise DestinationRefused(f"Nothing answers to the name {host}")
+        raise Unresolvable(f"Nothing answers to the name {host}")
     own = await _own_addresses(internal)
     for ip in addresses:
         if (reason := _refused(ip)) is not None:

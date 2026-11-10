@@ -1,4 +1,5 @@
-"""Hooks (CR-004 R15.5, R15.7-R15.9): registered code run around tool calls.
+"""Hooks (CR-004 R15.5, R15.7-R15.9): registered code run around tool calls, model
+calls (pre_model / post_model, H4), turns and sessions.
 
 Rules enforced here:
 - Hooks are code, referenced by name from agent definitions; a definition can
@@ -116,6 +117,39 @@ class SessionEndInput:
 
 
 @dataclass(frozen=True)
+class ModelHookInput:
+    """pre_model (H4): a main agent is about to call its model."""
+
+    run_id: str
+    session_id: str | None
+    agent: str
+    last_message: str  # the newest message's text (the person's, or a tool's result)
+    tools: list[str]  # what the model may call
+
+
+@dataclass(frozen=True)
+class ModelReplyInput:
+    """post_model (H4): the model's reply, before it is used or stored."""
+
+    run_id: str
+    session_id: str | None
+    agent: str
+    text: str
+    tool_calls: list[dict[str, Any]]  # {name, args}
+
+
+@dataclass(frozen=True)
+class ErrorHookInput:
+    """on_error (H4): a turn ended failed. Observe only."""
+
+    run_id: str
+    session_id: str | None
+    agent: str
+    reason: str | None
+    detail: str | None
+
+
+@dataclass(frozen=True)
 class HookSpec:
     name: str
     point: HookPoint
@@ -214,8 +248,34 @@ async def run_context_hooks(specs: list[HookSpec], inp: Any) -> Context | Deny:
     return Context(texts)
 
 
+async def run_model_hooks(
+    specs: list[HookSpec], inp: ModelHookInput | ModelReplyInput
+) -> Continue | Modify | Deny:
+    """pre_model / post_model (H4): in order; the first deny wins. post_model may
+    modify the reply's text (a redaction: later hooks see the new text); pre_model can
+    only continue or deny. An ask means nothing here (no call to approve): it, like an
+    exception or a timeout, denies (fail closed, R15.8)."""
+    changed: Modify | None = None
+    for spec in specs:
+        try:
+            decision = await asyncio.wait_for(spec.fn(inp), timeout=spec.timeout_s)
+        except Exception as exc:
+            return Deny(f"hook_error:{spec.name}:{type(exc).__name__}")
+        if isinstance(decision, Deny):
+            return decision
+        if isinstance(decision, Modify) and isinstance(inp, ModelReplyInput):
+            if not isinstance(decision.value, str):
+                return Deny(f"hook_error:{spec.name}:modify_needs_text")
+            inp = replace(inp, text=decision.value)
+            changed = Modify(decision.value)
+        elif not isinstance(decision, Continue):
+            return Deny(f"hook_error:{spec.name}:{type(decision).__name__.lower()}_not_allowed")
+    return changed or Continue()
+
+
 async def run_observers(specs: list[HookSpec], inp: Any) -> list[Any]:
-    """turn_end / session_end: observe only. A failing hook is logged, never fatal."""
+    """turn_end / session_end / on_error: observe only. A failing hook is logged, never
+    fatal."""
     results: list[Any] = []
     for spec in specs:
         try:
@@ -240,6 +300,13 @@ def default_hooks() -> HookRegistry:
     async def redact_result(inp: ToolHookInput) -> HookDecision:
         cleaned = redact(inp.result)
         return Modify(cleaned) if cleaned != inp.result else Continue()
+
+    @registry.hook("redact_secrets_in_reply", point="post_model")
+    async def redact_reply(inp: ModelReplyInput) -> HookDecision:
+        """A key or password the model writes in its reply is masked before it is
+        shown or stored (H4)."""
+        cleaned = redact(inp.text)
+        return Modify(cleaned) if cleaned != inp.text else Continue()
 
     @registry.hook("session_clock", point="session_start")
     async def session_clock(inp: SessionHookInput) -> Context:
