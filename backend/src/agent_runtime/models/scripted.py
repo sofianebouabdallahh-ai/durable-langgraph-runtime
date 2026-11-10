@@ -25,7 +25,13 @@ from typing import Any
 
 from langchain_core.callbacks import AsyncCallbackManagerForLLMRun, CallbackManagerForLLMRun
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessage,
+    HumanMessage,
+    ToolMessage,
+)
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -82,6 +88,14 @@ def _resolve(value: Any, messages: list[BaseMessage]) -> Any:
     return _REF.sub(interpolate, value)
 
 
+def _turn_tag(messages: list[BaseMessage]) -> str:
+    """A short tag of this turn: its person's message id (`user:<run>`), else none."""
+    for m in reversed(messages):
+        if isinstance(m, HumanMessage) and (m.id or "").startswith("user:"):
+            return (m.id or "")[-8:]
+    return "0"
+
+
 class ScriptedChatModel(BaseChatModel):
     script: list[ScriptTurn] = Field(default_factory=list)
     streaming: bool = False  # True: stream word by word (token events), like a real model
@@ -109,7 +123,9 @@ class ScriptedChatModel(BaseChatModel):
                 {
                     "name": c.name,
                     "args": _resolve(c.args, messages),
-                    "id": f"call_{turn + self.offset}_{i}",  # unique across a session's turns
+                    # Unique across a session's turns, even once older ones are compacted
+                    # away (H5): the turn's own message names it.
+                    "id": f"call_{_turn_tag(messages)}_{turn + self.offset}_{i}",
                     "type": "tool_call",
                 }
                 for i, c in enumerate(step.tool_calls)

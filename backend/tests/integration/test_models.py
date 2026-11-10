@@ -423,3 +423,29 @@ async def test_h3_a_saved_key_never_follows_the_address_somewhere_new(
     metadata = await c("PATCH", f"/models/connections/{added['id']}",
                        json={"base_url": "http://2852039166/v1", "api_key": KEY_A})  # fmt: skip
     assert metadata.status_code == 422 and "metadata" in metadata.text
+
+
+async def test_h5_a_connections_context_window_is_set_and_pinned_with_the_turn(
+    api: Server, fake: Fake, pool: Pool, test_settings: Settings
+) -> None:
+    """Phase H5: a local model gets the small default window; Settings → Models sets its
+    own; a turn keeps the window it started with; out of range → 422; 0 → the default."""
+    c = Seen(api.client)
+    added = await connect(c, fake, "Windowed", KEY_A, "fake-a")
+    assert (added["context_tokens"], added["context_tokens_set"]) == (
+        test_settings.local_context_tokens,
+        False,
+    )  # the fake runs on 127.0.0.1
+    set_ = await c("PATCH", f"/models/connections/{added['id']}", json={"context_tokens": 32_000})
+    assert (set_.json()["context_tokens"], set_.json()["context_tokens_set"]) == (32_000, True)
+    assert (await c("PATCH", f"/models/connections/{added['id']}",
+                    json={"context_tokens": 1_000})).status_code == 422  # fmt: skip
+    await c("PUT", "/models/default", json={"connection_id": added["id"], "model": "fake-a"})
+    session = (await c("POST", "/sessions", json={"agent": "assistant"})).json()
+    queued = (await c("POST", f"/sessions/{session['id']}/messages", json={"content": "hi"})).json()
+    back = await c("PATCH", f"/models/connections/{added['id']}", json={"context_tokens": 0})
+    assert back.json()["context_tokens_set"] is False
+    done = await run(pool, test_settings, queued["run_id"])
+    assert done.status is S.COMPLETED and done.model_bindings
+    assert {b["context_tokens"] for b in done.model_bindings.values()} == {32_000}
+    await c("PUT", "/models/default", json={"connection_id": None})

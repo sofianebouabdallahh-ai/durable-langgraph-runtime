@@ -180,6 +180,7 @@ class SubagentOrchestrator:
         model_caller: Callable[[], Any] | None = None,  # retries + breaker (R14.7)
         usage_recorder: Callable[[Outbox, str], UsageRecorder] | None = None,
         chat_model: Callable[[str, float, list[ScriptTurn]], Callable[[int], Any]] | None = None,
+        context_tokens: Callable[[str], int] | None = None,  # a model's window (H5)
         skills: Mapping[str, tuple[Any, ...]] | None = None,  # by helper name (R17.4)
         settings: Any = None,  # the run's: passed on to tools that need them (MCP, L8)
     ) -> None:
@@ -201,6 +202,7 @@ class SubagentOrchestrator:
         self._model_caller = model_caller
         self._usage_recorder = usage_recorder
         self._chat_model = chat_model
+        self._context_tokens = context_tokens
         self._settings = settings
         self._tasks: dict[uuid.UUID, asyncio.Task[None]] = {}
         self._sem = asyncio.Semaphore(self.limits.max_parallel)
@@ -458,6 +460,8 @@ class SubagentOrchestrator:
             extras["caller"] = self._model_caller()
         if self._usage_recorder is not None:  # its tokens and cost roll up into the run
             extras["record_usage"] = self._usage_recorder(outbox, fm.model)
+        if self._context_tokens is not None:  # its own model's window (H5)
+            extras["context_tokens"] = self._context_tokens(fm.model)
         if self._chat_model is not None:  # its own model role (R16.2: `model:` in its file)
             extras["chat_model"] = self._chat_model(
                 fm.model, fm.temperature, self._scripts.get(inv.name, [])

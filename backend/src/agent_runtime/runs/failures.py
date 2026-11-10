@@ -34,6 +34,8 @@ TRANSIENT: tuple[type[BaseException], ...] = (
 
 # Failures a person may try again (POST /runs/{id}/redrive): they might not happen again.
 # A budget, a loop, a step limit or a refusal would end the same way, so those are final.
+# Not context_overflow (H5): a redrive resumes the same turn, which would overflow again;
+# the next message starts compacted.
 REDRIVABLE = frozenset({"error", "infrastructure", "max_reclaims", "timeout"})
 
 

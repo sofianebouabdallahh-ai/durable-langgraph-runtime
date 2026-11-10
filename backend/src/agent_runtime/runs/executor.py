@@ -51,11 +51,12 @@ from agent_runtime import genai, logs, metrics, telemetry
 from agent_runtime.agents.resolver import AgentResolver
 from agent_runtime.checkpointing import FencedCheckpointer
 from agent_runtime.config import Settings
+from agent_runtime.context.fit import ContextOverflow
 from agent_runtime.db import Conn, Pool
 from agent_runtime.fencing import Fence, FencedError, check_fence
 from agent_runtime.graphs import GraphRegistry, GraphSpec
 from agent_runtime.graphs.assistant import AgentInput, granted_tools, subagent_graph
-from agent_runtime.models.connections import ModelRouter
+from agent_runtime.models.connections import ModelRouter, context_window
 from agent_runtime.models.pricing import Price, resolve_price
 from agent_runtime.models.provider import ModelProvider, configured_provider
 from agent_runtime.models.retry import CircuitOpen, ModelCaller, breaker_for
@@ -368,6 +369,8 @@ class RunExecutor:
                            reclaims=lease.reclaims or None, depth=run.depth or None)  # fmt: skip
                 t0 = time.monotonic()
                 ended = await self._drive(run, fence)
+                if ended.status.is_terminal:
+                    await self._prune(run)  # its thread keeps one checkpoint (H5)
                 logs.event(
                     log, f"run {run.id}: {ended.status}", status=str(ended.status),
                     reason=ended.reason, steps=ended.steps, tokens=ended.tokens,
@@ -518,6 +521,9 @@ class RunExecutor:
             log.warning("run %s: %s; releasing it", run.id, exc)
             self.deferred = True  # the relay re-sends it later (a natural backoff)
             return await self._release(fence, outbox, reason="circuit_open")
+        except ContextOverflow as exc:  # H5: too long for the model, even fitted again
+            return await self._fail(fence, FailureReason.CONTEXT_OVERFLOW, outbox,
+                                    detail=str(exc))  # fmt: skip
         except LoopDetected as exc:  # R14.4
             return await self._fail(fence, FailureReason.LOOP_DETECTED, outbox, detail=str(exc))
         except CancelRequested:
@@ -657,6 +663,7 @@ class RunExecutor:
                 worker=self.owner, session_id=run.session_id,
                 model_caller=self._model_caller,
                 usage_recorder=self._usage_recorder,
+                context_tokens=self._window,
                 chat_model=self._chat_model,
                 settings=self._settings,
             )  # fmt: skip
@@ -688,6 +695,7 @@ class RunExecutor:
             limits=limits, soft_limit_ratio=self._settings.soft_limit_ratio,
             record_usage=self._usage_recorder(outbox, fm.model),
             chat_model=self._chat_model(fm.model, fm.temperature, inp.script),
+            context_tokens=self._window(fm.model),
         )  # fmt: skip
 
     def _chat_model(
@@ -746,6 +754,48 @@ class RunExecutor:
         return record
 
     # ------------------------------------------------------- sessions (R15.6)
+
+    def _window(self, role: str) -> int:
+        """The context window pinned with this model's binding (H5); a run created
+        before H5 gets the default."""
+        binding = (getattr(self, "_bindings", None) or {}).get(role) or {}
+        pinned = binding.get("context_tokens")
+        if isinstance(pinned, int) and pinned > 0:
+            return pinned
+        return context_window(self._settings, local=bool(binding.get("local")))
+
+    async def _prune(self, run: Run) -> None:
+        """A finished run's thread keeps its latest checkpoint only (with its writes and
+        the blobs it references), and its helpers' threads go: LangGraph stores the whole
+        message list in each checkpoint, so a chat would grow with turns² (H5). The
+        database does it (`prune_checkpoints`, migration 0025): the worker has no DELETE
+        on LangGraph's tables. Never fails the run: the next prune catches up."""
+        try:
+            async with self._pool.connection() as conn:
+                cur = await conn.execute(  # this run's own last checkpoint: the cutoff
+                    "SELECT max(checkpoint_id) AS upto FROM checkpoints WHERE thread_id = %s "
+                    "AND checkpoint_ns = '' AND metadata ->> 'run_id' = %s",
+                    (run.thread_id, str(run.id)),
+                )
+                upto = (await cur.fetchone() or {}).get("upto")
+                if upto is None:
+                    return  # it wrote none (it ended before its first step)
+                cur = await conn.execute(
+                    "SELECT prune_checkpoints(%s, true, %s) AS n", (run.thread_id, upto)
+                )
+                removed = int((await cur.fetchone() or {}).get("n") or 0)
+                cur = await conn.execute(
+                    "SELECT thread_id FROM subagent_invocations WHERE run_id = %s", (run.id,)
+                )
+                for row in await cur.fetchall():
+                    await conn.execute("SELECT prune_checkpoints(%s, false, NULL)",
+                                       (row["thread_id"],))  # fmt: skip
+        except Exception:
+            log.warning("run %s: pruning its checkpoints failed (the next run's will catch up)",
+                        run.id, exc_info=True)  # fmt: skip
+            return
+        if removed:
+            logs.event(log, f"run {run.id}: pruned {removed} old checkpoint(s)", removed=removed)
 
     def _chat_errors(self, run: Run, fence: Fence) -> None:
         """A chat turn ending before its transcript writer exists still writes its error

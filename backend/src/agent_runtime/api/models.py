@@ -68,6 +68,11 @@ class ConnectionView(BaseModel):
     test_detail: str | None
     tested_model: str | None
     tested_at: datetime | None
+    context_tokens: int = Field(
+        description="How many tokens its models take in one request (phase H5): what a "
+        "chat is fitted and compacted to"
+    )
+    context_tokens_set: bool = Field(description="Set on this connection, not the default")
 
     @classmethod
     def of(cls, c: Connection, service: ConnectionService) -> ConnectionView:
@@ -77,6 +82,7 @@ class ConnectionView(BaseModel):
             has_key=c.has_key, key_fingerprint=c.key_fingerprint, models=c.models,
             prices=prices, test_status=c.test_status, test_detail=c.test_detail,
             tested_model=c.tested_model, tested_at=c.tested_at,
+            context_tokens=service.window_of(c), context_tokens_set=c.context_tokens is not None,
         )  # fmt: skip
 
 
@@ -105,6 +111,10 @@ class EditConnection(BaseModel):
         default=None,
         description="A price per model, USD per 1 million tokens; null removes one. It wins "
         "over MODEL_PRICES and Nuria's price list",
+    )
+    context_tokens: Annotated[int, Field(ge=0, le=10_000_000)] | None = Field(
+        default=None,
+        description="Its models' context window in tokens; 0 goes back to the default",
     )
 
 
@@ -161,7 +171,7 @@ async def edit(
 ) -> ConnectionView:
     return ConnectionView.of(await service.update(
         connection_id, display_name=body.display_name, base_url=body.base_url,
-        api_key=body.api_key, models=body.models,
+        api_key=body.api_key, models=body.models, context_tokens=body.context_tokens,
         prices=None if body.prices is None else {
             m: None if p is None else p.model_dump() for m, p in body.prices.items()},
     ), service)  # fmt: skip

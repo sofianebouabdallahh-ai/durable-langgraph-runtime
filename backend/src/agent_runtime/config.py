@@ -184,6 +184,10 @@ class Settings(AgentSettings):
     # One model call's time limit (R14.5). A local model (Ollama, or any model on this
     # machine or network) gets longer: its first call after a while loads it into memory,
     # which on a busy laptop takes minutes, and it generates more slowly.
+    # Context windows (H5): what a chat is fitted and compacted to when a connection
+    # doesn't say. A local model is often run with a small window (Ollama's default).
+    context_tokens: int = Field(default=128_000, ge=2_048)
+    local_context_tokens: int = Field(default=8_192, ge=2_048)
     model_timeout_s: float = Field(default=60.0, gt=0)
     local_model_timeout_s: float = Field(default=300.0, gt=0)
     mcp_timeout_s: float = Field(default=60.0, gt=0)  # one call to an MCP server (L8)

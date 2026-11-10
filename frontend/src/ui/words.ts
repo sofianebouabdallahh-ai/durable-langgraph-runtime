@@ -120,6 +120,7 @@ export function errorText(reason: string, budgetLimited: boolean): string {
   if (budgetLimited) return "Stopped early: it reached its limit for one message.";
   if (reason.startsWith("timeout")) return "Stopped: it took too long.";
   if (reason === "infrastructure") return "Stopped: the database or the queue kept failing.";
+  if (reason === "context_overflow") return "Stopped: this was too long for its model, even shortened. Send a new message: the chat is summarised first.";
   if (reason === "max_reclaims") return "Stopped: the workers running it kept crashing.";
   return `Something went wrong (${reason}).`;
 }
@@ -136,6 +137,7 @@ export function failureReason(reason: string | null | undefined): string {
     loop_detected: "Went round in circles",
     max_reclaims: "Kept crashing",
     infrastructure: "The database or the queue kept failing",
+    context_overflow: "Too long for its model",
     children_failed: "Its helpers failed",
     depth_limit: "Too many helpers deep",
     rejected: "Rejected",
@@ -196,6 +198,14 @@ export function eventLine(type: string, payload: Record<string, unknown>): strin
       return payload.reason === "infrastructure"
         ? "The database or the queue failed for a moment: it continues from the last saved step"
         : "A worker was shutting down and handed the message over";
+    case "context.compacted": {
+      const turns = typeof payload.turns === "number" ? payload.turns : 0;
+      return `Earlier messages were summarised to make room (${String(turns)} turn${turns === 1 ? "" : "s"})`;
+    }
+    case "context.trimmed":
+      return payload.refused === true
+        ? "The model said it was too long: it was shortened and sent again"
+        : "Old tool results were left out of this step to make room";
     case "run.redriven":
       return "You tried it again: it continues from the last saved step";
     case "subagent.spawned":
