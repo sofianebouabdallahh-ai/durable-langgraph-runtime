@@ -1755,6 +1755,16 @@ export interface components {
         ConnectionView: {
             /** Base Url */
             base_url: string;
+            /**
+             * Context Tokens
+             * @description How many tokens its models take in one request (phase H5): what a chat is fitted and compacted to
+             */
+            context_tokens: number;
+            /**
+             * Context Tokens Set
+             * @description Set on this connection, not the default
+             */
+            context_tokens_set: boolean;
             /** Display Name */
             display_name: string;
             /**
@@ -1978,6 +1988,11 @@ export interface components {
             api_key?: string | null;
             /** Base Url */
             base_url?: string | null;
+            /**
+             * Context Tokens
+             * @description Its models' context window in tokens; 0 goes back to the default
+             */
+            context_tokens?: number | null;
             /** Display Name */
             display_name?: string | null;
             /** Models */

@@ -219,6 +219,7 @@ function ConnectionCard({ connection: c }: { connection: Connection }) {
         </Button>
       </div>
       <Prices connection={c} />
+      <ContextWindow connection={c} />
       <EditDialog
         open={editing}
         connection={c}
@@ -297,6 +298,81 @@ function Prices({ connection: c }: { connection: Connection }) {
         </span>
       )}
       {open && <PriceTable connection={c} entries={entries} />}
+    </div>
+  );
+}
+
+/**
+ * How much its models take in one request (phase H5): a chat is fitted to it, and its
+ * older turns are summarised past 60 %. Nuria's default is cautious for a local model.
+ */
+function ContextWindow({ connection: c }: { connection: Connection }) {
+  const refresh = useModelsRefresh();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(c.context_tokens));
+  const [error, setError] = useState<string | null>(null);
+  const save = async (tokens: number) => {
+    setError(null);
+    try {
+      await models.edit(c.id, { context_tokens: tokens });
+      setEditing(false);
+      refresh();
+    } catch (e) {
+      setError(problemText(e));
+    }
+  };
+  const n = Number(value);
+  const valid = Number.isInteger(n) && n >= 2048 && n <= 10_000_000;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-sm" data-testid="context-window">
+      <span className="font-medium">Context window</span>
+      {editing ? (
+        <>
+          <input
+            aria-label="Context window, in tokens"
+            inputMode="numeric"
+            value={value}
+            onChange={(e) => {
+              setValue(e.target.value);
+            }}
+            className="h-8 w-32 rounded-lg border border-stone-200 bg-white px-2 tabular-nums dark:border-stone-700 dark:bg-stone-950"
+          />
+          <span className="text-xs text-stone-500">tokens</span>
+          <Button size="sm" variant="primary" disabled={!valid} onClick={() => void save(n)}>
+            Save
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditing(false);
+            }}
+          >
+            Cancel
+          </Button>
+          {error && <span className="text-xs text-rose-700 dark:text-rose-300">{error}</span>}
+        </>
+      ) : (
+        <>
+          <span className="tabular-nums">{c.context_tokens.toLocaleString()} tokens</span>
+          <span className="text-xs text-stone-500">{c.context_tokens_set ? "set here" : "Nuria's default"}</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setValue(String(c.context_tokens));
+              setEditing(true);
+            }}
+            aria-label="Set the context window"
+          >
+            Set
+          </Button>
+          {c.context_tokens_set && (
+            <Button size="sm" variant="ghost" onClick={() => void save(0)} aria-label="Use the default context window">
+              Reset
+            </Button>
+          )}
+        </>
+      )}
     </div>
   );
 }

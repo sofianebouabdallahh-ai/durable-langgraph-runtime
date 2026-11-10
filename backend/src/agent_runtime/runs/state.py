@@ -75,6 +75,7 @@ class FailureReason(StrEnum):
     CANCEL_REQUESTED = "cancel_requested"  # R1.6
     TURN_DENIED = "turn_denied"  # R15.5: a turn_start hook (or session_start) said no
     INFRASTRUCTURE = "infrastructure"  # H4: Postgres or Redis kept failing (bounded retries)
+    CONTEXT_OVERFLOW = "context_overflow"  # H5: still too long for the model once fitted
 
 
 class InvalidTransition(Exception):

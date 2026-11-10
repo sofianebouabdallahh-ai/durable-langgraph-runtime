@@ -1031,6 +1031,16 @@
             "title": "Base Url",
             "type": "string"
           },
+          "context_tokens": {
+            "description": "How many tokens its models take in one request (phase H5): what a chat is fitted and compacted to",
+            "title": "Context Tokens",
+            "type": "integer"
+          },
+          "context_tokens_set": {
+            "description": "Set on this connection, not the default",
+            "title": "Context Tokens Set",
+            "type": "boolean"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
@@ -1144,7 +1154,9 @@
           "test_status",
           "test_detail",
           "tested_model",
-          "tested_at"
+          "tested_at",
+          "context_tokens",
+          "context_tokens_set"
         ],
         "title": "ConnectionView",
         "type": "object"
@@ -1529,6 +1541,20 @@
               }
             ],
             "title": "Base Url"
+          },
+          "context_tokens": {
+            "anyOf": [
+              {
+                "maximum": 10000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its models' context window in tokens; 0 goes back to the default",
+            "title": "Context Tokens"
           },
           "display_name": {
             "anyOf": [

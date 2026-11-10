@@ -4,6 +4,23 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### H5 — Long chats
+#### Fixed
+- **A long chat no longer gets stuck on "too long".** Each model call is fitted to the
+  model's context window: old tool results are left out of what's sent, then long older
+  messages are cut to their head and tail. The chat and its history keep everything.
+- **Older turns are summarised** once a chat reaches 60 % of the window, by the agent's
+  own model (charged like any call), or extracted without one. The last turns and the new
+  message stay verbatim.
+- **"The request is too long" from a model** is recovered once by fitting it smaller; a
+  turn that still can't fit ends `failed(context_overflow)`.
+- **A chat's storage stays flat:** a finished turn keeps only its latest checkpoint, and
+  its helpers' threads are dropped (before, every checkpoint held the whole conversation).
+#### Added
+- **Context window per connection** (Settings → Models); defaults `CONTEXT_TOKENS`
+  (128,000) and `LOCAL_CONTEXT_TOKENS` (8,192). Pinned with each turn.
+- "What happened?" says when a chat was summarised or a step shortened.
+
 ### H4 — Honest and resilient
 #### Fixed
 - **A database or queue failure no longer ends a run for good.** An infrastructure error

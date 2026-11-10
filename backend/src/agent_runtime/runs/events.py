@@ -12,6 +12,8 @@ class EventType(StrEnum):
     RUN_RECLAIMED = "run.reclaimed"
     RUN_RELEASED = "run.released"
     RUN_REDRIVEN = "run.redriven"  # H4: a person tried a failed run again
+    CONTEXT_TRIMMED = "context.trimmed"  # H5: what one model call was sent was fitted
+    CONTEXT_COMPACTED = "context.compacted"  # H5: older turns folded into a summary
     NODE_STARTED = "node.started"
     NODE_COMPLETED = "node.completed"
     NODE_FAILED = "node.failed"

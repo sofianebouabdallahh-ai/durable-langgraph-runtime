@@ -292,6 +292,15 @@ Agents are data (Markdown files, or rows from the Studio), and data can't execut
 - **Loops are caught.** The same tool with the same arguments: the second repeat is served from the ledger with a note saying so, and the third ends the run as `loop_detected`. A call that failed may be tried again; the third identical failure ends the run.
 - **A global daily cost ceiling** can be set to stop new turns once it's reached.
 
+### Long chats
+
+A chat can go on for hundreds of turns ([H5](docs/progress/phase-H5.md)).
+- **Each call fits the model's window.** Past 60% of it, old tool results are left out of what the model is sent (it's told it can call the tool again), then the longest older messages are cut to their start and end. The chat and its checkpoint keep everything.
+- **Older turns become a summary.** When a chat reaches 60% of the window, a turn starts by folding the older turns into one summary, written by the agent's own model, charged like any call. The last turns and the new message stay word for word. It happens before the turn does anything, so ids and idempotency keys stay consistent.
+- **"Too long" is recovered.** A model that says the request is too long gets it shortened and sent again, once.
+- **Storage stays flat.** A finished turn keeps only its latest checkpoint, and its helpers' threads go. LangGraph stores the whole message list in every checkpoint, so without pruning a chat grows with the square of its turns. The worker can't delete checkpoints itself: one database function does only this.
+- **Each connection has its context window** (Settings → Models). The default is 128,000 tokens, or 8,192 for a model on your machine.
+
 ### Models that misbehave
 
 - **Retries only when it helps.** Rate limits, 5xx errors and timeouts are retried at most 3 times, with exponential backoff, full jitter and `Retry-After`. Errors that won't change (a bad request, a wrong key) fail at once. Every attempt counts toward the budget.
@@ -351,10 +360,10 @@ Details, what runs where, and how to delete everything: [docs/security.md](docs/
 
 | Suite | What it covers | Size |
 |---|---|---|
-| Backend unit + integration | Against real Postgres and Redis, never mocks of them: the state machine, fencing (including a control test proving an unfenced zombie *does* corrupt a run), the pipeline, the stream merger, migrations | 816 tests |
+| Backend unit + integration | Against real Postgres and Redis, never mocks of them: the state machine, fencing (including a control test proving an unfenced zombie *does* corrupt a run), the pipeline, the stream merger, migrations | 843 tests |
 | Runtime e2e (`make demo-e2e`) | Real worker and API processes, killed, frozen and drained mid-run | 15 scenarios |
 | Container e2e | The Compose stack as testers run it: a worker killed mid-reply, mid-sandbox and mid-MCP-call; Postgres restarted mid-reply; a notification delivered to a webhook; least-privilege database logins; foreign hosts and cross-site requests refused | 8 scenarios |
-| UI unit | Components and the stream reducer | 77 tests |
+| UI unit | Components and the stream reducer | 78 tests |
 | Browser (Playwright) | The whole app in a real browser, against a scripted model | 59 tests |
 | Kubernetes e2e | The Helm install on kind, a drain mid-reply | |
 
