@@ -12,7 +12,9 @@ Pattern: Chain of Responsibility with a FIXED order (CR-004 R15.7):
                   interrupt() returns the human's decision for THIS call: it runs only if the
                   approved args hash matches; approved edits go through validation, the
                   pre_tool hooks and the policy again — phase H1)
-    7+8 ledger    idempotency key = sha256(run · node · call_index · tool · canonical(args));
+    7+8 ledger    idempotency key = sha256(run · node · call_index · tool): the call's place,
+                  never its contents, so a deploy that changes its arguments' defaults can't
+                  give a done call a new key (H7); the arguments' hash is kept apart;
                   budgets checked and charged only when a key is first recorded (R14.1, R2.6);
                   a budget used up denies the call (a tool error), it doesn't fail the run
                   done → cached result, no execution; in_progress at an older epoch → re-execute
@@ -117,11 +119,35 @@ def repeat_hash(call: ToolCall, args: dict[str, Any]) -> str:
     return hashlib.sha256(f"{call.node}·{call.name}·{canonical}".encode()).hexdigest()
 
 
-def idempotency_key(run_id: uuid.UUID, call: ToolCall, args: dict[str, Any]) -> str:
-    """R2.6. Deliberately excludes the epoch: a retry after reclaim finds the same key."""
-    canonical = json.dumps(args, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    material = f"{run_id}·{call.node}·{call.index}·{call.name}·{canonical}"
+def call_key(run_id: uuid.UUID, call: ToolCall) -> str:
+    """Phase H7: the call's place in the run (node · position · tool), which is how the
+    ledger finds it. Not its arguments: those are derived by code (defaults, validation,
+    hooks), and code changes with a deploy."""
+    material = f"{run_id}·{call.node}·{call.index}·{call.name}"
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def idempotency_key(run_id: uuid.UUID, call: ToolCall, args: dict[str, Any]) -> str:
+    """R2.6: the key a call is recorded under and its tool dedupes by. Deliberately
+    excludes the epoch: a retry after reclaim finds the same key.
+
+    It still hashes the arguments, as before H7, so that a worker on the release before
+    finds every call a newer one made (rolling upgrades, rollbacks: expand/contract).
+    Newer code finds a call by its `call_key` first, so a change of arguments doesn't
+    make it a new call; once no worker older than H7 is left, the key can become the
+    `call_key` (the contract step)."""
+    material = f"{run_id}·{call.node}·{call.index}·{call.name}·{_canonical(args)}"
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def call_hash(args: dict[str, Any]) -> str:
+    """The arguments, hashed apart from the key: a call that comes back with different
+    ones is noticed (H7), and served what it did the first time."""
+    return hashlib.sha256(_canonical(args).encode("utf-8")).hexdigest()
+
+
+def _canonical(args: dict[str, Any]) -> str:
+    return json.dumps(args, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
 class ToolPipeline:
@@ -277,6 +303,8 @@ class ToolPipeline:
                     max_for_tool=min(caps) if caps else None,
                     extra_charge=ctx.extra_charge,
                     args_hash=repeat,
+                    call_key=call_key(ctx.fence.run_id, call),
+                    call_hash=call_hash(args),
                 )  # LoopDetected propagates: the run fails (R14.4)
         except invocations.BudgetExceeded as exc:
             # A tool budget used up doesn't crash the step (phase H2): this call isn't
@@ -284,6 +312,13 @@ class ToolPipeline:
             # the wrap-up (R14.2). Nothing was recorded or charged.
             return self._deny(call, ctx, "budget", f"{exc}; this call wasn't made", "ledger")
 
+        key = begun.key or key  # the key it was recorded under (other arguments, then)
+        if begun.args_changed:
+            # This call was made with other arguments (a deploy changed their defaults, or
+            # a hook its mind). Done: it is served what it did then, never made again. Cut
+            # off: it is retried (if it may be) under the key it was first sent with (H7).
+            log.warning("tool %s: arguments changed since it was first made", spec.name)
+            ctx.emit(EventType.TOOL_ARGS_CHANGED, {"tool": spec.name, "call_id": call.id})
         cached = isinstance(begun, invocations.Cached)
         t0 = time.monotonic()
         if isinstance(begun, invocations.Cached):
@@ -351,9 +386,28 @@ class ToolPipeline:
             },
         )
 
+        return await self._shown(call, args, status, result, cached, ctx)
+
+    async def replay(
+        self, call: ToolCall, status: Literal["done", "failed"], result: Any, ctx: ToolRunContext
+    ) -> ToolResult:
+        """A result the ledger kept for a call the previous turn never answered (H7), as
+        the model would have seen it then: the post_tool hooks, truncated, marked."""
+        return await self._shown(call, call.args, status, result, True, ctx)
+
+    async def _shown(
+        self,
+        call: ToolCall,
+        args: dict[str, Any],
+        status: str,
+        result: Any,
+        cached: bool,
+        ctx: ToolRunContext,
+    ) -> ToolResult:
+        """Stages 10 to 12: what the model is shown of a result."""
         # 10 post_tool hooks (also on cached results: a redaction must never be skipped)
         self._at("post_tool")
-        post = await run_hooks(ctx.post_hooks, ToolHookInput(spec.name, args, result, cached))
+        post = await run_hooks(ctx.post_hooks, ToolHookInput(call.name, args, result, cached))
         self._audit_hooks(ctx, call, post.audit)
         if isinstance(post.decision, Deny):
             return ToolResult(
@@ -368,7 +422,7 @@ class ToolPipeline:
         content = truncate(json.dumps(post.input.result, default=str), self._max_result)
         # 12 mark: whatever the tool returned is data, never instructions
         self._at("mark")
-        content = as_data(spec.name, content)
+        content = as_data(call.name, content)
         return ToolResult(content, "success" if status == "done" else "error", cached=cached)
 
     # ------------------------------------------------------------------ helpers

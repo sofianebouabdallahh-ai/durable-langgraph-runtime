@@ -334,6 +334,8 @@ A **scripted model** replays a fixed sequence of replies and tool calls. Every g
 
 **Agents have test suites** ([H6](docs/progress/phase-H6.md)). A case is a message and what should happen: tools called or never called, approvals asked, what the answer says or its JSON shape, and an optional rubric graded by the agent's own model. Each case runs as an ordinary turn, so it's durable and costed like one; a worker grades it when it ends. The built-in agents' suites (`backend/agents/<name>/evals/`) run in CI with `runtime eval`, and a harness change that, say, stops asking before `notify` fails them. A Studio agent with tests publishes only when every one passed on exactly that draft.
 
+**Safe across deploys** ([H7](docs/progress/phase-H7.md)). The ledger finds a tool call by its place in the run, not its arguments, so a release that adds a defaulted argument can't make a done call happen again, while workers on the previous release still find every call (expand/contract). A run records the newest format that has had it, and a worker on older code leaves it to a newer one during a rolling upgrade. A side effect cut off by a crash isn't sent again unless its tool dedupes by the key; MCP servers receive the key on every call. The turn after one that stopped mid-tool tells the model what really happened to each call, from the ledger.
+
 ## Safety by design
 
 Nuria assumes that **the model can be tricked**, and puts every safety decision in code the model can't talk its way past.

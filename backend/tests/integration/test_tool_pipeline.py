@@ -129,8 +129,8 @@ async def test_sc3_same_call_executes_once_and_replays_the_stored_result(
     assert h.executions["echo"] == 1
     assert (first.cached, again.cached, again.content) == (False, True, first.content)
     assert h.stages.count("execute") == 1  # the second run never reached execute
-    other = await h.pipeline().run(call("echo", text="different"), h.ctx(fence, pool))
-    assert not other.cached and h.executions["echo"] == 2  # different args → new key
+    other = await h.pipeline().run(call("echo", 1, text="different"), h.ctx(fence, pool))
+    assert not other.cached and h.executions["echo"] == 2  # another call → its own key
 
 
 async def test_sc3_abandoned_call_is_re_executed_and_a_stale_epoch_is_fenced(

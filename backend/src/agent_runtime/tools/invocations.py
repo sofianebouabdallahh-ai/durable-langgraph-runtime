@@ -54,11 +54,15 @@ REPEAT_NOTE = (
 class Cached:
     status: Literal["done", "failed"]
     result: Any
+    key: str = ""  # the key it was recorded under (other arguments then: another key)
+    args_changed: bool = False  # the arguments at this position differ from then (H7)
 
 
 @dataclass(frozen=True)
 class Started:
     taken_over: bool  # True: re-executing a call a dead owner left in_progress
+    key: str = ""  # the key it's recorded under
+    args_changed: bool = False  # taken over, with other arguments than it was sent with
 
 
 async def _lock_chain(conn: Conn, run_id: Any) -> list[dict[str, Any]]:
@@ -113,23 +117,38 @@ async def begin(
     max_for_tool: int | None,
     extra_charge: Callable[[Conn, str], Awaitable[None]] | None = None,
     args_hash: str | None = None,  # set: repeat detection (R14.4) for this call
+    call_key: str | None = None,  # the call's place in the run: how it is found (H7)
+    call_hash: str | None = None,  # sha256 of the arguments, kept apart from its place (H7)
 ) -> Cached | Started:
     async with conn.transaction():
         await check_fence(conn, fence)
         chain = await _lock_chain(conn, fence.run_id)
         run = chain[0]
+        # By its place first (H7), whatever its arguments; else by its key, which is how
+        # a call made by a release before H7 is found (it has no call_key).
         cur = await conn.execute(
-            "SELECT status, result, epoch FROM tool_invocations WHERE key = %s FOR UPDATE", (key,)
+            "SELECT key, status, result, epoch, call_key, call_hash FROM tool_invocations "
+            "WHERE run_id = %s AND (call_key = %s OR key = %s) "
+            "ORDER BY (call_key IS NOT DISTINCT FROM %s) DESC LIMIT 1 FOR UPDATE",
+            (fence.run_id, call_key, key, call_key),
         )
         row = await cur.fetchone()
         if row is not None:
+            used = str(row["key"])
+            changed = bool(call_hash and row["call_hash"] and row["call_hash"] != call_hash)
+            if call_key and row["call_key"] is None:  # made by an older release: place it
+                await conn.execute(
+                    "UPDATE tool_invocations SET call_key = %s, epoch = %s, "
+                    "call_hash = COALESCE(call_hash, %s) WHERE key = %s",
+                    (call_key, fence.epoch, call_hash, used),
+                )  # a fenced write, like any other: under this owner's epoch
             if row["status"] in ("done", "failed"):
-                return Cached(row["status"], row["result"])
+                return Cached(row["status"], row["result"], used, changed)
             await conn.execute(
                 "UPDATE tool_invocations SET epoch = %s, updated_at = now() WHERE key = %s",
-                (fence.epoch, key),
+                (fence.epoch, used),
             )
-            return Started(taken_over=row["epoch"] < fence.epoch)
+            return Started(taken_over=row["epoch"] < fence.epoch, key=used, args_changed=changed)
 
         repeat_of: dict[str, Any] | None = None
         if args_hash is not None:  # the same call (tool + args) earlier in this run?
@@ -164,14 +183,16 @@ async def begin(
             served = {"note": REPEAT_NOTE, "earlier_result": repeat_of["result"]}
             await conn.execute(
                 "INSERT INTO tool_invocations (key, run_id, tool, status, result, epoch, "
-                "args_hash) VALUES (%s, %s, %s, 'done', %s, %s, %s)",
-                (key, fence.run_id, tool, Jsonb(served), fence.epoch, args_hash),
-            )
+                "args_hash, call_key, call_hash) "
+                "VALUES (%s, %s, %s, 'done', %s, %s, %s, %s, %s)",
+                (key, fence.run_id, tool, Jsonb(served), fence.epoch, args_hash, call_key,
+                 call_hash),
+            )  # fmt: skip
         else:
             await conn.execute(
-                "INSERT INTO tool_invocations (key, run_id, tool, status, epoch, args_hash) "
-                "VALUES (%s, %s, %s, 'in_progress', %s, %s)",
-                (key, fence.run_id, tool, fence.epoch, args_hash),
+                "INSERT INTO tool_invocations (key, run_id, tool, status, epoch, args_hash, "
+                "call_key, call_hash) VALUES (%s, %s, %s, 'in_progress', %s, %s, %s, %s)",
+                (key, fence.run_id, tool, fence.epoch, args_hash, call_key, call_hash),
             )
         per_tool[tool] = per_tool.get(tool, 0) + 1
         await conn.execute(
@@ -182,8 +203,8 @@ async def begin(
             ([r["id"] for r in chain],),
         )
         if repeat_of is not None:
-            return Cached("done", served)
-        return Started(taken_over=False)
+            return Cached("done", served, key)
+        return Started(taken_over=False, key=key)
 
 
 async def finish(
@@ -232,3 +253,49 @@ async def charge_model_call(
             ([r["id"] for r in chain],),
         )
     return int(chain[0]["model_calls"]) + 1
+
+
+@dataclass(frozen=True)
+class Outcome:
+    """What the ledger says happened to one call."""
+
+    status: Literal["in_progress", "done", "failed"]
+    result: Any
+
+
+@dataclass(frozen=True)
+class Wanted:
+    """A call the repair asks about: its place, and its key from the model's arguments."""
+
+    call_key: str
+    key: str
+    tool: str
+
+
+async def outcomes(conn: Conn, run_id: Any, wanted: dict[str, Wanted]) -> dict[str, Outcome]:
+    """What happened to these calls (by the model's call id) in the run that made them
+    (H7): the next turn's repair says so, instead of "did not run". Found by their place
+    (`call_key`), else by their key. A call that run's ledger may hold under a key nobody
+    can derive now (made by a release before H7, with other arguments) is "may have run
+    once": the repair must never say "did not run" of a call that might have."""
+    if not wanted:
+        return {}
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT key, call_key, tool, status, result FROM tool_invocations "
+            "WHERE run_id = %s AND (call_key = ANY(%s) OR key = ANY(%s) OR call_key IS NULL)",
+            (run_id, [w.call_key for w in wanted.values()], [w.key for w in wanted.values()]),
+        )
+        rows = await cur.fetchall()
+    by_place = {r["call_key"]: r for r in rows if r["call_key"]}
+    by_key = {r["key"]: r for r in rows}
+    matched = {c: by_place.get(w.call_key) or by_key.get(w.key) for c, w in wanted.items()}
+    used = {r["key"] for r in matched.values() if r is not None}
+    unplaced = {r["tool"] for r in rows if r["call_key"] is None and r["key"] not in used}
+    found: dict[str, Outcome] = {}
+    for call_id, row in matched.items():
+        if row is not None:
+            found[call_id] = Outcome(row["status"], row["result"])
+        elif wanted[call_id].tool in unplaced:
+            found[call_id] = Outcome("in_progress", None)
+    return found

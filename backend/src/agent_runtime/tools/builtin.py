@@ -180,8 +180,15 @@ def default_tools() -> ToolRegistry:
         calculator
     )
     registry.tool("search", args=SearchArgs, risk_class="read", side_effect=False)(search)
+    # The two side effects below dedupe by the idempotency key (their primary key), so a
+    # call a crash cut off is made again safely (H7).
     registry.tool(
-        "save_note", args=SaveNoteArgs, risk_class="write_internal", side_effect=True, max_calls=20
+        "save_note",
+        args=SaveNoteArgs,
+        risk_class="write_internal",
+        side_effect=True,
+        max_calls=20,
+        retry_after_crash=True,
     )(save_note)
     registry.tool(
         "recall_notes",
@@ -191,7 +198,12 @@ def default_tools() -> ToolRegistry:
         repeatable=True,
     )(recall_notes)
     registry.tool(
-        "notify", args=NotifyArgs, risk_class="external_side_effect", side_effect=True, max_calls=5
+        "notify",
+        args=NotifyArgs,
+        risk_class="external_side_effect",
+        side_effect=True,
+        max_calls=5,
+        retry_after_crash=True,
     )(notify)
     from agent_runtime.agents import builder  # the Studio's builder agents' answers
     from agent_runtime.sandbox import tools as sandbox_tools  # code and shell (L6b)

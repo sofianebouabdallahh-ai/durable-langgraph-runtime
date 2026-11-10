@@ -4,6 +4,26 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### H7 — Safe across deploys and side effects
+#### Fixed
+- **A deploy can't make a done tool call happen again.** The ledger finds a call by its
+  place in the run (run, node, position, tool), not its arguments. A call that comes back
+  with other arguments (a new default, a hook) is served what it did and recorded as
+  `tool.args_changed`. Its key is unchanged, so workers on the previous release still find
+  every call during a rolling deploy or a rollback (expand/contract).
+- **A new side-effecting tool isn't re-sent after a crash** unless it says it can be:
+  `retry_after_crash` now defaults to "not a side effect". `save_note`, `notify` and
+  `spawn_subagent` dedupe by the key and stay retried.
+- **The turn after one that stopped mid-tool tells the truth.** Each call it left unanswered
+  is answered from the ledger: its real result, "may have run once", or "did not run".
+#### Added
+- **Run formats:** each run records the newest format that has had it, raised by each
+  lease, and the release that created it (`runs.run_format`, `runs.code_version`). A worker
+  on older code leaves a newer run untouched for a newer worker (rolling upgrades), counted
+  in `runtime_runs_deferred_total`.
+- **MCP calls carry their idempotency key** in `_meta["io.nuria/idempotency-key"]`, the same
+  on every attempt, so a server can do the call once.
+
 ### H6 — Evals and the publish gate
 #### Added
 - **Tests for agents.** A case is a message and what should happen: the tools called (or

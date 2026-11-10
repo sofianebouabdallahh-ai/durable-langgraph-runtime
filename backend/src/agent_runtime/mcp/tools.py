@@ -9,7 +9,9 @@
 Risk class: `read` when a person chose "runs without asking" (only offered for a tool
 its server marks read-only), else `external_side_effect`, so the policy asks first
 (R14.10). A call cut off by a crash isn't sent again unless the tool runs without
-asking: the pipeline answers that it may have run once (`retry_after_crash`).
+asking: the pipeline answers that it may have run once (`retry_after_crash`). Every call
+carries its idempotency key in `_meta["io.nuria/idempotency-key"]` (H7), so a server can
+do it once.
 
 The definition a call checks against is the **locked** one: a published agent keeps
 what was approved when it was published, and a server that changed the tool since gets
@@ -134,7 +136,7 @@ def _caller(t: Locked) -> Any:
                 )
         arguments = dict(args) if isinstance(args, Mapping) else args.model_dump()
         result = await call_tool(service.endpoint(server), t.tool, arguments,
-                                 settings.mcp_timeout_s)  # fmt: skip
+                                 settings.mcp_timeout_s, idempotency_key=ctx.key)  # fmt: skip
         if result.is_error:
             raise McpToolError(result.text[:2000] or "the tool reported an error")
         return result.as_json()
