@@ -84,7 +84,15 @@ class SearxngProvider:
             self.base_url.rstrip("/") + "/search",
             params={"q": query, "format": "json", "safesearch": 1},
         )
-        return _hits(list(body.get("results") or []), "content", k)
+        hits = _hits(list(body.get("results") or []), "content", k)
+        # SearXNG answers 200 with no results when the engines it asks refuse it (rate
+        # limits, CAPTCHAs): that's search not working, not "nothing on the web".
+        if not hits and body.get("unresponsive_engines"):
+            raise SearchUnavailable(
+                "the search engines didn't answer (they limit how often they can be asked): "
+                "try again in a few minutes, or use Tavily or Brave with a key in Settings → Tools"
+            )
+        return hits
 
 
 @dataclass(frozen=True)

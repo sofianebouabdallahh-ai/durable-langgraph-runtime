@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -342,6 +343,26 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
                 return await _send(ctx, handler, request.override(model=model, messages=nudged))
 
             response = await self._call(ctx, again, charge_again, attempts)
+        if wrap_up[0] is None:  # the wrap-up has no tools: nothing to repair
+            names = _tool_names(request)
+            response = _from_text_calls(response, names)
+            if tool := _claims_undone(request.messages, response, names):  # once, charged
+                logs.event(log, "a reply says a tool did what it didn't: asking once more",
+                           tool=tool, level=logging.WARNING)  # fmt: skip
+                claimed: list[Any] = [
+                    *request.messages,
+                    *response.result,
+                    HumanMessage(CLAIMED[tool]),
+                ]
+                await _pre_model(turn, request, claimed)
+
+                async def honest() -> ModelResponse[Any]:
+                    return await _send(
+                        ctx, handler, request.override(model=model, messages=claimed)
+                    )
+
+                response = await self._call(ctx, honest, charge_again, attempts)
+                response = _from_text_calls(response, names)
         _check_progress(request.state.get("messages", []), response)
         if wrap_up[0] is not None:
             return await _post_model(turn, _budget_limited(response, wrap_up[0]))
@@ -556,6 +577,117 @@ def _is_empty(response: ModelResponse[Any]) -> bool:
     return bool(ai) and not any(m.tool_calls or m.text.strip() for m in ai)
 
 
+def _tool_names(request: ModelRequest[RunContext]) -> set[str]:
+    """The names of the tools this call offers the model."""
+    names: set[str] = set()
+    for tool in request.tools:
+        if isinstance(tool, dict):
+            fn = tool.get("function")
+            name = fn.get("name") if isinstance(fn, dict) else tool.get("name")
+        else:
+            name = getattr(tool, "name", None)
+        if isinstance(name, str):
+            names.add(name)
+    return names
+
+
+_CALL_OPEN = re.compile(r"([A-Za-z_][\w-]*)\s*\(\s*")
+_FENCE = re.compile(r"^```[\w-]*\s*|\s*```$")
+_TAG = re.compile(r"</?tool_call>")
+
+
+def _text_calls(text: str, names: set[str]) -> list[dict[str, Any]] | None:
+    """The tool calls a reply's whole text writes out instead of making them, or None
+    when the text is anything else. Seen on qwen2.5:7b via Ollama, about half the time:
+    `save_note({"text": "demo is on Friday"})` as the reply, the note never saved. The
+    forms: `name({...})`, `<tool_call>{"name": …, "arguments": {…}}</tool_call>`, and
+    that JSON bare, each for a tool offered, one after another and nothing else."""
+    decoder = json.JSONDecoder()
+    s = _TAG.sub(" ", _FENCE.sub("", text.strip()))
+    calls: list[dict[str, Any]] = []
+    i = 0
+    while True:
+        while i < len(s) and s[i] in " \t\r\n;,":
+            i += 1
+        if i == len(s):
+            return calls or None
+        try:
+            if opened := _CALL_OPEN.match(s, i):  # name({...})
+                name, (args, i) = opened.group(1), decoder.raw_decode(s, opened.end())
+                while i < len(s) and s[i].isspace():
+                    i += 1
+                if s[i : i + 1] != ")":
+                    return None
+                i += 1
+            else:  # {"name": ..., "arguments": {...}}
+                obj, i = decoder.raw_decode(s, i)
+                if not isinstance(obj, dict):
+                    return None
+                name, args = obj.get("name"), obj.get("arguments", obj.get("parameters"))
+                if isinstance(args, str):
+                    args = json.loads(args)
+        except ValueError:
+            return None
+        if name not in names or not isinstance(args, dict):
+            return None
+        calls.append({"name": name, "args": args})
+
+
+def _from_text_calls(response: ModelResponse[Any], names: set[str]) -> ModelResponse[Any]:
+    """A reply that only writes out tool calls, made into those calls: they go through
+    the pipeline like any other (grants, approvals, the ledger), and the person never
+    sees the call as the answer."""
+    result = list(response.result)
+    for at, m in enumerate(result):
+        if not isinstance(m, AIMessage) or m.tool_calls or not m.text.strip():
+            continue
+        calls = _text_calls(m.text, names)
+        if calls is None:
+            continue
+        logs.event(log, "a tool call written as text: made it",
+                   tools=",".join(c["name"] for c in calls), level=logging.WARNING)  # fmt: skip
+        result[at] = m.model_copy(update={"content": "", "tool_calls": [
+            {"name": c["name"], "args": c["args"], "id": f"call_text_{uuid.uuid4().hex[:12]}",
+             "type": "tool_call"} for c in calls
+        ]})  # fmt: skip
+    return ModelResponse(result=result, structured_response=response.structured_response)
+
+
+# What a reply may claim a tool did ("I've saved that", "has been sent"), by tool.
+_I = r"\b(?:I(?:'ve|\u2019ve| have| just)?\s+"
+_CLAIMS = {
+    "save_note": re.compile(
+        _I + r"(?:saved|noted|stored|recorded|remembered)|(?:has|have)\s+been\s+"
+        r"(?:saved|noted|stored|recorded))\b", re.IGNORECASE,
+    ),
+    "notify": re.compile(
+        _I + r"(?:sent|notified)|(?:has|have)\s+been\s+sent)\b", re.IGNORECASE
+    ),
+}  # fmt: skip
+
+
+def _claims_undone(
+    messages: list[Any], response: ModelResponse[Any], names: set[str]
+) -> str | None:
+    """The tool a final reply says did something (a note saved, a message sent) that
+    didn't since the person's message, when the agent has it; else None. What qwen2.5:7b
+    says instead of calling save_note, often: nothing was done, so it's asked once more,
+    naming the tool (measured: the named tool got the note saved, a general note didn't)."""
+    if not _is_final(response):
+        return None
+    text = [m for m in response.result if isinstance(m, AIMessage)][-1].text
+    claimed = [t for t, claim in _CLAIMS.items() if t in names and claim.search(text)]
+    if not claimed:
+        return None
+    done: set[str] = set()
+    for m in reversed(messages):
+        if isinstance(m, HumanMessage) and not str(m.content).startswith("[runtime]"):
+            break  # back to the person's message
+        if isinstance(m, ToolMessage) and m.status != "error" and isinstance(m.name, str):
+            done.add(m.name)
+    return next((t for t in claimed if t not in done), None)
+
+
 def _is_final(response: ModelResponse[Any]) -> bool:
     """The model answered without asking for a tool: the agent would stop here."""
     ai = [m for m in response.result if isinstance(m, AIMessage)]
@@ -571,6 +703,14 @@ EMPTY_REPLY = (
     "[runtime] Your last reply came back empty: no text and no tool call. Answer now, or "
     "call one of your tools."
 )
+CLAIMED = {
+    "save_note": "[runtime] You said you saved or noted it, but you didn't call save_note, "
+    "so nothing was saved. Call save_note now with what to remember. (If they didn't ask "
+    "you to remember anything, just answer.)",
+    "notify": "[runtime] You said you sent it, but you didn't call notify, so nothing was "
+    "sent. Call notify now with who it's for and the message. (If they didn't ask you to "
+    "send anything, just answer.)",
+}
 STOPPED_EARLY = "I had to stop early: this run reached its budget before I could finish."
 NO_PROGRESS_LIMIT = 5
 

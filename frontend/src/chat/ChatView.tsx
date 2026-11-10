@@ -344,7 +344,7 @@ function renderItems(
     out.push(
       <StepList key={`steps:${group[0]?.key ?? ""}`}>
         {group.map((s) => (
-          <ToolCard key={s.key} call={s.call} result={s.result} awaitingApproval={s.awaitingApproval} ended={s.ended} />
+          <ToolCard key={s.key} call={s.call} result={s.result} awaitingApproval={s.awaitingApproval} ended={s.ended} rejected={s.rejected} />
         ))}
       </StepList>,
     );

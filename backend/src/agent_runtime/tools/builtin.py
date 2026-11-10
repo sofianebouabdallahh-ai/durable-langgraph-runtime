@@ -13,6 +13,7 @@ import operator
 from typing import Annotated, Any
 
 from pydantic import Field
+from pydantic.json_schema import SkipJsonSchema
 
 from agent_runtime.tools.spec import ToolArgs, ToolContext, ToolRegistry
 
@@ -62,11 +63,14 @@ class SaveNoteArgs(ToolArgs):
     text: Annotated[str, Field(min_length=1, max_length=2000)]
     # Demo/test knob: wait after writing, which widens the window between the
     # side effect and the step's checkpoint (the crash scenario kills a worker here).
-    linger_s: Annotated[float, Field(ge=0, le=30)] = 0.0
+    # Kept out of the schema the model sees: a model read it as how long to keep the
+    # note, sent a day, and the note wasn't saved.
+    linger_s: SkipJsonSchema[Annotated[float, Field(ge=0, le=30)]] = 0.0
 
 
 async def save_note(args: SaveNoteArgs, ctx: ToolContext) -> dict[str, Any]:
-    """Save a short note for later. Saving the same note twice in a run keeps one copy."""
+    """Save a note the person wants kept, to remember in this chat or a later one
+    (recall_notes reads it back). Saving the same note twice in a run keeps one copy."""
     async with ctx.pool.connection() as conn:
         # The idempotency key is the primary key: re-executing after a crash can't
         # create a second row (R2.6). The fencing trigger rejects a stale epoch.

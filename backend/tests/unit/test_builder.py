@@ -61,10 +61,12 @@ async def test_what_a_person_would_fix_is_fixed_with_a_note() -> None:
     done = await propose_draft(draft, CTX)
     assert done["accepted"] is True
     proposal = done["proposal"]
-    assert proposal["tools"] == ["web_search", "notify"]
+    assert proposal["tools"] == ["web_search", "read_webpage", "notify"]
     assert proposal["helpers"][0]["tools"] == ["read_webpage"]
     assert done["repairs"] == [
         "Left out “teleport”: there's no such tool here.",
+        "Added “read_webpage”: with “web_search” it reads the pages it relies on, not just "
+        "their snippets.",
         "Moved “notify” from Pinger to the agent itself: it asks you first, and only the "
         "agent can ask.",
     ]
@@ -119,3 +121,20 @@ def test_mcp_tools_switched_on_can_be_drafted() -> None:
         "Plans trips.", [], None, {"mcp__travel__lookup": "Looks up a fact."}
     )
     assert "- mcp__travel__lookup: Looks up a fact. (from an MCP server)" in message
+
+
+def test_searching_the_web_comes_with_reading_pages() -> None:
+    # A drafted trip planner searched but couldn't read a page: web_search tells the
+    # model to read one before relying on it, with a tool it didn't have.
+    from agent_runtime.agents.builder import repair
+
+    draft = DraftProposal(
+        display_name="X", description="d", instructions="You are X.", tools=["web_search"],
+        helpers=[HelperProposal(display_name="Scout", description="d", instructions="i",
+                                tools=["web_search", "read_webpage"])],
+    )  # fmt: skip
+    fixed, notes = repair(draft)
+    assert fixed.tools == ["web_search", "read_webpage"]
+    assert fixed.helpers[0].tools == ["web_search", "read_webpage"]  # had both: unchanged
+    assert notes == ["Added “read_webpage”: with “web_search” it reads the pages it relies "
+                     "on, not just their snippets."]  # fmt: skip

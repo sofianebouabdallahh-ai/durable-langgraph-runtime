@@ -113,3 +113,11 @@ def test_a_helper_keeps_its_own_notes() -> None:
     assert _author(ToolContext(**base)) is None  # type: ignore[arg-type]
     helper = SimpleNamespace(defn=SimpleNamespace(frontmatter=SimpleNamespace(name="scribe")))
     assert _author(ToolContext(**base, subagent=helper)) == "scribe"  # type: ignore[arg-type]
+
+
+def test_the_model_never_sees_the_crash_tests_knob() -> None:
+    # A model read `linger_s` as how long to keep the note, sent a day, and the note
+    # wasn't saved: the knob stays out of the schema, and still works for the tests.
+    schema = default_tools().get("save_note").json_schema()
+    assert set(schema["properties"]) == {"text"}
+    assert SaveNoteArgs.model_validate({"text": "hi", "linger_s": 2}).linger_s == 2

@@ -6,7 +6,7 @@ import type { Message } from "../api/messages";
 import { ToolIcon } from "../ui/icons";
 import { Avatar, Button, DataBlock, Pill } from "../ui/primitives";
 import { Markdown } from "../ui/Markdown";
-import { agentLabel, approvalReason, errorText, helperStatusLabel, toolLabel } from "../ui/words";
+import { agentLabel, approvalReason, errorText, helperStatusLabel, toolFailedLabel, toolLabel } from "../ui/words";
 import type { Helper } from "./transcript";
 
 type Of<T extends Message["type"]> = Extract<Message, { type: T }>;
@@ -25,15 +25,21 @@ export function ToolCard({
   result,
   awaitingApproval = false,
   ended = false,
+  rejected = false,
 }: {
   call: Of<"tool_call">;
   result: Of<"tool_result"> | null;
   awaitingApproval?: boolean;
   /** Its turn is over and it has no result: it never finished (stopped, timed out). */
   ended?: boolean;
+  /** A person said no to it, so it never ran. */
+  rejected?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const state = result === null ? (awaitingApproval ? "held" : ended ? "unfinished" : "running") : result.error ? "failed" : "done";
+  const state =
+    result === null
+      ? awaitingApproval ? "held" : rejected ? "rejected" : ended ? "unfinished" : "running"
+      : result.error ? "failed" : "done";
   return (
     <div data-testid="tool-card">
       <button
@@ -47,9 +53,10 @@ export function ToolCard({
         <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300">
           <ToolIcon tool={call.tool} className="size-3.5" />
         </span>
-        <span className="font-medium text-stone-800 dark:text-stone-200">{toolLabel(call.tool)}</span>
+        <span className="font-medium text-stone-800 dark:text-stone-200">{state === "failed" ? toolFailedLabel(call.tool) : toolLabel(call.tool)}</span>
         {state === "running" && <span className="text-stone-500">working…</span>}
         {state === "held" && <span className="text-amber-600 dark:text-amber-400">waiting for your OK</span>}
+        {state === "rejected" && <span className="text-stone-500">not done: you said no</span>}
         {state === "unfinished" && <span className="text-stone-500">didn't finish</span>}
         {result?.cached && <Pill tone="blue">reused</Pill>}
         <span className="ml-auto flex items-center gap-2 text-xs text-stone-500">

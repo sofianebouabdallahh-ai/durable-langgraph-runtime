@@ -60,7 +60,7 @@ async def test_describe_it_offline_then_accept(
     done = await assisted(c, pool, test_settings, started)
     assert (done["status"], done["kind"]) == ("done", "draft")
     proposal = done["proposal"]
-    assert set(proposal["tools"]) == {"web_search"}
+    assert set(proposal["tools"]) == {"web_search", "read_webpage"}  # reads what it finds
     assert [h["display_name"] for h in proposal["helpers"]] == ["Kid-Friendly Restaurants"]
     assert proposal["skills"] == ["trip-planning"]  # a built-in that fits
     assert len((await c.get("/studio/agents")).json()) == before  # nothing saved yet
@@ -70,7 +70,7 @@ async def test_describe_it_offline_then_accept(
     agent = created.json()
     assert agent["draft"]["issues"] == [] and agent["draft"]["tested"] is False
     document = agent["draft"]["document"]
-    assert [t["name"] for t in document["tools"]] == ["web_search"]
+    assert [t["name"] for t in document["tools"]] == ["web_search", "read_webpage"]
     assert document["skills"] == ["trip-planning"]
     assert document["helpers"][0]["name"] == "kid-friendly-restaurants"
     assert document["hooks"]["pre_tool"] == ["redact_secrets_in_args"]  # default protections
@@ -86,8 +86,12 @@ async def test_describe_it_with_a_model_that_repairs_its_draft(
     started = await api.client.post("/studio/describe", json={"description": "A research helper."})
     done = await assisted(api.client, pool, test_settings, started)
     assert done["status"] == "done", done
-    assert done["proposal"]["tools"] == ["web_search"]  # "teleport" left out, with a note
-    assert done["repairs"] == ["Left out “teleport”: there's no such tool here."]
+    assert done["proposal"]["tools"] == ["web_search", "read_webpage"]  # "teleport" left out
+    assert done["repairs"] == [
+        "Left out “teleport”: there's no such tool here.",
+        "Added “read_webpage”: with “web_search” it reads the pages it relies on, not just "
+        "their snippets.",
+    ]
     assert "{{secret}}" not in done["proposal"]["instructions"]  # the model fixed that
     proposals = [call for call in await fake.calls() if "propose_draft" in call["tools"]]
     assert [call["last"] for call in proposals] == ["user", "tool", "tool"]  # draft, fix, done

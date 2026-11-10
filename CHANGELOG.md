@@ -4,6 +4,23 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Walkthrough fixes (a fresh install, used for real with qwen2.5:7b)
+#### Fixed
+- **A model that says it saved a note is asked to really do it.** A tool call a small
+  model writes out as its reply (`save_note({...})`, `<tool_call>…`) is made, through the
+  pipeline. A reply that claims a note was saved or a message sent when no tool did it is
+  asked once more. `save_note` no longer shows the model a test-only argument, which it
+  misread as how long to keep the note; a call with invalid arguments now says nothing ran.
+- **Web search says when it isn't working.** When SearXNG's engines all refuse it (rate
+  limits, CAPTCHAs), the tool says search didn't answer, instead of returning no results.
+  Yahoo joins the default engines, so search keeps working while the others are suspended.
+- **Cards say what happened:** a failed call reads "Couldn't save the note", not "Saved a
+  note"; a call you rejected reads "not done: you said no", not "didn't finish".
+- **The CSP no longer blocks a font** on every page (a small font file was inlined as a
+  `data:` URL); a browser test now fails on any console error.
+- **A drafted agent that searches the web can read pages too.**
+- **The Home guide card** wraps its buttons on a phone instead of squeezing its text.
+
 ### H7 — Safe across deploys and side effects
 #### Fixed
 - **A deploy can't make a done tool call happen again.** The ledger finds a call by its

@@ -305,7 +305,7 @@ A chat can go on for hundreds of turns ([H5](docs/progress/phase-H5.md)).
 
 - **Retries only when it helps.** Rate limits, 5xx errors and timeouts are retried at most 3 times, with exponential backoff, full jitter and `Retry-After`. Errors that won't change (a bad request, a wrong key) fail at once. Every attempt counts toward the budget.
 - **A circuit breaker per model connection.** One failing service doesn't stall turns that use the others.
-- **Small-model repairs.** An empty reply (common when a local model's tool call can't be parsed) is asked for once more, with a note, and charged like any call. The builder agent fixes what a person would fix in a draft (a tool that doesn't exist, a tool that asks first given to a helper), and lists each fix.
+- **Small-model repairs.** An empty reply (common when a local model's tool call can't be parsed) is asked for once more, with a note, and charged like any call. A tool call written out as the reply (`save_note({...})`, `<tool_call>…`) is made, through the pipeline. A reply that says a note was saved or a message sent when no tool did it is asked once more: to do it, or to say it wasn't done. The builder agent fixes what a person would fix in a draft (a tool that doesn't exist, a tool that asks first given to a helper, searching without reading pages), and lists each fix.
 - **Local models get more time per turn** (15 minutes), never past the run's own ceiling.
 
 ### Helpers (sub-agents)

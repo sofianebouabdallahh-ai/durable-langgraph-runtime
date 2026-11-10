@@ -12,7 +12,13 @@ export default defineConfig({
     port: 5173,
     proxy: { "/api": { target: api, changeOrigin: true, rewrite: (p) => p.replace(/^\/api/, "") } },
   },
-  build: { sourcemap: true, target: "es2023" },
+  build: {
+    sourcemap: true,
+    target: "es2023",
+    // Fonts are never inlined as data: URLs, which the CSP refuses (font-src 'self'):
+    // a small subset under Vite's 4 KB limit was blocked on every page.
+    assetsInlineLimit: (file) => (/\.(woff2?|ttf|otf)$/.test(file) ? false : undefined),
+  },
   test: {
     environment: "jsdom",
     globals: true,

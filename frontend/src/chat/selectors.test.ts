@@ -91,4 +91,11 @@ describe("pendingApprovals", () => {
     const cards = items.filter((i) => i.kind === "approval-request").map((i) => i.decided?.approvalId);
     expect(cards).toEqual([undefined, "ap-b"]);
   });
+
+  it("a call you refused was refused, not left unfinished", () => {
+    const ask = msg(3, "interrupt", { kind: "tool_approval", approvalId: "ap-a", callId: "n1", tool: "notify", args: {}, reason: null });
+    const said = msg(4, "approval", { approvalId: "ap-a", decision: "reject", reason: "no" });
+    const tool = turns(state([user(1, "x"), call(2, "notify", "n1"), ask, said]))[0]?.items[0];
+    expect(tool?.kind === "tool" && [tool.rejected, tool.ended, tool.awaitingApproval]).toEqual([true, false, false]);
+  });
 });

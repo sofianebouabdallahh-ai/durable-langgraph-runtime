@@ -16,11 +16,12 @@ export function GuideCard({ go }: { go: (route: Route) => void }) {
       <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-sun-100 text-sun-700 dark:bg-sun-700/20 dark:text-sun-300">
         <Compass aria-hidden className="size-5" />
       </span>
-      <div className="min-w-0 flex-1">
+      {/* At least 14rem of text before the buttons wrap below it (on a phone). */}
+      <div className="min-w-0 flex-1 basis-56">
         <p className="font-medium">{count === 0 ? "New here? Build your first agent in 5 steps" : `Your first agent: ${String(count)} of 5 steps done`}</p>
         <p className="text-sm text-stone-500 dark:text-stone-400">Choose a model, describe your agent, give it a tool and a helper, then try it.</p>
       </div>
-      <div className="flex gap-2">
+      <div className="ml-auto flex gap-2">
         <Button size="sm" variant="ghost" onClick={() => { void guide.update({ dismissed: true }).then(refresh); }}>
           Not now
         </Button>
