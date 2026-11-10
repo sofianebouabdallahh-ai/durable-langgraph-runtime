@@ -362,11 +362,11 @@ Details, what runs where, and how to delete everything: [docs/security.md](docs/
 
 | Suite | What it covers | Size |
 |---|---|---|
-| Backend unit + integration | Against real Postgres and Redis, never mocks of them: the state machine, fencing (including a control test proving an unfenced zombie *does* corrupt a run), the pipeline, the stream merger, migrations | 843 tests |
+| Backend unit + integration | Against real Postgres and Redis, never mocks of them: the state machine, fencing (including a control test proving an unfenced zombie *does* corrupt a run), the pipeline, the stream merger, migrations | 864 tests |
 | Runtime e2e (`make demo-e2e`) | Real worker and API processes, killed, frozen and drained mid-run | 15 scenarios |
 | Container e2e | The Compose stack as testers run it: a worker killed mid-reply, mid-sandbox and mid-MCP-call; Postgres restarted mid-reply; a notification delivered to a webhook; least-privilege database logins; foreign hosts and cross-site requests refused | 8 scenarios |
 | UI unit | Components and the stream reducer | 78 tests |
-| Browser (Playwright) | The whole app in a real browser, against a scripted model | 59 tests |
+| Browser (Playwright) | The whole app in a real browser, against a scripted model | 60 tests |
 | Kubernetes e2e | The Helm install on kind, a drain mid-reply | |
 
 The tests use a deterministic **scripted model** and a **fake OpenAI-compatible server**, so CI needs no model and no key. Before a release, the whole flow also runs in a browser against a **real local model** (qwen2.5:7b on Ollama). Each phase's summary records what that run found, and how it was fixed ([L8](docs/progress/phase-L8.md)).
