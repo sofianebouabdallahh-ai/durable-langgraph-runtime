@@ -1,0 +1,11 @@
+# A notification reaches real people: it always waits for an approval.
+name: notify asks first
+message: Tell ops the deploy is done
+script:
+  - tool_calls: [{name: notify, args: {to: ops, message: The deploy is done}}]
+  - content: I told ops the deploy is done.
+approve: true
+expect:
+  approvals: [notify]
+  tools: [notify]
+  answer_contains: [told]

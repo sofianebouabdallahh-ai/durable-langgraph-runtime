@@ -140,3 +140,34 @@ test("copy a built-in agent, publish twice, restore the first version", async ({
   await expect(page.getByText(/unpublished changes/)).toBeVisible();
   expect(await serious(page)).toEqual([]);
 });
+
+test("H6: an agent with a test publishes only once the test passed on this draft", async ({ page }) => {
+  const stamp = Date.now().toString(36);
+  await newAgent(page, `Tested ${stamp}`);
+  await page.getByLabel("What is it for?").fill("Answers questions briefly.");
+  await page.getByLabel("Instructions", { exact: true }).fill("Answer briefly.");
+  await saved(page);
+
+  const tests = page.getByTestId("section-tests");
+  await tests.getByRole("button", { name: "Add a test" }).click();
+  const form = tests.getByTestId("new-test");
+  await form.getByLabel("Name").fill("answers a greeting");
+  await form.getByLabel("The message").fill("Hello there");
+  await form.getByRole("button", { name: "Save the test" }).click();
+  await expect(tests.getByTestId("test-case")).toContainText("Not run yet");
+
+  // With a test, a passing test is the gate (not a test chat).
+  await page.getByRole("button", { name: "Publish" }).first().click();
+  await expect(page.getByTestId("publish-blockers")).toContainText("passed on this draft");
+  await page.getByRole("button", { name: "OK" }).click();
+
+  await tests.getByTestId("run-tests").click();
+  await expect(tests.getByTestId("test-case")).toContainText("Passed", { timeout: 60_000 });
+  await expect(tests.getByTestId("tests-passing")).toContainText("1 of 1 passed");
+  expect(await serious(page)).toEqual([]);
+
+  await page.getByRole("button", { name: "Publish" }).first().click();
+  await page.getByRole("dialog").getByLabel(/What changed/).fill("Tested");
+  await page.getByRole("dialog").getByRole("button", { name: "Publish" }).click();
+  await expect(page.getByText("Published v1")).toBeVisible();
+});

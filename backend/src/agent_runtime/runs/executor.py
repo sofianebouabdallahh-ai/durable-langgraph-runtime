@@ -53,6 +53,7 @@ from agent_runtime.checkpointing import FencedCheckpointer
 from agent_runtime.config import Settings
 from agent_runtime.context.fit import ContextOverflow
 from agent_runtime.db import Conn, Pool
+from agent_runtime.evals import grader
 from agent_runtime.fencing import Fence, FencedError, check_fence
 from agent_runtime.graphs import GraphRegistry, GraphSpec
 from agent_runtime.graphs.assistant import AgentInput, granted_tools, subagent_graph
@@ -370,6 +371,7 @@ class RunExecutor:
                 t0 = time.monotonic()
                 ended = await self._drive(run, fence)
                 if ended.status.is_terminal:
+                    await self.grade_test(run)  # a test turn is graded once (H6)
                     await self._prune(run)  # its thread keeps one checkpoint (H5)
                 logs.event(
                     log, f"run {run.id}: {ended.status}", status=str(ended.status),
@@ -432,6 +434,8 @@ class RunExecutor:
             async with self._pool.connection() as conn:
                 session = await SessionRepository(conn).get(run.session_id)
             self._test_chat = session.playground_of is not None
+        if not self._test_chat and await grader.of(self._pool, run.id) is not None:
+            self._test_chat = True  # a test turn (H6): nothing reaches people, ever
         if run.session_id is not None:
             # A chat turn: its transcript is written in each checkpoint's transaction.
             self._transcript = outbox.transcript = TranscriptWriter(
@@ -548,7 +552,13 @@ class RunExecutor:
             log.exception("run %s failed", run.id)
             return await self._fail(fence, FailureReason.ERROR, outbox, detail=repr(exc))
         if pending:
-            return await self._pause(fence, pending, outbox)
+            paused = await self._pause(fence, pending, outbox)
+            if (
+                paused.status is RunStatus.WAITING_APPROVAL
+                and (test := await grader.of(self._pool, run.id)) is not None
+            ):  # a test turn (H6): the case answers, through the usual path
+                return await grader.answer_approvals(self._pool, test, self._bus)
+            return paused
         if reason := _budget_limited(final):
             # R14.2: the wrap-up answer is stored, and the run ends failed(budget:*).
             return await self._complete(
@@ -754,6 +764,42 @@ class RunExecutor:
         return record
 
     # ------------------------------------------------------- sessions (R15.6)
+
+    async def grade_test(self, run: Run) -> None:
+        """If this ended run is a test (`eval_runs`), grade it once (H6): its trajectory
+        against the case; a rubric judged by the agent's own model, recorded as usage.
+        Also called by the worker's sweep, for a test the executor didn't settle. Never
+        fails the run: a passing blip leaves the test `running` (the sweep grades it
+        again); anything else makes it `error`, with why."""
+        try:
+            test = await grader.of(self._pool, run.id)
+            if test is None or test.status != "running":
+                return
+            role, model = "", None
+            if test.case.expect.judge is not None:
+                spec = await self._spec_of(run)
+                role = spec.agent.frontmatter.model if spec.agent is not None else ""
+                if not getattr(self, "_model_providers", None):  # the sweep: not loaded yet
+                    self._model_providers = await self._models.providers(run.model_bindings or {})
+                    self._bindings = dict(run.model_bindings or {})
+                provider = (getattr(self, "_model_providers", None) or {}).get(role) or (
+                    configured_provider(self._settings))  # fmt: skip
+                model = provider.chat(role, temperature=0.0, script=[], offset=0)
+
+            async def record(usage: tuple[str, int, int]) -> None:
+                name, tokens_in, tokens_out = usage
+                price = self._price(role, name)
+                async with self._pool.connection() as conn:
+                    await RunRepository(conn).add_model_usage(
+                        run.id, name, tokens_in=tokens_in, tokens_out=tokens_out,
+                        cost=price.cost(tokens_in, tokens_out), ms=0, estimated=price.estimated,
+                    )  # fmt: skip
+
+            await grader.grade(self._pool, test, judge_model=model, record_usage=record)
+        except Exception as exc:
+            log.warning("run %s: grading its test failed", run.id, exc_info=True)
+            if not is_transient(exc):
+                await grader.give_up(self._pool, run.id, f"couldn't grade: {exc!r}")
 
     def _window(self, role: str) -> int:
         """The context window pinned with this model's binding (H5); a run created

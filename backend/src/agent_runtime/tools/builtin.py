@@ -126,12 +126,25 @@ async def recall_notes(args: RecallNotesArgs, ctx: ToolContext) -> dict[str, Any
     """Read back the notes you saved with save_note, in any chat with you: newest first,
     optionally only those containing `query`."""
     async with ctx.pool.connection() as conn:
-        # Notes this same agent (or this same helper of it) saved, in any chat (H4).
+        # Notes this same agent (or this same helper of it) saved, in any chat (H4). A
+        # test (a Studio test chat, or an eval turn) keeps to its own chat, both ways:
+        # its notes never reach real chats, and real notes don't sway a test (H6).
         cur = await conn.execute(
             """
+            WITH me AS (
+                SELECT r.id, coalesce(r.agent_name, r.graph_name) AS agent, r.session_id,
+                       (s.playground_of IS NOT NULL
+                        OR EXISTS (SELECT 1 FROM eval_runs e WHERE e.run_id = r.id)) AS test
+                FROM runs r LEFT JOIN sessions s ON s.id = r.session_id
+                WHERE r.id = %(run)s
+            )
             SELECT n.text, n.created_at FROM notes n JOIN runs r ON r.id = n.run_id
-            JOIN runs me ON me.id = %(run)s
-            WHERE coalesce(r.agent_name, r.graph_name) = coalesce(me.agent_name, me.graph_name)
+            LEFT JOIN sessions s ON s.id = r.session_id, me
+            WHERE coalesce(r.agent_name, r.graph_name) = me.agent
+              AND CASE WHEN me.test THEN r.session_id IS NOT DISTINCT FROM me.session_id
+                       ELSE s.playground_of IS NULL
+                            AND NOT EXISTS (SELECT 1 FROM eval_runs e WHERE e.run_id = r.id)
+                  END
               AND n.author IS NOT DISTINCT FROM %(author)s
               AND (%(q)s::text IS NULL OR strpos(lower(n.text), lower(%(q)s)) > 0)
             ORDER BY n.created_at DESC LIMIT %(n)s

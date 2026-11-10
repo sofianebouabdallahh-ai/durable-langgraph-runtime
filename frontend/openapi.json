@@ -894,6 +894,104 @@
         "title": "AuditRow",
         "type": "object"
       },
+      "Case": {
+        "additionalProperties": false,
+        "properties": {
+          "approve": {
+            "default": true,
+            "description": "the test's answer when the agent asks",
+            "title": "Approve",
+            "type": "boolean"
+          },
+          "expect": {
+            "$ref": "#/components/schemas/Expect"
+          },
+          "message": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "script": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptTurn"
+            },
+            "title": "Script",
+            "type": "array"
+          },
+          "subagent_scripts": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/ScriptTurn"
+              },
+              "type": "array"
+            },
+            "title": "Subagent Scripts",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "message"
+        ],
+        "title": "Case",
+        "type": "object"
+      },
+      "CaseView": {
+        "properties": {
+          "case": {
+            "$ref": "#/components/schemas/Case"
+          },
+          "from_run": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Run"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/agent_runtime__api__tests__ResultView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its latest result, current or not"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "case",
+          "from_run",
+          "result",
+          "updated_at"
+        ],
+        "title": "CaseView",
+        "type": "object"
+      },
       "ChangeServer": {
         "additionalProperties": false,
         "properties": {
@@ -949,6 +1047,34 @@
           }
         },
         "title": "ChangeServer",
+        "type": "object"
+      },
+      "CheckView": {
+        "properties": {
+          "check": {
+            "title": "Check",
+            "type": "string"
+          },
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "error": {
+            "default": false,
+            "title": "Error",
+            "type": "boolean"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "check",
+          "ok"
+        ],
+        "title": "CheckView",
         "type": "object"
       },
       "ClientError": {
@@ -1501,6 +1627,20 @@
             "description": "A test-chat reply completed on exactly this draft",
             "title": "Tested",
             "type": "boolean"
+          },
+          "tests": {
+            "default": 0,
+            "description": "Its test cases (H6): with any, they're the gate",
+            "title": "Tests",
+            "type": "integer"
+          },
+          "tests_failing": {
+            "description": "Cases not passed on exactly this draft",
+            "items": {
+              "type": "string"
+            },
+            "title": "Tests Failing",
+            "type": "array"
           }
         },
         "required": [
@@ -1771,6 +1911,125 @@
           "next_after_seq"
         ],
         "title": "EventsPage",
+        "type": "object"
+      },
+      "Expect": {
+        "additionalProperties": false,
+        "description": "What the turn must do. Every field set is one check; none set: it completed.",
+        "properties": {
+          "answer_contains": {
+            "description": "case-insensitive",
+            "items": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Answer Contains",
+            "type": "array"
+          },
+          "answer_matches": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "a regular expression the answer matches (search)",
+            "title": "Answer Matches"
+          },
+          "answer_not_contains": {
+            "items": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Answer Not Contains",
+            "type": "array"
+          },
+          "answer_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "the answer is JSON, valid against this JSON Schema",
+            "title": "Answer Schema"
+          },
+          "approvals": {
+            "description": "it asked before calling each of these",
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Approvals",
+            "type": "array"
+          },
+          "judge": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "a rubric the agent's own model grades the answer against",
+            "title": "Judge"
+          },
+          "max_tool_calls": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tool Calls"
+          },
+          "not_tools": {
+            "description": "none of these was",
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Not Tools",
+            "type": "array"
+          },
+          "status": {
+            "default": "completed",
+            "enum": [
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tools": {
+            "description": "all of these were called",
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "title": "Expect",
         "type": "object"
       },
       "FeedbackIn": {
@@ -3166,31 +3425,6 @@
         "title": "PublishRequest",
         "type": "object"
       },
-      "ResultView": {
-        "properties": {
-          "output": {
-            "additionalProperties": true,
-            "title": "Output",
-            "type": "object"
-          },
-          "partial": {
-            "title": "Partial",
-            "type": "boolean"
-          },
-          "run_id": {
-            "format": "uuid",
-            "title": "Run Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "run_id",
-          "output",
-          "partial"
-        ],
-        "title": "ResultView",
-        "type": "object"
-      },
       "ResumeRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3210,6 +3444,25 @@
           }
         },
         "title": "ResumeRequest",
+        "type": "object"
+      },
+      "RunStarted": {
+        "properties": {
+          "batch": {
+            "format": "uuid",
+            "title": "Batch",
+            "type": "string"
+          },
+          "cases": {
+            "title": "Cases",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch",
+          "cases"
+        ],
+        "title": "RunStarted",
         "type": "object"
       },
       "RunStatus": {
@@ -3503,6 +3756,45 @@
           "findings"
         ],
         "title": "ScanView",
+        "type": "object"
+      },
+      "ScriptTurn": {
+        "additionalProperties": false,
+        "description": "One model reply: text, tool calls, or both.",
+        "properties": {
+          "content": {
+            "default": "",
+            "title": "Content",
+            "type": "string"
+          },
+          "tool_calls": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptedToolCall"
+            },
+            "title": "Tool Calls",
+            "type": "array"
+          }
+        },
+        "title": "ScriptTurn",
+        "type": "object"
+      },
+      "ScriptedToolCall": {
+        "additionalProperties": false,
+        "properties": {
+          "args": {
+            "additionalProperties": true,
+            "title": "Args",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ScriptedToolCall",
         "type": "object"
       },
       "SearchTest": {
@@ -4509,6 +4801,34 @@
         "title": "TestView",
         "type": "object"
       },
+      "TestsView": {
+        "properties": {
+          "blocking": {
+            "description": "Publishing waits for these tests",
+            "title": "Blocking",
+            "type": "boolean"
+          },
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/CaseView"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "passing": {
+            "description": "Cases passed on this draft, as they are now",
+            "title": "Passing",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cases",
+          "passing",
+          "blocking"
+        ],
+        "title": "TestsView",
+        "type": "object"
+      },
       "ToolChoice": {
         "additionalProperties": false,
         "properties": {
@@ -5407,6 +5727,103 @@
           "message"
         ],
         "title": "Warning",
+        "type": "object"
+      },
+      "agent_runtime__api__schemas__ResultView": {
+        "properties": {
+          "output": {
+            "additionalProperties": true,
+            "title": "Output",
+            "type": "object"
+          },
+          "partial": {
+            "title": "Partial",
+            "type": "boolean"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "output",
+          "partial"
+        ],
+        "title": "ResultView",
+        "type": "object"
+      },
+      "agent_runtime__api__tests__ResultView": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CheckView"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current": {
+            "description": "On this draft, and the case as it is now",
+            "title": "Current",
+            "type": "boolean"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its test chat, to see what happened",
+            "title": "Session Id"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "passed",
+              "failed",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "current",
+          "checks",
+          "run_id",
+          "session_id",
+          "created_at",
+          "finished_at"
+        ],
+        "title": "ResultView",
         "type": "object"
       }
     }
@@ -7594,6 +8011,49 @@
         ]
       }
     },
+    "/runs/{run_id}/make-test": {
+      "post": {
+        "operationId": "make_test_runs__run_id__make_test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Make a test from a reply: its message, the \ud83d\udc4e reason",
+        "tags": [
+          "tests"
+        ]
+      }
+    },
     "/runs/{run_id}/redrive": {
       "post": {
         "description": "H4. `failed` \u2192 `queued`: it resumes from its last saved step, and tool calls already done aren't run again. For failures that might not happen again (`error`, `infrastructure`, `max_reclaims`, `timeout`) of a top-level run; a chat turn only if it is the chat's latest. The budgets already used still count. 409 otherwise.",
@@ -7708,7 +8168,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ResultView"
+                  "$ref": "#/components/schemas/agent_runtime__api__schemas__ResultView"
                 }
               }
             },
@@ -9406,6 +9866,250 @@
         "summary": "A test chat with the draft",
         "tags": [
           "studio"
+        ]
+      }
+    },
+    "/studio/agents/{agent_id}/tests": {
+      "get": {
+        "operationId": "list_tests_studio_agents__agent_id__tests_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Its tests, each with its latest result",
+        "tags": [
+          "tests"
+        ]
+      },
+      "post": {
+        "operationId": "add_test_studio_agents__agent_id__tests_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Case"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add a test",
+        "tags": [
+          "tests"
+        ]
+      }
+    },
+    "/studio/agents/{agent_id}/tests/run": {
+      "post": {
+        "operationId": "run_tests_studio_agents__agent_id__tests_run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunStarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run every test on the draft, each in its own test chat",
+        "tags": [
+          "tests"
+        ]
+      }
+    },
+    "/studio/agents/{agent_id}/tests/{case_id}": {
+      "delete": {
+        "operationId": "remove_test_studio_agents__agent_id__tests__case_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove a test",
+        "tags": [
+          "tests"
+        ]
+      },
+      "put": {
+        "operationId": "change_test_studio_agents__agent_id__tests__case_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Case"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change a test (its earlier results no longer count)",
+        "tags": [
+          "tests"
         ]
       }
     },

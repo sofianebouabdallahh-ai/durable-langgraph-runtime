@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api, unwrap } from "../api/client";
 import { href, type Route } from "../app/route";
+import { TestsSection } from "./TestsSection";
 import { ChatView } from "../chat/ChatView";
 import { problemText } from "../chat/problems";
 import { AgentPowerButton } from "../safety/KillSwitch";
@@ -230,6 +231,7 @@ function Editor({ initial, catalog, go }: { initial: StudioAgent; catalog: NonNu
             <LimitsSection {...props} />
             <ProtectionsSection {...props} />
             <ModelSection {...props} />
+            <TestsSection agentId={state.id} tools={(doc.tools ?? []).map((t) => t.name)} editable={editable} />
             {editable && state.published && (
               <div className="flex justify-end">
                 <Button variant="ghost" size="sm" onClick={() => void run(() => studio.discard(state.id), (a) => { show(documentOf(a)); })}>

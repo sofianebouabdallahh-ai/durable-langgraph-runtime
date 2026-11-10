@@ -41,6 +41,8 @@ TABLES = {
     "mcp_tools",
     "run_approvals",
     "notification_deliveries",
+    "agent_evals",
+    "eval_runs",
 }
 
 

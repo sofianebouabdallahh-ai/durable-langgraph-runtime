@@ -1,0 +1,9 @@
+name: notify asks first
+message: Let the team know lunch is here
+script:
+  - tool_calls: [{name: notify, args: {to: the team, message: Lunch is here}}]
+  - content: Done, I let the team know.
+expect:
+  approvals: [notify]
+  tools: [notify]
+  answer_contains: [team]

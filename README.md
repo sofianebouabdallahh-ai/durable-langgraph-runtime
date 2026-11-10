@@ -98,7 +98,7 @@ Guides for each OS, models, tools and troubleshooting: [docs/setup/](docs/setup/
 - **A form, not code.** Name, instructions, model, tools, limits. No Markdown, no YAML, no Python ([guide](docs/setup/agents.md)).
 - **Helpers (sub-agents).** The main agent hands focused tasks to helpers, each with its own instructions and tools, and they run in parallel.
 - **Describe your agent.** Write a sentence ("an agent that plans trips and checks the weather"), and a builder agent drafts the whole thing: instructions, tools and helpers. **Improve** reviews the instructions you wrote.
-- **Test, then publish.** Try a draft in a test chat. Publishing freezes a version, so later edits never change the agent people already use. Import and export agents as files.
+- **Test, then publish.** Try a draft in a test chat, and give it **tests**: the tools it should use, the approvals it asks for, what its answer says, or a rubric a model grades. With tests, publishing waits until each one passes on that exact draft; a 👎 on a reply can become a test. Publishing freezes a version, so later edits never change the agent people already use. Import and export agents as files.
 - **Bring your own model.** Ollama, OpenAI, Azure AI Foundry, or any OpenAI-compatible service. Keys are stored encrypted and never shown again. Each agent, or each helper, can use a different model ([models](docs/setup/models.md)).
 - **Skills.** Reusable know-how in the [Agent Skills](https://agentskills.io) format: written in a form, uploaded, or imported. Every skill is checked for hidden instructions and leaked credentials when it's saved. An agent loads a skill when it needs it, or always uses it ([skills](docs/setup/skills.md)).
 
@@ -331,6 +331,8 @@ The harness assumes the model **will** follow injected instructions sometimes.
 ### Tested without a model
 
 A **scripted model** replays a fixed sequence of replies and tool calls. Every guardrail is tested with it: a runaway agent that never stops calling tools, an agent that repeats itself, an agent that follows injected instructions, a worker killed mid-tool-call. CI needs no key, and no luck.
+
+**Agents have test suites** ([H6](docs/progress/phase-H6.md)). A case is a message and what should happen: tools called or never called, approvals asked, what the answer says or its JSON shape, and an optional rubric graded by the agent's own model. Each case runs as an ordinary turn, so it's durable and costed like one; a worker grades it when it ends. The built-in agents' suites (`backend/agents/<name>/evals/`) run in CI with `runtime eval`, and a harness change that, say, stops asking before `notify` fails them. A Studio agent with tests publishes only when every one passed on exactly that draft.
 
 ## Safety by design
 

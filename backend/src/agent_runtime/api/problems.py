@@ -20,6 +20,8 @@ from agent_runtime.agents.document import ImportRejected
 from agent_runtime.agents.resolver import AgentUnavailable
 from agent_runtime.agents.studio import PublishBlocked
 from agent_runtime.agents.studio_store import AgentNotFound, NameTaken
+from agent_runtime.evals.service import NoCases, NotFromStudio
+from agent_runtime.evals.store import CaseNotFound
 from agent_runtime.graphs import UnknownGraph
 from agent_runtime.keys import MasterKeyMissing
 from agent_runtime.mcp.service import McpInvalid, McpNotFound
@@ -180,6 +182,18 @@ def install(app: FastAPI) -> None:
             409, "run-terminal", "Run has already ended", str(exc),
             run_id=str(exc.run.id), status_now=str(exc.run.status),
         )  # fmt: skip
+
+    @app.exception_handler(NoCases)
+    async def _no_cases(_: Request, exc: NoCases) -> JSONResponse:
+        return problem(409, "no-tests", "There are no tests to run", str(exc))
+
+    @app.exception_handler(NotFromStudio)
+    async def _not_from_studio(_: Request, exc: NotFromStudio) -> JSONResponse:
+        return problem(409, "not-a-studio-agent", "Only your own agents have tests", str(exc))
+
+    @app.exception_handler(CaseNotFound)
+    async def _case_not_found(_: Request, exc: CaseNotFound) -> JSONResponse:
+        return problem(404, "test-not-found", "Test not found", str(exc))
 
     @app.exception_handler(NotRedrivable)
     async def _not_redrivable(_: Request, exc: NotRedrivable) -> JSONResponse:

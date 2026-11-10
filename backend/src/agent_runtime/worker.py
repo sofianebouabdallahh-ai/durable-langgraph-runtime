@@ -42,6 +42,7 @@ from agent_runtime import metrics
 from agent_runtime.admin import AdminRepository
 from agent_runtime.config import Settings
 from agent_runtime.db import Pool
+from agent_runtime.evals import grader
 from agent_runtime.graphs import GraphRegistry
 from agent_runtime.notifications.delivery import NotificationRelay
 from agent_runtime.queue import Delivery, QueueUnavailable, WorkQueue
@@ -49,7 +50,7 @@ from agent_runtime.runs.executor import RunExecutor, default_owner
 from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.service import RunService
 from agent_runtime.runs.state import RunStatus
-from agent_runtime.runs.store import Run, RunNotFound, RunTerminal
+from agent_runtime.runs.store import Run, RunNotFound, RunRepository, RunTerminal
 from agent_runtime.sessions.service import SessionService
 from agent_runtime.streaming.bus import EventBus
 
@@ -65,6 +66,9 @@ _DONE = frozenset(
         RunStatus.WAITING_CHILDREN,
     }
 )
+
+
+EVAL_SWEEP_S = 10.0  # how often a worker settles the tests nobody settled (H6)
 
 
 class Worker:
@@ -105,6 +109,8 @@ class Worker:
             asyncio.create_task(self._every(self._settings.relay_interval_s, self._relay.sweep)),
             asyncio.create_task(self._every(self._settings.session_sweep_s, self._archive_idle)),
         ]
+        # Tests the executor didn't settle (H6): answer their approvals, grade them.
+        background.append(asyncio.create_task(self._every(EVAL_SWEEP_S, self._settle_tests)))
         if self._notifications.enabled:
             every = self._settings.notify_interval_s
             background.append(asyncio.create_task(self._every(every, self._notifications.sweep)))
@@ -237,6 +243,25 @@ class Worker:
             )
 
     # ------------------------------------------------------------ background
+
+    async def _settle_tests(self) -> int:
+        """The safety net for tests (H6): one whose approval wasn't answered (a crash
+        right after the pause) gets the case's answer and goes back to the queue; one that
+        ended without being graded (cancelled through the API, a crash after the end, an
+        early failure) is graded. Both are idempotent: any worker may do it."""
+        waiting, ended = await grader.stuck(self._pool)
+        for run_id in waiting:
+            test = await grader.of(self._pool, run_id)
+            if test is not None:
+                run = await grader.answer_approvals(self._pool, test, self._bus)
+                if run.status is RunStatus.QUEUED:
+                    await self._relay.enqueue(run.id)
+        for run_id in ended:
+            async with self._pool.connection() as conn:
+                run = await RunRepository(conn).get(run_id)
+            executor = RunExecutor(self._pool, self._settings, self._graphs, owner=self.consumer)
+            await executor.grade_test(run)
+        return len(waiting) + len(ended)
 
     async def _reap(self) -> None:
         """Reclaim dead workers' messages (R2.4), within our free slots."""

@@ -148,8 +148,12 @@ def load_agents(root: Path, catalog: Catalog, ceilings: Ceilings) -> AgentRegist
     return AgentRegistry(agents)
 
 
+NOT_AGENTS = frozenset({"evals"})  # an agent's test suite (H6), next to its agent.md
+
+
 def _agent_dirs(parent: Path) -> list[Path]:
-    return sorted(p for p in parent.iterdir() if p.is_dir() and not p.name.startswith((".", "_")))
+    return sorted(p for p in parent.iterdir() if p.is_dir()
+                  and not p.name.startswith((".", "_")) and p.name not in NOT_AGENTS)  # fmt: skip
 
 
 @dataclass(frozen=True)

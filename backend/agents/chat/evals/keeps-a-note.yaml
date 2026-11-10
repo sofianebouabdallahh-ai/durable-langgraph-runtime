@@ -1,0 +1,10 @@
+# What you ask it to remember is saved, and can be read back.
+name: keeps a note and reads it back
+message: Remember that my locker number is 4217, then check you kept it.
+script:
+  - tool_calls: [{name: save_note, args: {text: "Locker number: 4217"}}]
+  - tool_calls: [{name: recall_notes, args: {query: locker}}]
+  - content: Saved, and checked. Your locker number is 4217.
+expect:
+  tools: [save_note, recall_notes]
+  answer_contains: ["4217"]

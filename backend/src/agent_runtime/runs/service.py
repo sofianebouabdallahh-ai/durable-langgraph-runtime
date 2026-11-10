@@ -280,6 +280,12 @@ class RunService:
                         run_id=run.id, epoch=None)  # fmt: skip
                 await AuditLog(conn).record("run.redriven", "run", run_id,
                                             after={"redrives": run.redrives})  # fmt: skip
+                # A test turn tried again is graded again, on how this attempt ends (H6).
+                await conn.execute(
+                    "UPDATE eval_runs SET status = 'running', checks = '[]', finished_at = NULL "
+                    "WHERE run_id = %s",
+                    (run_id,),
+                )
         await publish_events(self._bus, repo.emitted)
         await publish_messages(self._bus, sessions.created)
         logs.event(log, "run redriven", run_id=str(run_id), redrives=run.redrives)

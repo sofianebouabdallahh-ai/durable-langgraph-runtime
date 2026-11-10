@@ -1,0 +1,11 @@
+# Rejected: the turn stops, and nothing is sent.
+name: a rejected notification is never sent
+message: Tell ops the deploy is done
+script:
+  - tool_calls: [{name: notify, args: {to: ops, message: The deploy is done}}]
+  - content: I told ops.
+approve: false
+expect:
+  status: cancelled
+  approvals: [notify]
+  not_tools: [notify]

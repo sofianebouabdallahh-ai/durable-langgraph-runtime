@@ -31,6 +31,27 @@ Everything is **saved as you type** ("Saved" at the top). If something isn't rig
 
 Change something and test again: every change needs a fresh test before it can be published.
 
+### Tests: what it should keep doing
+
+The **Tests** section (below the form) holds what your agent should do, checked on every
+draft. A test is a message, and what should happen:
+- **the tools it uses**, or never uses, and the ones it **asks you about** first;
+- **what the answer says** (words it contains, a pattern, or JSON in a given shape);
+- **a rubric a model checks the answer against** ("gives a price per night and says
+  where it comes from"), graded by your agent's own model.
+
+**Run tests** sends each one in its own test chat, so nothing reaches people. A worker grades
+each one when its reply ends; **See its test chat** shows what happened. When a test asks for
+an approval, the test answers it (approve by default; a test can reject instead).
+
+**With tests, publishing waits until every test passed on this exact draft.** Change the
+draft, or a test, and they need to run again. In a chat with a published agent, press 👎 on a
+reply, then **Make this a test**: the message becomes a test, and what you said was wrong
+becomes its rubric.
+
+Nuria's built-in agents have suites too, in `backend/agents/<name>/evals/*.yaml`.
+`runtime eval` runs them (CI does, on every change).
+
 ## 3. Publish
 
 **Publish** turns your draft into **version 1** (then 2, 3…), with an optional note on what changed. From then on:

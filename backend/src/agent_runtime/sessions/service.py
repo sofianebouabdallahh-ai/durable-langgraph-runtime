@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
@@ -28,7 +29,7 @@ from agent_runtime import logs
 from agent_runtime.agents.schema import AgentDefinition
 from agent_runtime.audit import AuditLog
 from agent_runtime.config import Settings
-from agent_runtime.db import Pool
+from agent_runtime.db import Conn, Pool
 from agent_runtime.graphs import GraphRegistry, UnknownGraph
 from agent_runtime.models.connections import any_local
 from agent_runtime.runs.limits import local_model_limits, playground_limits
@@ -191,6 +192,7 @@ class SessionService:
         script: list[dict[str, Any]] | None = None,
         subagent_scripts: dict[str, list[dict[str, Any]]] | None = None,
         idempotency_key: str | None = None,
+        on_created: Callable[[Conn, Run], Awaitable[None]] | None = None,
     ) -> Turn:
         """R12.2. Raises SessionNotFound, SessionArchived, TurnActive (→ 409),
         AdmissionPaused, Overloaded, pydantic.ValidationError, LimitAboveCeiling,
@@ -198,7 +200,8 @@ class SessionService:
 
         The turn pins its agent: the definition is resolved and snapshotted now, and
         the run stores the bundle hash (R15.4, AC47). With an `idempotency_key`, a
-        retried send returns the turn the first attempt created."""
+        retried send returns the turn the first attempt created. `on_created` runs in the
+        turn's own transaction, before any worker can see it (a test's row, H6)."""
         session = await self.get(session_id)
         if idempotency_key and (done := await self._sent(session_id, idempotency_key)):
             return done
@@ -257,6 +260,8 @@ class SessionService:
                     [NewMessage(message_id(run.id, "user", 0, "user"), "user", {"text": content})],
                     run_id=run.id, epoch=None,
                 )  # fmt: skip
+                if on_created is not None:
+                    await on_created(conn, run)
         await publish_events(self._bus, runs.emitted)
         await publish_messages(self._bus, repo.created)
         await self._enqueue(run.id)
