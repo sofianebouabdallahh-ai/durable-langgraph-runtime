@@ -62,6 +62,19 @@ def wait(cond: Any, timeout_s: float, what: str) -> Any:
     raise TimeoutError(f"timed out waiting for {what}")
 
 
+def through_the_ui() -> bool:
+    """Whether the API answers through the UI proxy, the path every scenario takes.
+
+    The API being healthy isn't enough: when every API container was just recreated
+    (CI does, to set the webhook), the proxy can keep their old addresses for a while
+    after a failed lookup. A scenario that starts then gets a 502 and tests nothing.
+    """
+    try:
+        return httpx.get(f"{API}/readyz", timeout=3).status_code == 200
+    except httpx.HTTPError:
+        return False
+
+
 class Check:
     def __init__(self, name: str) -> None:
         self.name, self.failed = name, False
@@ -457,6 +470,7 @@ def main() -> int:
     parser.add_argument("--repeat", type=int, default=1)
     args = parser.parse_args()
     names = list(SCENARIOS) if args.scenario == "all" else [args.scenario]
+    wait(through_the_ui, 60, "the API through the UI")
     results = [SCENARIOS[n]() for _ in range(args.repeat) for n in names]
     print(f"\n{sum(results)}/{len(results)} passed")
     return 0 if all(results) else 1
