@@ -29,6 +29,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
@@ -114,7 +115,8 @@ class Prober:
 def turn_with_slow_tool(client: httpx.Client, linger_s: float = 6) -> tuple[str, str]:
     sid = client.post("/sessions", json={"agent": "chat"}).json()["id"]
     resp = client.post(f"/sessions/{sid}/messages", json={"content": "keep this", "script": [
-        {"tool_calls": [{"name": "save_note", "args": {"text": "kept", "linger_s": linger_s}}]},
+        {"tool_calls": [{"name": "save_note",  # its own text: a note is kept once (H8)
+                         "args": {"text": f"kept {uuid.uuid4().hex[:8]}", "linger_s": linger_s}}]},
         {"content": "Kept."},
     ]})  # fmt: skip
     resp.raise_for_status()

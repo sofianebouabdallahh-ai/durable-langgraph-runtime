@@ -26,6 +26,7 @@ export function ToolCard({
   awaitingApproval = false,
   ended = false,
   rejected = false,
+  memoryHref,
 }: {
   call: Of<"tool_call">;
   result: Of<"tool_result"> | null;
@@ -34,6 +35,8 @@ export function ToolCard({
   ended?: boolean;
   /** A person said no to it, so it never ran. */
   rejected?: boolean;
+  /** Where to see what the agent remembers (a note's card, H8). */
+  memoryHref?: string | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const state =
@@ -79,6 +82,11 @@ export function ToolCard({
               <div className="mb-1.5 text-[11px] font-semibold tracking-wider text-stone-500 uppercase">{result.error ? "Error" : "Result"}</div>
               <DataBlock value={result.error ?? result.result} />
             </div>
+          )}
+          {memoryHref && (
+            <a className="text-sm text-stone-600 underline decoration-stone-300 underline-offset-2 hover:text-stone-900 sm:col-span-2 dark:text-stone-400 dark:hover:text-stone-100" href={memoryHref}>
+              See what it remembers
+            </a>
           )}
         </div>
       )}

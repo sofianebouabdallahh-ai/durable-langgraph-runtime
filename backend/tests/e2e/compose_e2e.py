@@ -27,6 +27,7 @@ import os
 import subprocess
 import sys
 import time
+import uuid
 from typing import Any
 
 import httpx
@@ -87,7 +88,10 @@ class Check:
 def turn_with_slow_tool(client: httpx.Client) -> tuple[str, str]:
     sid = client.post("/sessions", json={"agent": "chat"}).json()["id"]
     resp = client.post(f"/sessions/{sid}/messages", json={"content": "keep this", "script": [
-        {"tool_calls": [{"name": "save_note", "args": {"text": "kept", "linger_s": 6}}]},
+        # Its own text: the same note saved again is kept once (H8), and the checks count
+        # this run's notes.
+        {"tool_calls": [{"name": "save_note",
+                         "args": {"text": f"kept {uuid.uuid4().hex[:8]}", "linger_s": 6}}]},
         {"content": "Kept."},
     ]})  # fmt: skip
     resp.raise_for_status()

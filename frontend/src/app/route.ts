@@ -3,7 +3,7 @@
  * shows the same place (AC20 relies on it for the chat). No server rewrites, no
  * router library: four routes.
  *   #/            home (start a chat)       #/s/<id>        a chat
- *   #/agents      the agents                #/agents/<name> one agent
+ *   #/agents      the agents                #/agents/<name> one agent (/memory: what it remembers)
  *   #/studio/<id> edit one of your agents (the Agent Studio)
  *   #/settings/models  your models and keys
  *   #/settings/tools   what the tools use (web search, sites)    #/settings/privacy  usage counts (opt-in)
@@ -18,7 +18,7 @@ export type Route =
   | { page: "home" }
   | { page: "chat"; sessionId: string }
   | { page: "agents" }
-  | { page: "agent"; name: string }
+  | { page: "agent"; name: string; section?: "memory" }
   | { page: "studio"; agentId: string }
   | { page: "models" }
   | { page: "tools" }
@@ -32,7 +32,11 @@ export type Route =
 export function parse(hash: string): Route {
   const [, kind, id] = hash.replace(/^#/, "").split("/");
   if (kind === "s" && id) return { page: "chat", sessionId: decodeURIComponent(id) };
-  if (kind === "agents") return id ? { page: "agent", name: decodeURIComponent(id) } : { page: "agents" };
+  if (kind === "agents" && id) {
+    const memory = hash.replace(/^#/, "").split("/")[3] === "memory";
+    return memory ? { page: "agent", name: decodeURIComponent(id), section: "memory" } : { page: "agent", name: decodeURIComponent(id) };
+  }
+  if (kind === "agents") return { page: "agents" };
   if (kind === "studio" && id) return { page: "studio", agentId: decodeURIComponent(id) };
   if (kind === "settings" && id === "models") return { page: "models" };
   if (kind === "settings" && id === "tools") return { page: "tools" };
@@ -56,7 +60,7 @@ export function href(route: Route): string {
     case "agents":
       return "#/agents";
     case "agent":
-      return `#/agents/${encodeURIComponent(route.name)}`;
+      return `#/agents/${encodeURIComponent(route.name)}${route.section ? `/${route.section}` : ""}`;
     case "studio":
       return `#/studio/${encodeURIComponent(route.agentId)}`;
     case "models":

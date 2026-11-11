@@ -10,6 +10,8 @@ const TOOLS: Record<string, string> = {
   search: "Search",
   retrieve: "Documents",
   save_note: "Saved a note",
+  recall_notes: "Looked in its notes",
+  forget_note: "Forgot a note",
   notify: "Notification",
   web_search: "Web search",
   read_webpage: "Read a page",
@@ -21,7 +23,7 @@ const TOOLS: Record<string, string> = {
 };
 
 /** Tools whose card title already says what happened ("Ran Python"): no "Used" before it. */
-const SAYS_WHAT_IT_DID = new Set(["save_note", "read_webpage", "run_python", "load_skill", "read_skill_file"]);
+const SAYS_WHAT_IT_DID = new Set(["save_note", "recall_notes", "forget_note", "read_webpage", "run_python", "load_skill", "read_skill_file"]);
 
 /** An agent's display name. The general assistant is Nuria herself. */
 export function agentLabel(name: string | null | undefined): string {
@@ -57,6 +59,8 @@ export function toolLabel(tool: string): string {
 /** A failed call's card title: "Saved a note" over a note that wasn't saved misleads. */
 const FAILED: Record<string, string> = {
   save_note: "Couldn't save the note",
+  recall_notes: "Couldn't look in its notes",
+  forget_note: "Couldn't forget the note",
   read_webpage: "Couldn't read the page",
   run_python: "Python stopped with an error",
   load_skill: "Couldn't use the skill",

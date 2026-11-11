@@ -4,6 +4,34 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### H8 — Memory across chats
+#### Added
+- **What you asked an agent to remember is there in every later chat.** At the start of
+  each turn the runtime gives an agent with notes its newest ones, in its system message
+  under "What you remember", as data (up to 1,500 tokens, less for a small window; the
+  rest are counted and `recall_notes` searches them). The model no longer has to think
+  of looking. With qwen2.5:7b, through the app: 15 of 15 new chats recalled the fact (0 of 5
+  before).
+- **The agent can forget** (`forget_note`, granted with `save_note`): a forgotten note
+  leaves its memory at once. "I've forgotten it" with no such call is asked again, like
+  "I've saved it".
+- **Notes about the same thing are pointed out:** `save_note` lists older notes that look
+  like the same thing (a fact that changed), `forget_note` the ones it left, and both tell
+  the model to forget them now.
+- **"What it remembers" on the agent's page** (`#/agents/<name>/memory`): every note with
+  its date and its chat; delete one, restore one it was asked to forget, or forget
+  everything. A note's card in a chat links there. API: `GET`/`DELETE
+  /agents/{name}/memory`, `DELETE /agents/{name}/memory/{id}`,
+  `POST /agents/{name}/memory/{id}/restore`, audited by id only.
+#### Changed
+- **Notes are memory rows** (migration 0028): each carries its agent and, for a test
+  chat or an eval turn, that chat, stamped by the database from the run row. Clearing a
+  run keeps what it remembered.
+- **Keys, tokens, private keys and card numbers are never kept**, and the same note
+  saved twice is kept once.
+- The chat agent's instructions (version 6) answer from "What you remember", and save
+  the new fact and forget the old one when something changes.
+
 ### Walkthrough fixes (a fresh install, used for real with qwen2.5:7b)
 #### Fixed
 - **A model that says it saved a note is asked to really do it.** A tool call a small

@@ -43,6 +43,7 @@ TABLES = {
     "notification_deliveries",
     "agent_evals",
     "eval_runs",
+    "note_forgets",
 }
 
 
@@ -330,5 +331,52 @@ def test_notifications_from_before_delivery_are_never_sent_by_an_upgrade(
             ).fetchall()  # fmt: skip
             conn.execute("DELETE FROM runs WHERE id = %s", (rid,))
         assert rows == [("a" * 64, "skipped"), ("b" * 64, "pending")]
+    finally:
+        command.upgrade(alembic_cfg, "head")
+
+
+def test_notes_from_before_memory_keep_their_agent_and_test_scope(
+    alembic_cfg: Config, test_db_url: str
+) -> None:
+    """H8: notes written before 0028 are scoped from their runs (a Studio test chat's
+    stays in that chat); a note written by a worker that doesn't know the columns is
+    scoped by the trigger; going back to 0027 and up again works."""
+    url = test_db_url.replace("postgresql+psycopg", "postgresql")
+    command.upgrade(alembic_cfg, "head")
+    command.downgrade(alembic_cfg, "0027")
+    try:
+        with psycopg.connect(url, autocommit=True) as conn:
+            real = _insert_run(conn, status="running")
+            agent = conn.execute(
+                "INSERT INTO agents (id, name) VALUES (gen_random_uuid(), %s) RETURNING id",
+                (f"t{uuid.uuid4().hex[:8]}",),
+            ).fetchone()
+            assert agent is not None
+            test_chat = uuid.uuid4()
+            conn.execute("INSERT INTO sessions (id, graph_name, playground_of) "
+                         "VALUES (%s, 'chat', %s)", (test_chat, agent[0]))  # fmt: skip
+            tested = _insert_run(conn, status="running", session_id=test_chat)
+            for key, rid in (("c" * 64, real), ("d" * 64, tested)):
+                conn.execute("INSERT INTO notes (key, run_id, text, epoch) "
+                             "VALUES (%s, %s, 'old', 0)", (key, rid))  # fmt: skip
+            # Leased again since (a resume after an approval): the notes' epoch is older
+            # than their run's, which the fence refuses on any update.
+            conn.execute("UPDATE runs SET epoch = 3 WHERE id IN (%s, %s)", (real, tested))
+        command.upgrade(alembic_cfg, "head")
+        with psycopg.connect(url, autocommit=True) as conn:
+            conn.execute("INSERT INTO notes (key, run_id, text, epoch) "
+                         "VALUES (%s, %s, 'from an H7 worker', 3)", ("e" * 64, real))  # fmt: skip
+            rows = conn.execute(
+                "SELECT key, agent, test_scope FROM notes WHERE key IN (%s, %s, %s) ORDER BY key",
+                ("c" * 64, "d" * 64, "e" * 64),
+            ).fetchall()
+            assert rows == [("c" * 64, "chat", None), ("d" * 64, "chat", test_chat),
+                            ("e" * 64, "chat", None)]  # fmt: skip
+        command.downgrade(alembic_cfg, "0027")
+        command.upgrade(alembic_cfg, "head")
+        with psycopg.connect(url, autocommit=True) as conn:
+            conn.execute("DELETE FROM runs WHERE id IN (%s, %s)", (real, tested))
+            conn.execute("DELETE FROM sessions WHERE id = %s", (test_chat,))
+            conn.execute("DELETE FROM agents WHERE id = %s", (agent[0],))
     finally:
         command.upgrade(alembic_cfg, "head")

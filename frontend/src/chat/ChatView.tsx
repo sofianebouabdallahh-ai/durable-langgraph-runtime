@@ -6,6 +6,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api, API_BASE, ApiError, unwrap } from "../api/client";
 import type { Message } from "../api/messages";
 import { sendMessage } from "../api/send";
+import { href } from "../app/route";
 import type { ConnectionState } from "../stream/connection";
 import type { TurnStatus } from "../stream/events";
 import { Markdown } from "../ui/Markdown";
@@ -19,6 +20,9 @@ import { isBusy } from "./transcript";
 import { useChat } from "./useChat";
 import { ReplyRating } from "./ReplyRating";
 import { WhatHappened } from "./WhatHappened";
+
+/** Tools about what the agent remembers: their cards link to it (H8). */
+const NOTE_TOOLS = new Set(["save_note", "recall_notes", "forget_note"]);
 
 type Interrupt = Extract<Message, { type: "interrupt" }>;
 type Decide = (request: Interrupt, decision: "approve" | "reject", reason: string | null) => void;
@@ -39,11 +43,14 @@ export function ChatView({
   sessionId,
   compact = false,
   agentName,
+  testChat = false,
   onTurnEnd,
 }: {
   sessionId: string;
   compact?: boolean;
   agentName?: string;
+  /** A Studio test chat: its notes are the test's own, not on the agent's page (H8). */
+  testChat?: boolean;
   onTurnEnd?: () => void; // e.g. the Studio: a finished test reply marks the draft tested
 }) {
   const { state, dispatch, connection } = useChat(sessionId);
@@ -134,6 +141,7 @@ export function ChatView({
       </header>
       <ConnectionBanner state={connection} />
       <MessageList
+        agentId={testChat ? null : agentId}
         views={views}
         agent={label}
         brand={agentId === "chat"}
@@ -167,6 +175,7 @@ export function ChatView({
 
 function MessageList({
   views,
+  agentId,
   agent,
   brand,
   waitingIds,
@@ -177,6 +186,7 @@ function MessageList({
   sentCount,
 }: {
   views: TurnView[];
+  agentId: string | null;
   agent: string;
   brand: boolean;
   waitingIds: ReadonlySet<string>;
@@ -221,6 +231,7 @@ function MessageList({
           <TurnBlock
             key={v.runId}
             view={v}
+            agentId={agentId}
             agent={agent}
             brand={brand}
             waitingIds={waitingIds}
@@ -241,6 +252,7 @@ function MessageList({
 
 function TurnBlock({
   view,
+  agentId,
   agent,
   brand,
   waitingIds,
@@ -250,6 +262,7 @@ function TurnBlock({
   status,
 }: {
   view: TurnView;
+  agentId: string | null;
   agent: string;
   brand: boolean;
   waitingIds: ReadonlySet<string>;
@@ -280,7 +293,7 @@ function TurnBlock({
               {agent}
               {answeredBy(view) && <span className="ml-1.5 text-xs font-normal text-stone-500" data-testid="answered-by">· {answeredBy(view)}</span>}
             </div>
-            {renderItems(view.items, agent, waitingIds, onDecide, view.active ? undefined : onRetry)}
+            {renderItems(view.items, agent, waitingIds, onDecide, view.active ? undefined : onRetry, agentId)}
             {view.draft && (
               <div data-testid="draft">
                 <Markdown text={view.draft} />
@@ -332,6 +345,7 @@ function renderItems(
   waitingIds: ReadonlySet<string>,
   onDecide: Decide,
   onRetry: (() => void) | undefined,
+  agentId: string | null,
 ): ReactNode[] {
   const out: ReactNode[] = [];
   const lastError = items.findLast((i) => i.kind === "error");
@@ -344,7 +358,15 @@ function renderItems(
     out.push(
       <StepList key={`steps:${group[0]?.key ?? ""}`}>
         {group.map((s) => (
-          <ToolCard key={s.key} call={s.call} result={s.result} awaitingApproval={s.awaitingApproval} ended={s.ended} rejected={s.rejected} />
+          <ToolCard
+            key={s.key}
+            call={s.call}
+            result={s.result}
+            awaitingApproval={s.awaitingApproval}
+            ended={s.ended}
+            rejected={s.rejected}
+            memoryHref={agentId && NOTE_TOOLS.has(s.call.tool) ? href({ page: "agent", name: agentId, section: "memory" }) : undefined}
+          />
         ))}
       </StepList>,
     );

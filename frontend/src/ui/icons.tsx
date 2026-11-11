@@ -1,10 +1,12 @@
-import { Bell, Calculator, Code2, FileSearch, FileText, FolderOpen, Globe, Library, NotebookPen, SquareTerminal, Wrench, type LucideIcon } from "lucide-react";
+import { Bell, Calculator, Code2, Eraser, FileSearch, FileText, FolderOpen, Globe, Library, NotebookPen, NotebookText, SquareTerminal, Wrench, type LucideIcon } from "lucide-react";
 
 const TOOL_ICONS: Record<string, LucideIcon> = {
   calculator: Calculator,
   search: FileSearch,
   retrieve: Library,
   save_note: NotebookPen,
+  recall_notes: NotebookText,
+  forget_note: Eraser,
   notify: Bell,
   web_search: Globe,
   read_webpage: FileText,

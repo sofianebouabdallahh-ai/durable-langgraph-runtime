@@ -70,7 +70,7 @@ export function App() {
           <Suspense fallback={<Spinner className="m-10" label="Loading…" />}>
             {route.page === "agents" && <AgentsPage go={go} />}
             {route.page === "studio" && <StudioEditor key={route.agentId} agentId={route.agentId} go={go} />}
-            {route.page === "agent" && <AgentDetail key={route.name} name={route.name} go={go} />}
+            {route.page === "agent" && <AgentDetail key={route.name} name={route.name} section={route.section} go={go} />}
             {route.page === "models" && <ModelsPage />}
             {route.page === "privacy" && <PrivacyPage />}
             {route.page === "skills" && <SkillsPage />}

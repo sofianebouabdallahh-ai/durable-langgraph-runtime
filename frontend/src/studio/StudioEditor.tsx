@@ -254,7 +254,7 @@ function Editor({ initial, catalog, go }: { initial: StudioAgent; catalog: NonNu
           </div>
           {testChat ? (
             <div className="min-h-0 flex-1">
-              <ChatView key={testChat} sessionId={testChat} compact agentName={name} onTurnEnd={recheck} />
+              <ChatView key={testChat} sessionId={testChat} compact testChat agentName={name} onTurnEnd={recheck} />
             </div>
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">

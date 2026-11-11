@@ -11,7 +11,8 @@ import re
 from typing import Any
 
 SECRET_PATTERNS = [
-    re.compile(r"sk-[A-Za-z0-9_\-]{20,}"),  # OpenAI-style API keys
+    # OpenAI-style API keys; not the end of a word ("risk-management-guidelines-2026")
+    re.compile(r"(?<![A-Za-z0-9])sk-[A-Za-z0-9_\-]{20,}"),
     re.compile(r"AKIA[0-9A-Z]{16}"),  # AWS access key ids
     re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}"),  # GitHub tokens
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"),

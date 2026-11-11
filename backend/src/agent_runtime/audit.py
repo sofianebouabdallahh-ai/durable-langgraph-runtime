@@ -48,6 +48,9 @@ Action = Literal[
     "mcp_tool.enabled",
     "mcp_tool.disabled",
     "mcp_tool.approved_change",
+    "memory.deleted",
+    "memory.restored",
+    "memory.cleared",
 ]
 ACTOR = "local"  # one person per installation, until accounts (P7)
 

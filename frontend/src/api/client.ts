@@ -66,6 +66,14 @@ export async function unwrap<T>(
   return data;
 }
 
+/** A call answered 204 (no body): throws like `unwrap` when it failed, else resolves. */
+export async function noContent(call: Promise<{ error?: unknown; response: Response }>): Promise<void> {
+  const { error, response } = await call;
+  if (!response.ok) {
+    throw new ApiError(response.status, isProblem(error) ? error : undefined, response.headers.get("x-request-id"));
+  }
+}
+
 function isProblem(value: unknown): value is Problem {
   return typeof value === "object" && value !== null;
 }

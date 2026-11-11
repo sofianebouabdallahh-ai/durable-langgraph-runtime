@@ -7,9 +7,10 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMe
 
 from agent_runtime.tools.middleware import _claims_undone, _from_text_calls, _text_calls
 
-TOOLS = {"save_note", "notify", "recall_notes", "web_search"}
+TOOLS = {"save_note", "notify", "recall_notes", "forget_note", "web_search"}
 REMEMBER = HumanMessage("Remember that the demo is on Friday")
 SEND = HumanMessage("Tell the team the build is green")
+FORGET = HumanMessage("Forget my locker code")
 
 
 def reply(text: str) -> ModelResponse[None]:
@@ -53,6 +54,34 @@ def claim(messages: list[BaseMessage], text: str, tools: set[str] = TOOLS) -> st
         (HumanMessage("Send me a summary of the article"), "Sure, I've sent it below.", None),
         (HumanMessage("Tell me what you found"), "I've sent the findings below.", None),
         (HumanMessage("Keep it short: what's 2+2?"), "4. I've noted you like short answers.", None),
+        # Forgetting (H8): "I've forgotten it", with no forget_note call, isn't true either.
+        (FORGET, "I've forgotten your locker code.", "forget_note"),
+        (FORGET, "Done, I deleted it.", None),  # deleted what? not said: no claim
+        (HumanMessage("Please remove that note"), "The note has been removed.", "forget_note"),
+        (FORGET, "I have not forgotten it: which code?", None),
+        (HumanMessage("Don't forget the demo is Friday"), "I've saved that.", "save_note"),
+        (HumanMessage("Remove the onions from the recipe"), "I've removed the onions.", None),
+        (HumanMessage("Did you forget my code?"), "Yes, I've forgotten it.", None),
+        # …and what the review found would have made it forget a real note:
+        (
+            HumanMessage("Forget the onions, take them off my shopping list"),
+            "Sure, I've removed the onions.",
+            None,
+        ),
+        (
+            HumanMessage("Never mind, forget it. Delete the draft email"),
+            "OK, I deleted the draft.",
+            None,
+        ),
+        (
+            HumanMessage("I always forget my locker code, it's 4321"),
+            "I've saved it. I removed the old one.",
+            None,  # nothing was asked to be kept or forgotten
+        ),
+        (HumanMessage("dont forget my locker code"), "I've forgotten it.", None),
+        (HumanMessage("do not  forget my locker code"), "I've forgotten it.", None),
+        (HumanMessage("Never forget my locker code"), "I've forgotten it.", None),
+        (FORGET, "Done, I deleted it from my notes.", "forget_note"),
     ],
 )
 def test_the_claimed_tool(asked: HumanMessage, text: str, tool: str | None) -> None:
@@ -67,6 +96,11 @@ def test_a_tool_that_ran_since_the_message_or_one_it_lacks_is_no_claim() -> None
     before = [ToolMessage("ok", tool_call_id="c0", name="save_note"), REMEMBER]
     assert claim(before, "I've saved it.") == "save_note"
     assert claim([REMEMBER], "I've saved it.", {"web_search"}) is None
+
+
+def test_a_forget_that_ran_is_no_claim() -> None:
+    ran = [FORGET, ToolMessage("ok", tool_call_id="c1", name="forget_note")]
+    assert claim(ran, "I've forgotten it.") is None
 
 
 def test_an_answer_from_notes_read_back_is_no_claim() -> None:

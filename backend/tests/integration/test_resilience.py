@@ -142,7 +142,7 @@ async def test_a_bug_still_fails_the_run_at_once(
 
 
 async def test_database_connections_cut_mid_tool_call_never_fail_the_run(
-    pool: Pool, test_settings: Settings, checkpoint_tables: None
+    pool: Pool, test_settings: Settings, checkpoint_tables: None, no_memory: None
 ) -> None:
     """The real thing: every connection to the database is terminated (what a failover or
     a restart does) while the turn's tool call runs."""
@@ -173,7 +173,7 @@ async def _has_notes(pool: Pool, run_id: uuid.UUID) -> bool:
 
 
 async def test_a_failed_run_is_redriven_from_its_checkpoint_and_nothing_runs_twice(
-    pool: Pool, test_settings: Settings, checkpoint_tables: None,
+    pool: Pool, test_settings: Settings, checkpoint_tables: None, no_memory: None,
     failing_puts: Callable[..., list[int]],
 ) -> None:  # fmt: skip
     run = await assistant_run(pool, test_settings, [note("kept"), say("Kept.")])
@@ -321,7 +321,7 @@ async def test_the_api_redrives_or_says_why_not(
 
 
 async def test_trying_again_is_new_work_and_respects_the_kill_switch(
-    pool: Pool, test_settings: Settings, checkpoint_tables: None,
+    pool: Pool, test_settings: Settings, checkpoint_tables: None, no_memory: None,
     failing_puts: Callable[..., list[int]],
 ) -> None:  # fmt: skip
     from agent_runtime.runs.service import AdmissionPaused

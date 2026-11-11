@@ -21,6 +21,7 @@ def test_default_registry_declares_risk_and_side_effects() -> None:
         "notify": "external_side_effect",
         "save_note": "write_internal",
         "recall_notes": "read",  # what save_note kept (H4), granted with it
+        "forget_note": "write_internal",  # and forgetting one (H8)
         # sub-agent tools (CR-005), granted by the harness
         "spawn_subagent": "write_internal",
         "subagent_status": "read",

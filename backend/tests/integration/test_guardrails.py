@@ -263,7 +263,7 @@ async def notes_of(pool: Pool, run: Run) -> list[str]:
     ],
 )
 async def test_a_tool_call_written_as_text_is_made(
-    pool: Pool, test_settings: Settings, checkpoint_tables: None, written: str
+    pool: Pool, test_settings: Settings, checkpoint_tables: None, no_memory: None, written: str
 ) -> None:
     """qwen2.5:7b via Ollama writes the call out as its reply about half the time: the
     note wasn't saved, and the person saw the call. It's made, through the pipeline, with
@@ -458,7 +458,11 @@ async def test_secrets_never_reach_the_transcript(
         notes = await cur.fetchall()
     assert all(secret not in str(m.content) for m in msgs if m.type != "user")
     assert "[REDACTED]" in str(next(m for m in msgs if m.type == "tool_call").content)
-    assert notes == [{"text": "key=[REDACTED]"}]  # the pre_tool hook cleaned what ran (AC34)
+    # The pre_tool hook cleaned what ran (AC34), and what's left isn't kept: a note goes to
+    # the model with every later chat (H8).
+    assert notes == []
+    (result,) = [m for m in msgs if m.type == "tool_result"]
+    assert "Not saved" in str(result.content)
 
 
 # ------------------------------------------------- phase H2: budgets that bind
@@ -546,7 +550,7 @@ async def test_h2_a_burst_past_the_tool_budget_still_ends_with_an_answer(
 
 
 async def test_h2_a_cost_budget_binds_and_ends_with_the_wrap_up(
-    pool: Pool, test_settings: Settings, checkpoint_tables: None
+    pool: Pool, test_settings: Settings, checkpoint_tables: None, no_memory: None
 ) -> None:
     priced = test_settings.model_copy(update={"model_prices": PRICED})
     done, _ = await run_assistant(

@@ -108,7 +108,7 @@ Guides for each OS, models, tools and troubleshooting: [docs/setup/](docs/setup/
 | **Search the web** | A private search engine (SearXNG) runs with Nuria: no key, no account. Tavily or Brave if you have a key |
 | **Read web pages** | Pages and PDFs as text, so the agent can quote and cite them. Public websites only |
 | **Run Python / use a terminal / work with files** | In a **disposable sandbox** per turn: no network, no secrets, read-only, with CPU, memory, process and time limits |
-| **Notes** | Things you ask the agent to remember, which it can read back later, in any chat with it |
+| **Notes (memory)** | Things you ask the agent to remember. It sees them in every later chat with it, can forget one when you ask, and you see and remove them on its page. Never keys, passwords or card numbers |
 | **Notifications** | Sending a message to someone, to your webhook. Always asks you first ([notifications](docs/setup/tools.md#notifications)) |
 | **Tools from MCP servers** | Anything a [Model Context Protocol](https://modelcontextprotocol.io) server offers: docs search, issue trackers, databases, your own services |
 
@@ -336,6 +336,8 @@ A **scripted model** replays a fixed sequence of replies and tool calls. Every g
 
 **Safe across deploys** ([H7](docs/progress/phase-H7.md)). The ledger finds a tool call by its place in the run, not its arguments, so a release that adds a defaulted argument can't make a done call happen again, while workers on the previous release still find every call (expand/contract). A run records the newest format that has had it, and a worker on older code leaves it to a newer one during a rolling upgrade. A side effect cut off by a crash isn't sent again unless its tool dedupes by the key; MCP servers receive the key on every call. The turn after one that stopped mid-tool tells the model what really happened to each call, from the ledger.
 
+**Agents remember across chats** ([H8](docs/progress/phase-H8.md)). What you ask an agent to remember is in its prompt in every later chat with it, under "What you remember", as data, within a token budget; it doesn't depend on a small model thinking to look. Its scope is set by the database from the run (the agent, its helper, a test chat's own), never by the model. It can forget a note when asked, and its page shows everything it remembers, to delete, restore or clear. Keys, passwords and card numbers are never kept.
+
 ## Safety by design
 
 Nuria assumes that **the model can be tricked**, and puts every safety decision in code the model can't talk its way past.
@@ -364,11 +366,11 @@ Details, what runs where, and how to delete everything: [docs/security.md](docs/
 
 | Suite | What it covers | Size |
 |---|---|---|
-| Backend unit + integration | Against real Postgres and Redis, never mocks of them: the state machine, fencing (including a control test proving an unfenced zombie *does* corrupt a run), the pipeline, the stream merger, migrations | 935 tests |
+| Backend unit + integration | Against real Postgres and Redis, never mocks of them: the state machine, fencing (including a control test proving an unfenced zombie *does* corrupt a run), the pipeline, the stream merger, migrations | 991 tests |
 | Runtime e2e (`make demo-e2e`) | Real worker and API processes, killed, frozen and drained mid-run | 15 scenarios |
 | Container e2e | The Compose stack as testers run it: a worker killed mid-reply, mid-sandbox and mid-MCP-call; Postgres restarted mid-reply; a notification delivered to a webhook; least-privilege database logins; foreign hosts and cross-site requests refused | 8 scenarios |
-| UI unit | Components and the stream reducer | 81 tests |
-| Browser (Playwright) | The whole app in a real browser, against a scripted model | 61 tests |
+| UI unit | Components and the stream reducer | 85 tests |
+| Browser (Playwright) | The whole app in a real browser, against a scripted model | 62 tests |
 | Kubernetes e2e | The Helm install on kind, a drain mid-reply | |
 
 The tests use a deterministic **scripted model** and a **fake OpenAI-compatible server**, so CI needs no model and no key. Before a release, the whole flow also runs in a browser against a **real local model** (qwen2.5:7b on Ollama). Each phase's summary records what that run found, and how it was fixed ([L8](docs/progress/phase-L8.md)).
