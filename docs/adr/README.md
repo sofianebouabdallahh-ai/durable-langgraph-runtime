@@ -9,5 +9,6 @@ Short records of significant decisions: the context, what we chose, the alternat
 | [0003](0003-agents-as-definition-files.md) | Agents as definition files; hooks as registered code | Accepted |
 | [0004](0004-live-events-redis-pubsub.md) | Live events: Redis Pub/Sub as a hint, Postgres as the record | Accepted |
 | [0005](0005-fan-out-child-runs.md) | Fan-out: child runs for distribution, sub-agents for delegation | Accepted |
+| [0006](0006-memory-across-chats.md) | Memory across chats: the runtime puts it in the prompt, scoped by the run | Accepted |
 
 Requirement changes (what the system must do) are change requests in [../requirements/](../requirements/); ADRs record *how* we build it.
