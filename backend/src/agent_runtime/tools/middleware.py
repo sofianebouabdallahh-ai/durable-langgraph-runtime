@@ -30,7 +30,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, NotRequired, Protocol
+from typing import TYPE_CHECKING, Any, NotRequired, Protocol, cast
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import (
@@ -55,6 +55,9 @@ from agent_runtime import genai, logs, metrics, telemetry
 from agent_runtime.context import compact
 from agent_runtime.context.fit import ContextOverflow, estimate, fit, overflow
 from agent_runtime.fencing import FencedError
+from agent_runtime.memory import prompt as memory_prompt
+from agent_runtime.memory.prompt import Snapshot, with_memory
+from agent_runtime.memory.store import Memory, Note, scope_of
 from agent_runtime.models.retry import ModelCaller
 from agent_runtime.models.scripted import ScriptedChatModel, ScriptTurn
 from agent_runtime.runs.events import EventType
@@ -116,6 +119,9 @@ class RuntimeState(AgentState[Any]):
     """The agent's state, plus what the harness must remember across turns."""
 
     session_started: NotRequired[bool]  # session_start ran (checkpointed: never twice)
+    # What it remembers this turn (H8): taken when the turn starts, so a turn taken over
+    # after a crash sees what it started with. In the system message, never the thread.
+    memory: NotRequired[Snapshot]
 
 
 @dataclass
@@ -192,13 +198,19 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
         """At the start of every run (a node, so its result is checkpointed):
         session_start once per session (the flag lives in the thread's state, so a
         reclaimed first turn doesn't repeat it), then turn_start. Both may add
-        context; a deny rejects the turn. Fail closed (R15.8)."""
-        turn = runtime.context.turn if runtime.context else None
-        if turn is None:
+        context; a deny rejects the turn. Fail closed (R15.8). First, for an agent or
+        helper with notes, what it remembers (H8)."""
+        ctx = runtime.context
+        if ctx is None:
             return None
+        update: dict[str, Any] = {}
+        if (remembered := await self._remember(ctx)) is not None:
+            update["memory"] = remembered
+        turn = ctx.turn
+        if turn is None:
+            return update or None
         texts: list[str] = []
         session_texts: list[str] = []
-        update: dict[str, Any] = {}
         if turn.session_id is not None and not state.get("session_started"):
             started = await run_context_hooks(
                 turn.session_start, SessionHookInput(str(turn.session_id), turn.agent)
@@ -222,12 +234,24 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
         # A long chat's older turns become one summary, here: before this turn writes a
         # transcript row or records a tool call, so every id and key it makes is computed
         # from the compacted thread (phase H5, context/compact.py).
-        kept = await self._compact(runtime.context, list(state.get("messages", [])), turn)
+        kept = await self._compact(ctx, list(state.get("messages", [])), turn)
         if kept is not None:
             update["messages"] = [RemoveMessage(id=REMOVE_ALL_MESSAGES), *kept, *added]
         elif added:
             update["messages"] = added
         return update or None
+
+    @staticmethod
+    async def _remember(ctx: RunContext) -> Snapshot | None:
+        """The turn's memory snapshot, for an agent or helper granted save_note: its own
+        notes, scoped by the run row (memory/store.py)."""
+        if "save_note" not in ctx.tools.grants:
+            return None
+        sub = ctx.subagent
+        author = str(sub.defn.frontmatter.name) if sub is not None else None
+        async with ctx.tools.pool.connection() as conn:
+            scope = await scope_of(conn, ctx.tools.fence.run_id, author)
+            return await memory_prompt.snapshot(Memory(conn), scope)
 
     async def _compact(
         self, ctx: RunContext, messages: list[Any], turn: TurnInfo
@@ -506,7 +530,11 @@ async def _send(
 ) -> ModelResponse[Any]:
     """Send `req` fitted to the model's context window (phase H5): old tool results
     cleared, then long older messages cut, in what's SENT only. A provider that still
-    says it's too long gets it fitted again, smaller, once; then ContextOverflow."""
+    says it's too long gets it fitted again, smaller, once; then ContextOverflow. What it
+    remembers is filled in for the window as it stands (H8)."""
+    original = req
+    memory = await _memory_of(ctx, req)
+    req = _remembering(ctx, original, memory)
     system = estimate([req.system_message]) if req.system_message else 0
     window = ctx.context_tokens - system
     fitted = fit(req.messages, window, req.tools)
@@ -524,6 +552,8 @@ async def _send(
             raise
         if stated:  # the model's real window: the rest of the run is fitted to it
             ctx.context_tokens = min(ctx.context_tokens, stated)
+            req = _remembering(ctx, original, memory)  # less memory for a smaller window
+            system = estimate([req.system_message]) if req.system_message else 0
         smaller = int(min((stated or ctx.context_tokens) - system, window) * 0.7)
         refit = fit(req.messages, smaller, req.tools, trim_at=0.4, shorten_at=0.6,
                     keep_results=0, protect_latest=False)  # fmt: skip
@@ -539,6 +569,32 @@ async def _send(
             if overflow(again)[0]:
                 raise ContextOverflow(str(again)[:500]) from again
             raise
+
+
+async def _memory_of(
+    ctx: RunContext, req: ModelRequest[RunContext]
+) -> tuple[Snapshot | None, list[Note]] | None:
+    """The turn's snapshot and its notes as they stand now, for an agent or helper granted
+    save_note (H8); None for any other."""
+    if "save_note" not in ctx.tools.grants or req.system_message is None:
+        return None
+    snap = cast("Snapshot | None", req.state.get("memory"))
+    if snap is None:
+        return None, []
+    async with ctx.tools.pool.connection() as conn:
+        return snap, await memory_prompt.remembered(Memory(conn), snap)
+
+
+def _remembering(
+    ctx: RunContext, req: ModelRequest[RunContext],
+    memory: tuple[Snapshot | None, list[Note]] | None,
+) -> ModelRequest[RunContext]:  # fmt: skip
+    """`req` with what it remembers in its system message, for the window as it stands."""
+    if memory is None or req.system_message is None:
+        return req
+    body = memory_prompt.section(*memory, ctx.context_tokens)
+    text = with_memory(req.system_message.text, body)
+    return req.override(system_message=SystemMessage(content=text))
 
 
 async def _pre_model(
@@ -714,6 +770,12 @@ _CLAIMS = {
         r"|(?:has|have)\s+been\s+(?:sent|notified)|\b(?:message|notification)\s+sent"
         + _CALLED.format(t="notify") + r")\b", re.IGNORECASE,
     ),
+    # "Forgotten", or deleted from its notes: "I've removed the onions" is about a list.
+    "forget_note": re.compile(
+        _I + r"(?:forgotten|(?:deleted|removed|erased)\b[^.?!]{0,30}\b(?:notes?|memory))"
+        r"|(?:has|have)\s+been\s+forgotten|\bnote\s+(?:has\s+been\s+)?(?:deleted|removed|erased)"
+        + _CALLED.format(t="forget_note") + r")\b", re.IGNORECASE,
+    ),
 }  # fmt: skip
 # Asked of the agent: not "send me…" or "tell me…", the answer itself; not "keep it short".
 _ASKS = {
@@ -724,6 +786,16 @@ _ASKS = {
     "notify": re.compile(
         r"\b(?:notify|notification|(?:send|tell|text|message|ping|email)(?!\s+me\b)"
         r"|let\s+(?!me\b)\w+\s+know)\b", re.IGNORECASE,
+    ),
+    # "Forget" something remembered ("my locker code", "what I told you"), not "don't
+    # forget …" (that's a note) nor "forget it" / "forget the onions"; deleting only
+    # what's remembered ("remove the onions" is about a recipe).
+    "forget_note": re.compile(
+        r"(?<!n" + _APOS + r"t\s)(?<!dont\s)(?<!not\s)(?<!never\s)\bforget\b[^.?!]{0,40}?"
+        r"\b(?:notes?|memory|memories|code|number|address|password|birthday|name|"
+        r"what\s+I|that\s+I|everything\s+(?:about|you))\b"
+        r"|\b(?:delete|remove|erase|clear)\b[^.?!]{0,40}\b(?:notes?|memory|memories)\b",
+        re.IGNORECASE,
     ),
 }  # fmt: skip
 # A question about what was done before ("Did you save that?", "Do you remember…?").
@@ -776,7 +848,7 @@ def _claims_undone(
     asked = ""
     for m in reversed(messages):
         if isinstance(m, HumanMessage) and not str(m.content).startswith("[runtime]"):
-            asked = str(m.content)
+            asked = " ".join(str(m.content).split())  # "do not  forget" is "do not forget"
             break
         if isinstance(m, ToolMessage) and m.status != "error" and isinstance(m.name, str):
             done.add(m.name)
@@ -815,6 +887,9 @@ CLAIMED = {
     "notify": "[runtime] Your reply says it was sent, but notify wasn't called in this "
     "turn, so it isn't sent yet. Call notify now with who it's for and the message they "
     "asked you to send.",
+    "forget_note": "[runtime] Your reply says it was forgotten, but forget_note wasn't "
+    "called in this turn, so it is still in your memory. Call forget_note now with the id "
+    "of the note they asked you to forget, from What you remember.",
 }
 STOPPED_EARLY = "I had to stop early: this run reached its budget before I could finish."
 NO_PROGRESS_LIMIT = 5

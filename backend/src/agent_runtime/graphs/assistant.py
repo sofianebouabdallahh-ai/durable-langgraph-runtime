@@ -25,6 +25,7 @@ from agent_runtime.agents.schema import AgentDefinition, SubAgentDefinition
 from agent_runtime.catalog import default_catalog
 from agent_runtime.config import get_agent_settings
 from agent_runtime.graphs import GraphSpec
+from agent_runtime.memory import prompt as memory_prompt
 from agent_runtime.models.scripted import ScriptedChatModel, ScriptTurn
 from agent_runtime.skills.binding import MAIN, SkillSet
 from agent_runtime.skills.store import SkillVersion
@@ -34,6 +35,8 @@ from agent_runtime.tools.builtin import default_tools
 from agent_runtime.tools.middleware import RunContext, RuntimeMiddleware
 from agent_runtime.tools.spec import ToolRegistry, ToolSpec
 from agent_runtime.untrusted import RULE, as_data
+
+NOTE_TOOLS = ("recall_notes", "forget_note")  # granted with save_note: its memory
 
 
 class AgentInput(BaseModel):
@@ -65,6 +68,9 @@ def render_prompt(
     always, on_demand = split_skills(agent, skills)
     if on_demand:
         prompt += skills_section(on_demand)
+    if "save_note" in granted_tools(agent):
+        # Filled in on every model call from the turn's snapshot (memory/prompt.py, H8).
+        prompt += memory_prompt.HEADING + memory_prompt.EMPTY
     prompt += "\n\n## Data\n" + RULE
     # Always-used skills last: a small model follows what it read last (as plain text,
     # 6 in 8 at the end against 4 in 8 at the start, replaying a real chat).
@@ -176,10 +182,10 @@ def granted_tools(agent: AgentDefinition | SubAgentDefinition) -> list[str]:
     """What the harness grants (R14.9): the file's tools, plus the sub-agent tools
     (CR-005 R16.4/R16.5) for a main agent with sub-agents, and for every sub-agent, plus
     the skill tools for an agent or helper that has skills (CR-006 R17.4), plus
-    `recall_notes` wherever `save_note` is (notes it can read back, H4)."""
+    `recall_notes` and `forget_note` wherever `save_note` is (its memory: H4, H8)."""
     names = [t.name for t in agent.frontmatter.tools]
-    if "save_note" in names and "recall_notes" not in names:
-        names.append("recall_notes")
+    if "save_note" in names:
+        names += [n for n in NOTE_TOOLS if n not in names]
     if agent.frontmatter.skills:
         names += SKILL_TOOLS
     if isinstance(agent, SubAgentDefinition):

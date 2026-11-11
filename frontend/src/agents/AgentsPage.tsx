@@ -16,6 +16,7 @@ import { ToolIcon } from "../ui/icons";
 import { Markdown } from "../ui/Markdown";
 import { Avatar, Button, Pill, Spinner } from "../ui/primitives";
 import { AgentPowerButton, OffPill } from "../safety/KillSwitch";
+import { MemorySection } from "./Memory";
 import { agentLabel, limitLines, toolName, toolPurpose } from "../ui/words";
 
 type Helper = Schemas["HelperView"];
@@ -427,7 +428,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function AgentDetail({ name, go }: { name: string; go: (route: Route) => void }) {
+export function AgentDetail({ name, section, go }: { name: string; section?: "memory" | undefined; go: (route: Route) => void }) {
   const agent = useQuery({
     queryKey: ["agent", name],
     queryFn: () => unwrap(api.GET("/agents/{name}", { params: { path: { name } } })),
@@ -496,6 +497,10 @@ export function AgentDetail({ name, go }: { name: string; go: (route: Route) => 
           )}
         </aside>
       </div>
+
+      {(keepsNotes(a) || section === "memory") && (
+        <MemorySection name={a.name} displayName={a.display_name} focus={section === "memory"} />
+      )}
 
       {a.helpers.length > 0 && (
         <section className="mt-10">
@@ -588,6 +593,12 @@ function ToolList({ tools, compact = false }: { tools: Record<string, unknown>[]
       })}
     </ul>
   );
+}
+
+/** It, or one of its helpers, keeps notes (H8). */
+function keepsNotes(a: Agent): boolean {
+  const has = (tools: Record<string, unknown>[]) => tools.some((t) => t.name === "save_note");
+  return has(a.tools) || a.helpers.some((h) => has(h.tools));
 }
 
 function Panel({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {

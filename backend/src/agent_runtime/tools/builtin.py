@@ -15,6 +15,7 @@ from typing import Annotated, Any
 from pydantic import Field
 from pydantic.json_schema import SkipJsonSchema
 
+from agent_runtime.memory.store import SHOWN_ID, Memory, Note, scope_of
 from agent_runtime.tools.spec import ToolArgs, ToolContext, ToolRegistry
 
 # ---------------------------------------------------------------- calculator
@@ -69,19 +70,34 @@ class SaveNoteArgs(ToolArgs):
 
 
 async def save_note(args: SaveNoteArgs, ctx: ToolContext) -> dict[str, Any]:
-    """Save a note the person wants kept, to remember in this chat or a later one
-    (recall_notes reads it back). Saving the same note twice in a run keeps one copy."""
+    """Save a note the person wants kept, to remember in this chat or a later one: it
+    shows under "What you remember" from then on. Saving the same note twice keeps one
+    copy. Keys, passwords and card numbers are never kept."""
     async with ctx.pool.connection() as conn:
         # The idempotency key is the primary key: re-executing after a crash can't
         # create a second row (R2.6). The fencing trigger rejects a stale epoch.
-        await conn.execute(
-            "INSERT INTO notes (key, run_id, text, epoch, author) VALUES (%s, %s, %s, %s, %s) "
-            "ON CONFLICT (key) DO NOTHING",
-            (ctx.key, ctx.run_id, args.text, ctx.epoch, _author(ctx)),
+        memory = Memory(conn)
+        note, before = await memory.save(
+            key=ctx.key, run_id=ctx.run_id, epoch=ctx.epoch, text=args.text, author=_author(ctx)
+        )
+        older = await memory.related(
+            await scope_of(conn, ctx.run_id, _author(ctx)), note.text, besides=note.key
         )
     if args.linger_s:
         await asyncio.sleep(args.linger_s)
-    return {"note_id": ctx.key[:16]}
+    out: dict[str, Any] = {"note_id": note.id}
+    if before:
+        out["already_remembered"] = True
+    if older:  # a fact that changed: the old note would contradict the new one
+        out["maybe_out_of_date"] = _listed(older)
+        # Direct, like the claim check's note: offered "if…", qwen2.5:7b told the person the
+        # old note "can be forgotten if needed" and left it (2 of 2).
+        out["hint"] = (
+            "These older notes look like the same thing. If the new note replaces one (the "
+            "fact changed), forget the old one now with forget_note: don't leave it, and "
+            "don't ask the person."
+        )
+    return out
 
 
 # --------------------------------------------------------------------- notify
@@ -127,40 +143,53 @@ class RecallNotesArgs(ToolArgs):
 
 
 async def recall_notes(args: RecallNotesArgs, ctx: ToolContext) -> dict[str, Any]:
-    """Read back the notes you saved with save_note, in any chat with you: newest first,
-    optionally only those containing `query`."""
+    """Search all the notes you saved with save_note, in any chat with you: newest first,
+    optionally only those containing `query`. The newest are under "What you remember"
+    already; this finds older ones."""
     async with ctx.pool.connection() as conn:
-        # Notes this same agent (or this same helper of it) saved, in any chat (H4). A
-        # test (a Studio test chat, or an eval turn) keeps to its own chat, both ways:
-        # its notes never reach real chats, and real notes don't sway a test (H6).
-        cur = await conn.execute(
-            """
-            WITH me AS (
-                SELECT r.id, coalesce(r.agent_name, r.graph_name) AS agent, r.session_id,
-                       (s.playground_of IS NOT NULL
-                        OR EXISTS (SELECT 1 FROM eval_runs e WHERE e.run_id = r.id)) AS test
-                FROM runs r LEFT JOIN sessions s ON s.id = r.session_id
-                WHERE r.id = %(run)s
-            )
-            SELECT n.text, n.created_at FROM notes n JOIN runs r ON r.id = n.run_id
-            LEFT JOIN sessions s ON s.id = r.session_id, me
-            WHERE coalesce(r.agent_name, r.graph_name) = me.agent
-              AND CASE WHEN me.test THEN r.session_id IS NOT DISTINCT FROM me.session_id
-                       ELSE s.playground_of IS NULL
-                            AND NOT EXISTS (SELECT 1 FROM eval_runs e WHERE e.run_id = r.id)
-                  END
-              AND n.author IS NOT DISTINCT FROM %(author)s
-              AND (%(q)s::text IS NULL OR strpos(lower(n.text), lower(%(q)s)) > 0)
-            ORDER BY n.created_at DESC LIMIT %(n)s
-            """,
-            {"run": ctx.run_id, "author": _author(ctx), "q": args.query or None,
-             "n": args.limit},
-        )  # fmt: skip
-        rows = await cur.fetchall()
+        # This same agent's (or this same helper's) notes, in any chat (H4); a test keeps
+        # to its own chat (H6). The scope is the run's, never the model's (memory/store.py).
+        memory = Memory(conn)
+        notes = await memory.search(
+            await scope_of(conn, ctx.run_id, _author(ctx)), args.query, args.limit
+        )
     return {
-        "notes": [{"text": r["text"], "saved_at": r["created_at"].isoformat()} for r in rows],
-        "count": len(rows),
-    }
+        "notes": [{"id": n.id, "text": n.text, "saved_at": n.saved_at.isoformat()}
+                  for n in notes],
+        "count": len(notes),
+    }  # fmt: skip
+
+
+class ForgetNoteArgs(ToolArgs):
+    note_id: Annotated[str, Field(min_length=6, max_length=64)]
+
+
+async def forget_note(args: ForgetNoteArgs, ctx: ToolContext) -> dict[str, Any]:
+    """Forget one of your notes when the person asks you to, or when it's out of date:
+    give its id from "What you remember" (or recall_notes). It leaves your memory at
+    once; the person can still restore it from the agent's page."""
+    async with ctx.pool.connection() as conn:
+        memory, scope = Memory(conn), await scope_of(conn, ctx.run_id, _author(ctx))
+        found = await memory.forget(
+            scope, args.note_id, key=ctx.key, run_id=ctx.run_id, epoch=ctx.epoch
+        )
+        others = [] if found is None else await memory.related(scope, found.text, besides=found.key)
+    if found is None:
+        raise LookupError(f"no note {args.note_id!r} in your memory: nothing was forgotten")
+    out: dict[str, Any] = {"forgotten": found.text, "note_id": found.id}
+    if others:  # "forget my locker code" with two notes of it
+        out["still_remembered"] = _listed(others)
+        # Offered "if the person meant these too", it forgot one of two and asked (2 of 2).
+        out["hint"] = (
+            "These are still in your memory and look like what the person asked you to "
+            "forget. Forget each of them now with forget_note, unless one is clearly about "
+            "something else."
+        )
+    return out
+
+
+def _listed(notes: list[Note]) -> list[dict[str, str]]:
+    return [{"id": n.key[:SHOWN_ID], "text": n.text} for n in notes]
 
 
 class SearchArgs(ToolArgs):
@@ -184,8 +213,8 @@ def default_tools() -> ToolRegistry:
         calculator
     )
     registry.tool("search", args=SearchArgs, risk_class="read", side_effect=False)(search)
-    # The two side effects below dedupe by the idempotency key (their primary key), so a
-    # call a crash cut off is made again safely (H7).
+    # The side effects below dedupe by the idempotency key (a primary or unique key), so
+    # a call a crash cut off is made again safely (H7).
     registry.tool(
         "save_note",
         args=SaveNoteArgs,
@@ -201,6 +230,14 @@ def default_tools() -> ToolRegistry:
         side_effect=False,
         repeatable=True,
     )(recall_notes)
+    registry.tool(
+        "forget_note",
+        args=ForgetNoteArgs,
+        risk_class="write_internal",
+        side_effect=True,
+        max_calls=20,
+        retry_after_crash=True,  # a forget is keyed by the call: made again, it's a no-op
+    )(forget_note)
     registry.tool(
         "notify",
         args=NotifyArgs,

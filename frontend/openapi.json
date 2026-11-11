@@ -1077,6 +1077,19 @@
         "title": "CheckView",
         "type": "object"
       },
+      "Cleared": {
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "title": "Cleared",
+        "type": "object"
+      },
       "ClientError": {
         "properties": {
           "failed_request_id": {
@@ -2757,6 +2770,22 @@
         "title": "McpToolView",
         "type": "object"
       },
+      "MemoryView": {
+        "properties": {
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/NoteView"
+            },
+            "title": "Notes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "notes"
+        ],
+        "title": "MemoryView",
+        "type": "object"
+      },
       "MessageView": {
         "properties": {
           "content": {
@@ -2970,6 +2999,71 @@
           "instructions"
         ],
         "title": "NewSkill",
+        "type": "object"
+      },
+      "NoteView": {
+        "properties": {
+          "forgotten_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the agent was asked to forget it",
+            "title": "Forgotten At"
+          },
+          "helper": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The helper that keeps it; None: the agent itself",
+            "title": "Helper"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "saved_at": {
+            "format": "date-time",
+            "title": "Saved At",
+            "type": "string"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The chat it was saved in, if it's kept",
+            "title": "Session Id"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "saved_at",
+          "helper",
+          "session_id",
+          "forgotten_at"
+        ],
+        "title": "NoteView",
         "type": "object"
       },
       "NotificationView": {
@@ -6416,6 +6510,193 @@
         "summary": "One agent, with its prompt",
         "tags": [
           "agents"
+        ]
+      }
+    },
+    "/agents/{name}/memory": {
+      "delete": {
+        "operationId": "clear_memory_agents__name__memory_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9-]*$",
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cleared"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Forget everything, for good",
+        "tags": [
+          "memory"
+        ]
+      },
+      "get": {
+        "operationId": "list_memory_agents__name__memory_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9-]*$",
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "What the agent remembers",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/agents/{name}/memory/{note_id}": {
+      "delete": {
+        "operationId": "delete_note_agents__name__memory__note_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9-]*$",
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{6,64}$",
+              "title": "Note Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete a note for good",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/agents/{name}/memory/{note_id}/restore": {
+      "post": {
+        "operationId": "restore_note_agents__name__memory__note_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9-]*$",
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{6,64}$",
+              "title": "Note Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bring back a forgotten note",
+        "tags": [
+          "memory"
         ]
       }
     },

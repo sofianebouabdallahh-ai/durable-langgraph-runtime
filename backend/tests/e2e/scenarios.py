@@ -13,6 +13,7 @@ import contextlib
 import json
 import signal
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -661,7 +662,8 @@ async def chat_crash(c: Cluster) -> Report:
     await c.wait(lambda: c.status_is(first[0]["run_id"], "completed"), timeout_s=30,
                  what="turn 1")  # fmt: skip
     run_id = await _send(c, sid, "keep this", [
-        {"tool_calls": [{"name": "save_note", "args": {"text": "kept", "linger_s": 4}}]},
+        {"tool_calls": [{"name": "save_note",  # its own text: a note is kept once (H8)
+                         "args": {"text": f"kept {uuid.uuid4().hex[:8]}", "linger_s": 4}}]},
         {"content": "Kept."},
     ])  # fmt: skip
 

@@ -265,7 +265,7 @@ async def test_a_turn_after_one_that_ended_mid_tool_call_is_repaired(
 
 
 async def test_session_start_runs_once_even_when_the_first_turn_is_reclaimed(
-    pool: Pool, test_settings: Settings, checkpoint_tables: None
+    pool: Pool, test_settings: Settings, checkpoint_tables: None, no_memory: None
 ) -> None:
     """AC35 (part) and AC19 in-process: the first turn's worker dies in a tool call."""
     fast = test_settings.model_copy(update={"lease_ttl_s": 1.0, "heartbeat_s": 0.3})

@@ -194,6 +194,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents/{name}/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What the agent remembers */
+        get: operations["list_memory_agents__name__memory_get"];
+        put?: never;
+        post?: never;
+        /** Forget everything, for good */
+        delete: operations["clear_memory_agents__name__memory_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/{name}/memory/{note_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a note for good */
+        delete: operations["delete_note_agents__name__memory__note_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/{name}/memory/{note_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bring back a forgotten note */
+        post: operations["restore_note_agents__name__memory__note_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/audit": {
         parameters: {
             query?: never;
@@ -1852,6 +1904,11 @@ export interface components {
             /** Ok */
             ok: boolean;
         };
+        /** Cleared */
+        Cleared: {
+            /** Deleted */
+            deleted: number;
+        };
         /** ClientError */
         ClientError: {
             /**
@@ -2577,6 +2634,11 @@ export interface components {
             /** Without Asking */
             without_asking: boolean;
         };
+        /** MemoryView */
+        MemoryView: {
+            /** Notes */
+            notes: components["schemas"]["NoteView"][];
+        };
         /** MessageView */
         MessageView: {
             /** Content */
@@ -2666,6 +2728,33 @@ export interface components {
             instructions: string;
             /** Name */
             name: string;
+        };
+        /** NoteView */
+        NoteView: {
+            /**
+             * Forgotten At
+             * @description When the agent was asked to forget it
+             */
+            forgotten_at: string | null;
+            /**
+             * Helper
+             * @description The helper that keeps it; None: the agent itself
+             */
+            helper: string | null;
+            /** Id */
+            id: string;
+            /**
+             * Saved At
+             * Format: date-time
+             */
+            saved_at: string;
+            /**
+             * Session Id
+             * @description The chat it was saved in, if it's kept
+             */
+            session_id: string | null;
+            /** Text */
+            text: string;
         };
         /** NotificationView */
         NotificationView: {
@@ -4113,6 +4202,130 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_memory_agents__name__memory_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_memory_agents__name__memory_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Cleared"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_note_agents__name__memory__note_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_note_agents__name__memory__note_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteView"];
                 };
             };
             /** @description Validation Error */

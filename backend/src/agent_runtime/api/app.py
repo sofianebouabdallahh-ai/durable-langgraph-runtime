@@ -36,6 +36,7 @@ from agent_runtime.api.client_errors import client_errors_router
 from agent_runtime.api.guard import BrowserOriginGuard, allowed_hosts
 from agent_runtime.api.kill_switch import kill_switch_router
 from agent_runtime.api.mcp import mcp_router
+from agent_runtime.api.memory import memory_router
 from agent_runtime.api.models import models_router
 from agent_runtime.api.notifications import notifications_router
 from agent_runtime.api.onboarding import onboarding_router
@@ -496,6 +497,7 @@ def create_app(
     app.include_router(runs)
     app.include_router(sessions_router)
     app.include_router(agents_router)
+    app.include_router(memory_router)
     app.include_router(studio_router)
     app.include_router(models_router)
     app.include_router(skills_router)

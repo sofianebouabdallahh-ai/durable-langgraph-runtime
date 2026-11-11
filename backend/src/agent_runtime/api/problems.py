@@ -25,6 +25,7 @@ from agent_runtime.evals.store import CaseNotFound
 from agent_runtime.graphs import UnknownGraph
 from agent_runtime.keys import MasterKeyMissing
 from agent_runtime.mcp.service import McpInvalid, McpNotFound
+from agent_runtime.memory.store import NoteNotFound
 from agent_runtime.models.connections import ConnectionInvalid, ConnectionNotFound, ModelUnavailable
 from agent_runtime.runs.approvals import ApprovalConflict
 from agent_runtime.runs.limits import LimitAboveCeiling
@@ -107,6 +108,12 @@ def install(app: FastAPI) -> None:
     @app.exception_handler(ConnectionInvalid)
     async def _connection_invalid(_: Request, exc: ConnectionInvalid) -> JSONResponse:
         return problem(422, "connection-invalid", "This model connection can't be saved", str(exc))
+
+    # ---------------------------------------------------------- memory (H8)
+    @app.exception_handler(NoteNotFound)
+    async def _note_not_found(_: Request, exc: NoteNotFound) -> JSONResponse:
+        return problem(404, "note-not-found", "Note not found",
+                       f"This agent has no note {exc}.")  # fmt: skip
 
     # ------------------------------------------------------------- MCP (L8)
     @app.exception_handler(McpNotFound)

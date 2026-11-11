@@ -122,6 +122,14 @@ async def checkpoint_tables(pool: Pool) -> None:
 
 
 @pytest.fixture
+async def no_memory(pool: Pool) -> None:
+    """Start with no notes. Memory is in every prompt (H8), so a test that counts tokens
+    or cost mustn't depend on the notes earlier tests saved."""
+    async with pool.connection() as conn:
+        await conn.execute("DELETE FROM notes")
+
+
+@pytest.fixture
 async def queue(settings: Settings) -> AsyncIterator[RedisWorkQueue]:
     """A real Redis work queue on its own stream (db 15), deleted afterwards."""
     redis = create_redis(settings.redis_url.rsplit("/", 1)[0] + "/15")

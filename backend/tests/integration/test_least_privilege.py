@@ -1,5 +1,6 @@
 """SC10: each component connects as its own user and can do only its job (R14.13)."""
 
+import uuid
 from collections.abc import AsyncIterator
 
 import psycopg
@@ -89,6 +90,33 @@ async def test_a_full_run_works_with_only_these_privileges(
     run = await RunService(as_api, test_settings, graphs).create_run("toy", {"question": "least"})
     done = await RunExecutor(as_worker, test_settings, graphs, owner="lp:1").execute(run.id)
     assert done.status is RunStatus.COMPLETED
+
+
+async def test_memory_with_only_these_privileges(
+    as_api: Pool, as_worker: Pool, test_settings: Settings
+) -> None:
+    """H8: a worker reads and adds memory, and forgets by adding a row; only the API
+    deletes or restores, and it never writes a note. The memory turn and the person's
+    page work with exactly these grants."""
+    from agent_runtime.memory.store import Memory
+
+    graphs = default_registry()
+    marker = f"lp-{uuid.uuid4().hex[:8]}"
+    run = await RunService(as_api, test_settings, graphs).create_run("assistant", {
+        "message": "remember", "script": [
+            {"tool_calls": [{"name": "save_note", "args": {"text": marker}}]},
+            {"content": "ok"}]})  # fmt: skip
+    done = await RunExecutor(as_worker, test_settings, graphs, owner="lp:2").execute(run.id)
+    assert done.status is RunStatus.COMPLETED
+    async with as_api.connection() as conn:
+        (note,) = [n for n in await Memory(conn).of_agent("assistant") if n.text == marker]
+        assert await Memory(conn).delete("assistant", note.id) is not None
+    assert await denied(as_worker, "DELETE FROM notes")
+    assert await denied(as_worker, "UPDATE notes SET text = 'x'")
+    assert await denied(as_worker, "DELETE FROM note_forgets")
+    assert await denied(as_api, "UPDATE notes SET text = 'x'")
+    assert await denied(as_api, "INSERT INTO notes (key, run_id, text, epoch) "
+                        "VALUES (repeat('a', 64), gen_random_uuid(), 'x', 0)")  # fmt: skip
 
 
 @pytest.mark.parametrize(

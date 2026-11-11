@@ -35,6 +35,15 @@ describe("ToolCard", () => {
     expect(screen.getByText("Search didn't work")).toBeInTheDocument(); // a failed call says so
   });
 
+  it("links a note's card to what the agent remembers (H8)", async () => {
+    const forgot = call(1, "forget_note", "f1", { note_id: "abcd1234" }) as Of<"tool_call">;
+    const done = result(2, "forget_note", "f1", { forgotten: "locker 4412" }) as Of<"tool_result">;
+    render(<ToolCard call={forgot} result={done} memoryHref="#/agents/chat/memory" />);
+    expect(screen.getByText("Forgot a note")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { expanded: false }));
+    expect(screen.getByRole("link", { name: "See what it remembers" })).toHaveAttribute("href", "#/agents/chat/memory");
+  });
+
   it("never says a note was saved when it wasn't, nor that a call you refused didn't finish", () => {
     const note = call(1, "save_note", "n1", { text: "hi" }) as Of<"tool_call">;
     const { rerender } = render(<ToolCard call={note} result={{ ...(result(2, "save_note", "n1", null) as Of<"tool_result">), error: "invalid arguments" }} />);
