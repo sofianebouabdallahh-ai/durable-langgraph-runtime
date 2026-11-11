@@ -204,8 +204,14 @@ class ToolPipeline:
         self._at("schema")
         args, error = self._validate(spec, call.args)
         if error is not None:
+            # Say that nothing happened: a model told only "invalid arguments" went on to
+            # say the note was saved.
             return ToolResult(
-                f"Error: invalid arguments for {spec.name}: {error}", "error", stage="schema"
+                f"Error: invalid arguments for {spec.name}: {error}. It did not run, so "
+                "nothing was done: fix the arguments and call it again, or tell the "
+                "person it didn't work.",
+                "error",
+                stage="schema",
             )
 
         # 3 grant

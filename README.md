@@ -305,7 +305,7 @@ A chat can go on for hundreds of turns ([H5](docs/progress/phase-H5.md)).
 
 - **Retries only when it helps.** Rate limits, 5xx errors and timeouts are retried at most 3 times, with exponential backoff, full jitter and `Retry-After`. Errors that won't change (a bad request, a wrong key) fail at once. Every attempt counts toward the budget.
 - **A circuit breaker per model connection.** One failing service doesn't stall turns that use the others.
-- **Small-model repairs.** An empty reply (common when a local model's tool call can't be parsed) is asked for once more, with a note, and charged like any call. The builder agent fixes what a person would fix in a draft (a tool that doesn't exist, a tool that asks first given to a helper), and lists each fix.
+- **Small-model repairs.** An empty reply (common when a local model's tool call can't be parsed) is asked for once more, with a note, and charged like any call. A tool call written out as the reply (`save_note({...})`, `<tool_call>…`) is made, through the pipeline. A reply that says it saved a note or sent a message the person asked for, when no tool did, is asked once more to do it. The builder agent fixes what a person would fix in a draft (a tool that doesn't exist, a tool that asks first given to a helper, searching without reading pages), and lists each fix.
 - **Local models get more time per turn** (15 minutes), never past the run's own ceiling.
 
 ### Helpers (sub-agents)
@@ -364,11 +364,11 @@ Details, what runs where, and how to delete everything: [docs/security.md](docs/
 
 | Suite | What it covers | Size |
 |---|---|---|
-| Backend unit + integration | Against real Postgres and Redis, never mocks of them: the state machine, fencing (including a control test proving an unfenced zombie *does* corrupt a run), the pipeline, the stream merger, migrations | 880 tests |
+| Backend unit + integration | Against real Postgres and Redis, never mocks of them: the state machine, fencing (including a control test proving an unfenced zombie *does* corrupt a run), the pipeline, the stream merger, migrations | 935 tests |
 | Runtime e2e (`make demo-e2e`) | Real worker and API processes, killed, frozen and drained mid-run | 15 scenarios |
 | Container e2e | The Compose stack as testers run it: a worker killed mid-reply, mid-sandbox and mid-MCP-call; Postgres restarted mid-reply; a notification delivered to a webhook; least-privilege database logins; foreign hosts and cross-site requests refused | 8 scenarios |
-| UI unit | Components and the stream reducer | 78 tests |
-| Browser (Playwright) | The whole app in a real browser, against a scripted model | 60 tests |
+| UI unit | Components and the stream reducer | 81 tests |
+| Browser (Playwright) | The whole app in a real browser, against a scripted model | 61 tests |
 | Kubernetes e2e | The Helm install on kind, a drain mid-reply | |
 
 The tests use a deterministic **scripted model** and a **fake OpenAI-compatible server**, so CI needs no model and no key. Before a release, the whole flow also runs in a browser against a **real local model** (qwen2.5:7b on Ollama). Each phase's summary records what that run found, and how it was fixed ([L8](docs/progress/phase-L8.md)).

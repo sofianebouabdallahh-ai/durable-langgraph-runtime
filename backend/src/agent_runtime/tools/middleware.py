@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -342,10 +343,21 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
                 return await _send(ctx, handler, request.override(model=model, messages=nudged))
 
             response = await self._call(ctx, again, charge_again, attempts)
+        orchestrator = ctx.orchestrator
+        names = _tool_names(request)
+        if wrap_up[0] is None:  # the wrap-up has no tools: nothing to repair
+            response = _from_text_calls(response, names)
+            # Not while helpers work (one may be saving it), nor near a limit: the answer
+            # in hand is better than a turn that fails on the extra call.
+            helping = orchestrator is not None and orchestrator.running()
+            tool = None if helping else _claims_undone(request.messages, response, names)
+            if tool and (sub is not None or await ctx.soft_limit() is None):  # once, charged
+                response = await self._honest(ctx, request, handler, model, turn, response,
+                                              tool, charge_again, attempts)  # fmt: skip
+                response = _from_text_calls(response, names)
         _check_progress(request.state.get("messages", []), response)
         if wrap_up[0] is not None:
             return await _post_model(turn, _budget_limited(response, wrap_up[0]))
-        orchestrator = ctx.orchestrator
         if orchestrator is not None and _is_final(response) and orchestrator.running():
             outcomes = await orchestrator.wait_all()
             # The outcomes are the helpers' words: data, like wait_subagents' output (H4).
@@ -360,8 +372,44 @@ class RuntimeMiddleware(AgentMiddleware[Any, RunContext]):
             async def guarded() -> ModelResponse[Any]:
                 return await _send(ctx, handler, request.override(model=model, messages=messages))
 
-            response = await self._call(ctx, guarded, charge_again, attempts)
+            response = _from_text_calls(
+                await self._call(ctx, guarded, charge_again, attempts), names
+            )
         return await _post_model(turn, response)
+
+    async def _honest(
+        self,
+        ctx: RunContext,
+        request: ModelRequest[RunContext],
+        handler: Callable[[ModelRequest[RunContext]], Awaitable[ModelResponse[Any]]],
+        model: BaseChatModel,
+        turn: TurnInfo | None,
+        reply: ModelResponse[Any],
+        tool: str,
+        charge: Callable[[], Awaitable[None]],
+        attempts: list[int],
+    ) -> ModelResponse[Any]:
+        """The model asked once more, after a reply saying `tool` did what it didn't. If
+        that call can't be made (a budget, the provider), the first reply stands: a turn
+        that ends with it beats one that fails."""
+        from agent_runtime.runs.executor import CancelRequested, LeaseLost, ReleaseRequested
+        from agent_runtime.subagents.orchestrator import SubagentCancelled
+
+        logs.event(log, "a reply says a tool did what it didn't: asking once more",
+                   tool=tool, level=logging.WARNING)  # fmt: skip
+        claimed: list[Any] = [*request.messages, *reply.result, HumanMessage(CLAIMED[tool])]
+        await _pre_model(turn, request, claimed)
+
+        async def honest() -> ModelResponse[Any]:
+            return await _send(ctx, handler, request.override(model=model, messages=claimed))
+
+        try:
+            return await self._call(ctx, honest, charge, attempts)
+        except (FencedError, LeaseLost, CancelRequested, ReleaseRequested, SubagentCancelled):
+            raise  # taken over, stopped (Stop raises from the token stream), handed over
+        except Exception:
+            log.warning("asking once more failed; keeping the first reply", exc_info=True)
+            return reply
 
     async def _call(
         self,
@@ -556,6 +604,191 @@ def _is_empty(response: ModelResponse[Any]) -> bool:
     return bool(ai) and not any(m.tool_calls or m.text.strip() for m in ai)
 
 
+def _tool_names(request: ModelRequest[RunContext]) -> set[str]:
+    """The names of the tools this call offers the model."""
+    names: set[str] = set()
+    for tool in request.tools:
+        if isinstance(tool, dict):
+            fn = tool.get("function")
+            name = fn.get("name") if isinstance(fn, dict) else tool.get("name")
+        else:
+            name = getattr(tool, "name", None)
+        if isinstance(name, str):
+            names.add(name)
+    return names
+
+
+_CALL_OPEN = re.compile(r"([A-Za-z_][\w-]*)\s*\(\s*")
+_FENCE = re.compile(r"^```[\w-]*\s*|\s*```$")
+# A last block may lack its closing tag (a small model stops, or is cut off).
+_TAGGED = re.compile(r"<tool_call>(.*?)(?:</tool_call>|\Z)", re.DOTALL)
+
+
+def _text_calls(text: str, names: set[str]) -> list[dict[str, Any]] | None:
+    """The tool calls a reply's whole text writes out instead of making them, or None
+    when the text is anything else. Seen on qwen2.5:7b via Ollama, about half the time:
+    `save_note({"text": "demo is on Friday"})` as the reply, the note never saved. The
+    forms: `name({...})` or `name()`, `<tool_call>{"name": …, "arguments": {…}}</tool_call>`,
+    and that JSON bare, each for a tool offered, one after another and nothing else."""
+    s = _FENCE.sub("", text.strip())
+    if "<tool_call>" in s:  # only the tagged blocks, and nothing around them
+        if _TAGGED.sub("", s).strip():
+            return None
+        s = "\n".join(_TAGGED.findall(s))
+    decoder = json.JSONDecoder()
+    calls: list[dict[str, Any]] = []
+    i = 0
+    while True:
+        while i < len(s) and s[i] in " \t\r\n;,":
+            i += 1
+        if i == len(s):
+            return calls or None
+        name: Any
+        args: Any
+        try:
+            if opened := _CALL_OPEN.match(s, i):  # name({...}) or name()
+                name, i = opened.group(1), opened.end()
+                args = {}
+                if s[i : i + 1] != ")":
+                    args, i = decoder.raw_decode(s, i)
+                while i < len(s) and s[i].isspace():
+                    i += 1
+                if s[i : i + 1] != ")":
+                    return None
+                i += 1
+            else:  # {"name": ..., "arguments": {...}}
+                obj, i = decoder.raw_decode(s, i)
+                if not isinstance(obj, dict):
+                    return None
+                name, args = obj.get("name"), obj.get("arguments", obj.get("parameters"))
+                if isinstance(args, str):
+                    args = json.loads(args)
+        except ValueError:
+            return None
+        # A JSON answer that merely has a "name" ({"name": {"first": "Ada"}}) is an answer.
+        if not isinstance(name, str) or name not in names or not isinstance(args, dict):
+            return None
+        calls.append({"name": name, "args": args})
+
+
+def _from_text_calls(response: ModelResponse[Any], names: set[str]) -> ModelResponse[Any]:
+    """A reply that only writes out tool calls, made into those calls: they go through
+    the pipeline like any other (grants, approvals, the ledger), and the person never
+    sees the call as the answer. Anything unexpected keeps the reply as it was."""
+    result = list(response.result)
+    for at, m in enumerate(result):
+        if not isinstance(m, AIMessage) or m.tool_calls or not m.text.strip():
+            continue
+        try:
+            calls = _text_calls(m.text, names)
+        except Exception:  # a repair never fails a turn
+            log.warning("reading a reply as tool calls failed; keeping it", exc_info=True)
+            continue
+        if calls is None:
+            continue
+        logs.event(log, "a tool call written as text: made it",
+                   tools=",".join(c["name"] for c in calls), level=logging.WARNING)  # fmt: skip
+        # 9 letters and digits: the strictest id an OpenAI-compatible service asks for.
+        result[at] = m.model_copy(update={"content": "", "tool_calls": [
+            {"name": c["name"], "args": c["args"], "id": uuid.uuid4().hex[:9],
+             "type": "tool_call"} for c in calls
+        ]})  # fmt: skip
+    return ModelResponse(result=result, structured_response=response.structured_response)
+
+
+# What a reply may claim a tool did ("I've saved that", "has been sent"), by tool; what
+# the person's message asks for, for that claim to be one; and words that undo a claim
+# ("nothing has been saved", "as I noted").
+_APOS = "['\u2019]"
+_I = r"\b(?:I(?:" + _APOS + r"ve| have| just)?\s+(?:\w+ly\s+|also\s+|now\s+|just\s+)?"
+# A reply that names the tool as called ("save_note called with…") claims it too.
+_CALLED = r"|called\s+{t}|{t}\s+(?:was\s+|has\s+been\s+)?called"
+_CLAIMS = {
+    "save_note": re.compile(
+        _I + r"(?:saved|noted|stored|recorded|remembered)"
+        r"|(?:has|have)\s+been\s+(?:saved|noted|stored)"
+        + _CALLED.format(t="save_note") + r")\b", re.IGNORECASE,
+    ),
+    "notify": re.compile(
+        _I + r"(?:sent|notified|let\s+\w+(?:\s+\w+)?\s+know)"
+        r"|(?:has|have)\s+been\s+(?:sent|notified)|\b(?:message|notification)\s+sent"
+        + _CALLED.format(t="notify") + r")\b", re.IGNORECASE,
+    ),
+}  # fmt: skip
+# Asked of the agent: not "send me…" or "tell me…", the answer itself; not "keep it short".
+_ASKS = {
+    "save_note": re.compile(
+        r"\b(?:remember|note|notes|save|keep\s+in\s+mind|keep\s+track|don" + _APOS
+        + r"?t\s+forget|write\s+(?:it|this|that)\s+down|jot)\b", re.IGNORECASE,
+    ),
+    "notify": re.compile(
+        r"\b(?:notify|notification|(?:send|tell|text|message|ping|email)(?!\s+me\b)"
+        r"|let\s+(?!me\b)\w+\s+know)\b", re.IGNORECASE,
+    ),
+}  # fmt: skip
+# A question about what was done before ("Did you save that?", "Do you remember…?").
+_ABOUT_BEFORE = re.compile(
+    r"^\W*(?:did|have|has|had|was|were|what\s+did|when\s+did|do\s+you\s+(?:still\s+)?"
+    r"remember|can\s+you\s+remember\s+what)\b",
+    re.IGNORECASE,
+)
+_UNDONE = re.compile(
+    r"\b(?:no|not|nothing|never|yet\s+to)\b|n" + _APOS + r"t\b|\bas\s*$", re.IGNORECASE
+)
+_QUOTED = re.compile(r"\"[^\"]*\"|\u201c[^\u201d]*\u201d")
+# "I" that starts a clause ("Great, I've sent it"), not one inside it ("the link I sent").
+_CLAUSE = re.compile(
+    r"(?:^|[,:;\u2014\u2013-]|\b(?:and|so|ok|okay|great|done|sure|yes|alright|thanks))\s*$",
+    re.IGNORECASE,
+)
+_CLAUSE_BREAK = re.compile(r"[,;:\u2014\u2013]|\s-\s")
+
+
+def _claimed(tool: str, text: str) -> bool:
+    for found in _CLAIMS[tool].finditer(text):
+        start = max(text.rfind(c, 0, found.start()) for c in ".!?\n") + 1
+        before = text[start : found.start()]
+        first_person = found.group(0)[:1] in "Ii" and found.group(0)[1:2] in " '\u2019"
+        if first_person and not _CLAUSE.search(before):
+            continue
+        # Only this clause can undo it, and not words in quotes: "No problem, I've saved
+        # it" and 'Note: "Sam does not eat meat" has been saved' are claims.
+        clause = _QUOTED.sub("", before)
+        breaks = list(_CLAUSE_BREAK.finditer(clause))
+        if _UNDONE.search(clause[breaks[-1].end() :] if breaks else clause):
+            continue
+        return True
+    return False
+
+
+def _claims_undone(
+    messages: list[Any], response: ModelResponse[Any], names: set[str]
+) -> str | None:
+    """The tool a final reply says did something (a note saved, a message sent) that it
+    didn't, else None: the person asked for it in their message, the agent has the tool,
+    and no such call succeeded since that message. What qwen2.5:7b says instead of
+    calling save_note, often; it's asked once more, naming the tool. Not a claim: an
+    answer to a question about what was done before ("Did you save that?"), nor one
+    about notes it read back this turn (recall_notes)."""
+    if not _is_final(response):
+        return None
+    done: set[str] = set()
+    asked = ""
+    for m in reversed(messages):
+        if isinstance(m, HumanMessage) and not str(m.content).startswith("[runtime]"):
+            asked = str(m.content)
+            break
+        if isinstance(m, ToolMessage) and m.status != "error" and isinstance(m.name, str):
+            done.add(m.name)
+    if _ABOUT_BEFORE.search(asked):
+        return None
+    if "recall_notes" in done:
+        done.add("save_note")  # what it says it saved, it read back
+    text = [m for m in response.result if isinstance(m, AIMessage)][-1].text
+    return next((t for t in _CLAIMS if t in names and t not in done
+                 and _ASKS[t].search(asked) and _claimed(t, text)), None)  # fmt: skip
+
+
 def _is_final(response: ModelResponse[Any]) -> bool:
     """The model answered without asking for a tool: the agent would stop here."""
     ai = [m for m in response.result if isinstance(m, AIMessage)]
@@ -571,6 +804,18 @@ EMPTY_REPLY = (
     "[runtime] Your last reply came back empty: no text and no tool call. Answer now, or "
     "call one of your tools."
 )
+# Asked only when the person's message asked for it (see _claims_undone), so it can say
+# plainly that it isn't done. Measured on qwen2.5:7b, over 15 "remember…" messages: 8
+# claims were asked again; a note that left a way out ("if they asked you to…") got none
+# saved, this one 6 (13 of 15 saved in all).
+CLAIMED = {
+    "save_note": "[runtime] Your reply says it was saved, but save_note wasn't called in "
+    "this turn, so it isn't saved yet. Call save_note now with what they asked you to "
+    "remember.",
+    "notify": "[runtime] Your reply says it was sent, but notify wasn't called in this "
+    "turn, so it isn't sent yet. Call notify now with who it's for and the message they "
+    "asked you to send.",
+}
 STOPPED_EARLY = "I had to stop early: this run reached its budget before I could finish."
 NO_PROGRESS_LIMIT = 5
 

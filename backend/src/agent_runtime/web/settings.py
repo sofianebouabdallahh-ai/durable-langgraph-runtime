@@ -177,6 +177,16 @@ class ToolSettings:
             hits = await (await self.provider()).search(query, 3)
         except SearchUnavailable as exc:
             return False, str(exc), []
+        if not hits and (unanswered := getattr(hits, "unanswered", ())):
+            # SearXNG's engines refused it (rate limits, CAPTCHAs): not "no results".
+            return (
+                False,
+                (
+                    f"No results: {', '.join(unanswered)} didn't answer (they limit how often "
+                    "they can be asked). Try again in a few minutes, or use Tavily or Brave"
+                ),
+                [],
+            )
         if not hits:
             return False, "The search answered, but with no results", []
         return True, f"Works: {len(hits)} results for “{query}”", hits

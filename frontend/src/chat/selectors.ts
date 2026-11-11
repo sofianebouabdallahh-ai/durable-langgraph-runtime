@@ -18,7 +18,16 @@ export const HELPER_TOOLS: ReadonlySet<string> = new Set([
 
 export type Item =
   | { kind: "text"; key: string; message: Of<"assistant"> }
-  | { kind: "tool"; key: string; call: Of<"tool_call">; result: Of<"tool_result"> | null; awaitingApproval: boolean; ended: boolean }
+  | {
+      kind: "tool";
+      key: string;
+      call: Of<"tool_call">;
+      result: Of<"tool_result"> | null;
+      awaitingApproval: boolean;
+      ended: boolean;
+      /** A person said no to it: it never ran, on purpose. */
+      rejected: boolean;
+    }
   | { kind: "helpers"; key: string; helpers: Helper[] }
   | { kind: "approval-request"; key: string; message: Of<"interrupt">; decided: Of<"approval"> | null }
   | { kind: "error"; key: string; message: Of<"error"> }
@@ -102,8 +111,14 @@ function items(messages: Message[], helpers: Helper[], active: boolean): Item[] 
   // by the call's id; older requests didn't carry it, so by the tool's name.
   const heldCalls = new Set<string>();
   const heldTools = new Set<string>();
+  const rejectedCalls = new Set<string>();
   for (const m of messages) {
-    if (m.type !== "interrupt" || decided.has(m.messageId)) continue;
+    if (m.type !== "interrupt") continue;
+    const decision = decided.get(m.messageId);
+    if (decision) {
+      if (decision.decision === "reject" && m.callId) rejectedCalls.add(m.callId);
+      continue;
+    }
     if (m.callId) heldCalls.add(m.callId);
     else if (m.tool) heldTools.add(m.tool);
   }
@@ -123,7 +138,11 @@ function items(messages: Message[], helpers: Helper[], active: boolean): Item[] 
         } else {
           const result = results.get(m.toolCallId) ?? null;
           const awaitingApproval = result === null && (heldCalls.has(m.toolCallId) || heldTools.has(m.tool));
-          out.push({ kind: "tool", key: m.messageId, call: m, result, awaitingApproval, ended: result === null && !awaitingApproval && !active });
+          const rejected = result === null && rejectedCalls.has(m.toolCallId);
+          out.push({
+            kind: "tool", key: m.messageId, call: m, result, awaitingApproval, rejected,
+            ended: result === null && !awaitingApproval && !rejected && !active,
+          });
         }
         break;
       case "interrupt":

@@ -144,16 +144,27 @@ def repair(
     """What a person would fix without a second thought, fixed rather than sent back: a
     small model often doesn't manage a second proposal. A tool that doesn't exist is left
     out; a tool that asks a person first moves from a helper to the main agent (helpers
-    can't ask). Returns the proposal and what was changed, in plain words."""
+    can't ask); searching the web comes with reading pages (search gives only snippets,
+    and tells the model to read a page before relying on it). Returns the proposal and
+    what was changed, in plain words."""
     from agent_runtime.agents.studio import TOOLS
 
     known = {*TOOLS, *(mcp or {})}
     asks = {"notify", *(n for n, r in (mcp or {}).items() if r == "external_side_effect")}
     notes: list[str] = []
+
+    def with_reading(tools: list[str], who: str) -> list[str]:
+        if "web_search" in tools and "read_webpage" in known and "read_webpage" not in tools:
+            notes.append(f"Added “read_webpage”{who}: with “web_search” it reads the pages "
+                         "it relies on, not just their snippets.")  # fmt: skip
+            return [*tools, "read_webpage"]
+        return tools
+
     main = [t for t in dict.fromkeys(proposal.tools) if t in known]
     notes += [
         f"Left out “{t}”: there's no such tool here." for t in proposal.tools if t not in known
     ]
+    main = with_reading(main, "")
     helpers = []
     for h in proposal.helpers:
         kept = []
@@ -167,6 +178,7 @@ def repair(
                     main.append(t)
             else:
                 kept.append(t)
+        kept = with_reading(kept, f" to {h.display_name}")
         helpers.append(h.model_copy(update={"tools": kept}))
     return proposal.model_copy(update={"tools": main, "helpers": helpers}), notes
 

@@ -32,6 +32,17 @@ describe("ToolCard", () => {
     rerender(<ToolCard call={c} result={{ ...(result(2, "search", "c1", null) as Of<"tool_result">), error: "down", cached: true, durationMs: 1500 }} />);
     expect(screen.getByText("reused")).toBeInTheDocument();
     expect(screen.getByText("1.5 s")).toBeInTheDocument();
+    expect(screen.getByText("Search didn't work")).toBeInTheDocument(); // a failed call says so
+  });
+
+  it("never says a note was saved when it wasn't, nor that a call you refused didn't finish", () => {
+    const note = call(1, "save_note", "n1", { text: "hi" }) as Of<"tool_call">;
+    const { rerender } = render(<ToolCard call={note} result={{ ...(result(2, "save_note", "n1", null) as Of<"tool_result">), error: "invalid arguments" }} />);
+    expect(screen.getByText("Couldn't save the note")).toBeInTheDocument();
+    expect(screen.queryByText("Saved a note")).toBeNull();
+    rerender(<ToolCard call={note} result={null} ended rejected />);
+    expect(screen.getByText("not done: you said no")).toBeInTheDocument();
+    expect(screen.queryByText("didn't finish")).toBeNull();
   });
 });
 

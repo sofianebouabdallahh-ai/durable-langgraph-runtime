@@ -54,6 +54,19 @@ export function toolLabel(tool: string): string {
   return TOOLS[tool] ?? humanize(tool);
 }
 
+/** A failed call's card title: "Saved a note" over a note that wasn't saved misleads. */
+const FAILED: Record<string, string> = {
+  save_note: "Couldn't save the note",
+  read_webpage: "Couldn't read the page",
+  run_python: "Python stopped with an error",
+  load_skill: "Couldn't use the skill",
+  read_skill_file: "Couldn't read the skill's file",
+};
+
+export function toolFailedLabel(tool: string): string {
+  return FAILED[tool] ?? `${toolLabel(tool)} didn't work`;
+}
+
 const humanize = (name: string) => name.replaceAll("_", " ").replace(/^\w/, (c) => c.toUpperCase());
 
 /** An MCP tool's name (`mcp__<server>__<tool>`, L8), split; null for a built-in tool. */
