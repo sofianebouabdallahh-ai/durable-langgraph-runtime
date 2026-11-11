@@ -334,6 +334,8 @@ A **scripted model** replays a fixed sequence of replies and tool calls. Every g
 
 **Agents have test suites** ([H6](docs/progress/phase-H6.md)). A case is a message and what should happen: tools called or never called, approvals asked, what the answer says or its JSON shape, and an optional rubric graded by the agent's own model. Each case runs as an ordinary turn, so it's durable and costed like one; a worker grades it when it ends. The built-in agents' suites (`backend/agents/<name>/evals/`) run in CI with `runtime eval`, and a harness change that, say, stops asking before `notify` fails them. A Studio agent with tests publishes only when every one passed on exactly that draft.
 
+**Safe across deploys** ([H7](docs/progress/phase-H7.md)). The ledger finds a tool call by its place in the run, not its arguments, so a release that adds a defaulted argument can't make a done call happen again, while workers on the previous release still find every call (expand/contract). A run records the newest format that has had it, and a worker on older code leaves it to a newer one during a rolling upgrade. A side effect cut off by a crash isn't sent again unless its tool dedupes by the key; MCP servers receive the key on every call. The turn after one that stopped mid-tool tells the model what really happened to each call, from the ledger.
+
 ## Safety by design
 
 Nuria assumes that **the model can be tricked**, and puts every safety decision in code the model can't talk its way past.
@@ -362,7 +364,7 @@ Details, what runs where, and how to delete everything: [docs/security.md](docs/
 
 | Suite | What it covers | Size |
 |---|---|---|
-| Backend unit + integration | Against real Postgres and Redis, never mocks of them: the state machine, fencing (including a control test proving an unfenced zombie *does* corrupt a run), the pipeline, the stream merger, migrations | 864 tests |
+| Backend unit + integration | Against real Postgres and Redis, never mocks of them: the state machine, fencing (including a control test proving an unfenced zombie *does* corrupt a run), the pipeline, the stream merger, migrations | 880 tests |
 | Runtime e2e (`make demo-e2e`) | Real worker and API processes, killed, frozen and drained mid-run | 15 scenarios |
 | Container e2e | The Compose stack as testers run it: a worker killed mid-reply, mid-sandbox and mid-MCP-call; Postgres restarted mid-reply; a notification delivered to a webhook; least-privilege database logins; foreign hosts and cross-site requests refused | 8 scenarios |
 | UI unit | Components and the stream reducer | 78 tests |

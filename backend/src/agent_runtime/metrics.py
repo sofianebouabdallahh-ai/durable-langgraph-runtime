@@ -45,6 +45,9 @@ RUNS = Counter("runtime_runs_total", "Runs that reached an end", ["status", "rea
 RUNS_STARTED = Counter("runtime_runs_started_total", "Executions started on a fresh lease")
 RECLAIMS = Counter("runtime_reclaims_total", "Runs taken over from a dead worker (R2.4)")
 RELEASES = Counter("runtime_releases_total", "Graceful hand-offs (R10.7)", ["reason"])
+DEFERRED = Counter(
+    "runtime_runs_deferred_total", "Runs a worker left for later (H7: newer code)", ["reason"]
+)
 REDRIVES = Counter("runtime_redrives_total", "Failed runs a person tried again (H4)")
 NOTIFICATIONS = Counter(
     "runtime_notifications_total", "Notification delivery attempts (H4)", ["outcome"]
@@ -176,6 +179,10 @@ def llm_usage(model: str, tokens_in: int, tokens_out: int, cost: float, calls: i
 
 def llm_latency(model: str, seconds: float) -> None:
     LLM_SECONDS.labels(model).observe(seconds)
+
+
+def run_deferred(reason: str) -> None:
+    DEFERRED.labels(reason).inc()
 
 
 def notification(outcome: str) -> None:

@@ -19,6 +19,7 @@ class EventType(StrEnum):
     NODE_FAILED = "node.failed"
     TOOL_CALLED = "tool.called"
     TOOL_COMPLETED = "tool.completed"
+    TOOL_ARGS_CHANGED = "tool.args_changed"  # H7: served its earlier result, not run again
     INTERRUPT_RAISED = "interrupt.raised"
     APPROVAL_DECIDED = "approval.decided"  # R14.17
     RUN_RESUMED_AFTER_APPROVAL = "run.resumed"  # approved: back in the queue

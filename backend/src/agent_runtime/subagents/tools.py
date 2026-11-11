@@ -82,8 +82,9 @@ def _subagent(ctx: ToolContext) -> Any:
 
 
 def register(registry: ToolRegistry) -> ToolRegistry:
+    # The child is keyed by the call's idempotency key: spawning again finds it (H7).
     @registry.tool("spawn_subagent", args=SpawnArgs, risk_class="write_internal",
-                   side_effect=True)  # fmt: skip
+                   side_effect=True, retry_after_crash=True)  # fmt: skip
     async def spawn_subagent(args: SpawnArgs, ctx: ToolContext) -> dict[str, Any]:
         """Start one of your sub-agents on a focused task. Non-blocking: returns a handle
         at once; the sub-agent works in parallel. Give it everything it needs in `task`

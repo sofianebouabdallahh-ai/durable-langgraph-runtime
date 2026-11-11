@@ -81,6 +81,7 @@ from agent_runtime.runs.outbox import Outbox
 from agent_runtime.runs.service import prepare
 from agent_runtime.runs.state import FailureReason, RunStatus
 from agent_runtime.runs.store import (
+    RUN_FORMAT,
     FanOutLimits,
     FanOutRejected,
     NewChild,
@@ -92,11 +93,17 @@ from agent_runtime.runs.switches import KillSwitchRepository
 from agent_runtime.sandbox import tools as sandbox_tools
 from agent_runtime.sessions.store import SessionRepository
 from agent_runtime.sessions.transcript import TranscriptWriter
-from agent_runtime.sessions.turns import turn_input
+from agent_runtime.sessions.turns import (
+    CUT_OFF_TOOL_RESULT,
+    Repair,
+    turn_input,
+    unanswered,
+)
 from agent_runtime.skills.binding import MAIN
 from agent_runtime.streaming.bus import EventBus, publish_events, run_channel, session_channel
 from agent_runtime.streaming.tokens import TokenRelay
 from agent_runtime.subagents.orchestrator import SubagentLimits, SubagentOrchestrator
+from agent_runtime.tools import invocations
 from agent_runtime.tools.builtin import default_tools
 from agent_runtime.tools.hooks import (
     ErrorHookInput,
@@ -108,8 +115,21 @@ from agent_runtime.tools.hooks import (
     run_observers,
 )
 from agent_runtime.tools.invocations import BudgetExceeded, LoopDetected
-from agent_runtime.tools.middleware import RunContext, TurnDenied, TurnInfo, UsageRecorder
-from agent_runtime.tools.pipeline import Grant, ToolPipeline, ToolRunContext
+from agent_runtime.tools.middleware import (
+    RunContext,
+    TurnDenied,
+    TurnInfo,
+    UsageRecorder,
+    call_index,
+)
+from agent_runtime.tools.pipeline import (
+    Grant,
+    ToolCall,
+    ToolPipeline,
+    ToolRunContext,
+    call_key,
+    idempotency_key,
+)
 from agent_runtime.tools.policy import ProvenancePolicy, RiskClassPolicy, ToolPolicy
 from agent_runtime.tools.spec import ToolRegistry
 
@@ -316,10 +336,14 @@ class RunExecutor:
             run = await repo.get(run_id)
             if run.status.is_terminal:
                 raise RunTerminal(run)
+            if run.run_format > RUN_FORMAT:
+                return self._newer(run)
             self._redrives, self._top_level = run.redrives, run.parent_run_id is None
             lease = await repo.acquire_lease(run_id, self.owner, self._settings.lease_ttl_s)
             if lease is None:
                 current = await repo.get(run_id)
+                if current.run_format > RUN_FORMAT:  # a newer worker had it meanwhile
+                    return self._newer(current)
                 log.info("run %s is owned by %s; leaving it alone", run_id, current.owner)
                 return current
             fence = lease.fence
@@ -488,7 +512,7 @@ class RunExecutor:
             # A new turn: on a session thread, earlier turns' messages are already there.
             prior = (await graph.aget_state(config)).values.get("messages", []) if latest else []
             text = AgentInput.model_validate(run.input).message
-            graph_input = turn_input(prior, text, run.id)
+            graph_input = turn_input(prior, text, run.id, await self._repairs(run, prior, context))
         else:
             graph_input = spec.to_graph_input(spec.input_model.model_validate(run.input))
 
@@ -642,6 +666,54 @@ class RunExecutor:
         except FanOutRejected as exc:
             outbox.pending[:] = staged  # the transaction rolled back: they are still due
             return {"rejected": exc.reason}
+
+    def _newer(self, run: Run) -> Run:
+        """Newer code has written this run (a rolling upgrade): this worker could misread
+        or miswrite it, so it leaves it untouched, for a newer worker. Deferred: the
+        relay re-sends it once its message is stale (H7)."""
+        logs.event(log, f"run {run.id}: written by newer code (format {run.run_format} > "
+                        f"{RUN_FORMAT}); leaving it to a newer worker",
+                   level=logging.WARNING)  # fmt: skip
+        metrics.run_deferred("newer_code")
+        self.deferred = True
+        return run
+
+    async def _repairs(
+        self, run: Run, prior: list[Any], context: RunContext | WorkflowContext
+    ) -> dict[str, Repair]:
+        """What really happened to the calls the previous turn left unanswered (H7), from
+        the ledger: a call that ran is answered with its result (through the post_tool
+        hooks, marked as data); one cut off mid-call may have run once."""
+        calls = unanswered(prior)
+        if not calls or run.session_id is None or not isinstance(context, RunContext):
+            return {}
+        async with self._pool.connection() as conn:
+            maker = await RunRepository(conn).last_turn_before(run)
+            if maker is None:
+                return {}
+            # Each call as the turn that made it keyed it: its place in that run (the
+            # thread is as that turn left it: compaction only happens at a turn's start).
+            made = {str(tc["id"]): ToolCall(id=str(tc["id"]), name=tc["name"],
+                                            args=dict(tc["args"]),
+                                            index=call_index(prior, str(tc["id"])),
+                                            node=context.tools.node)
+                    for tc in calls}  # fmt: skip
+            found = await invocations.outcomes(conn, maker, {
+                i: invocations.Wanted(call_key(maker, c), idempotency_key(maker, c, c.args), c.name)
+                for i, c in made.items()
+            })  # fmt: skip
+        repairs: dict[str, Repair] = {}
+        for call_id, call in made.items():
+            outcome = found.get(call_id)
+            if outcome is None:
+                continue  # never recorded: it did not run
+            if outcome.status == "in_progress":
+                repairs[call_id] = Repair(CUT_OFF_TOOL_RESULT)
+                continue
+            shown = await context.pipeline.replay(call, outcome.status, outcome.result,
+                                                  context.tools)  # fmt: skip
+            repairs[call_id] = Repair(shown.content, shown.status, ran=True)
+        return repairs
 
     def _agent_context(
         self, spec: GraphSpec, run: Run, fence: Fence, limits: RunLimits, outbox: Outbox

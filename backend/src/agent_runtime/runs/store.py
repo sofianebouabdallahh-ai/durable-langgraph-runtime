@@ -23,9 +23,11 @@ Patterns:
 
 from __future__ import annotations
 
+import functools
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from importlib import metadata
 from typing import Any, Literal
 
 from psycopg.pq import TransactionStatus
@@ -111,6 +113,23 @@ class FanOutLimits:
     max_descendants: int
 
 
+# What a run written by this code looks like (checkpoints, ledger keys, state). Bump it
+# when a change means an older worker would misread or miswrite a run started here; an
+# older worker then leaves such runs to a newer one (rolling upgrades, phase H7).
+#   1  before H7
+#   2  H7: ledger keys name the call's place, not its arguments
+RUN_FORMAT = 2
+
+
+@functools.cache
+def code_version() -> str | None:
+    """The release this code is (the package's version), recorded on each run."""
+    try:
+        return metadata.version("durable-agent-runtime")
+    except metadata.PackageNotFoundError:
+        return None
+
+
 class RunNotFound(LookupError):
     def __init__(self, run_id: uuid.UUID) -> None:
         super().__init__(f"run {run_id} not found")
@@ -164,6 +183,8 @@ class Run:
     # Phase H4: releases because the infrastructure failed (bounded), and redrives.
     infra_retries: int = 0
     redrives: int = 0
+    run_format: int = 1  # H7: what it writes; older workers leave it to newer ones
+    code_version: str | None = None
 
     @property
     def root_id(self) -> uuid.UUID:
@@ -209,6 +230,8 @@ class Run:
             cost=float(row.get("cost") or 0),
             infra_retries=row.get("infra_retries") or 0,
             redrives=row.get("redrives") or 0,
+            run_format=row.get("run_format") or 1,
+            code_version=row.get("code_version"),
             child_total=row["child_total"],
             child_done=row["child_done"],
         )
@@ -262,7 +285,7 @@ _RUN_COLUMNS = """
     created_at, started_at, finished_at, cancel_requested, reclaims, releases, message_id,
     interrupt_payload, resume_value, root_run_id, depth, child_key, child_total, child_done,
     agent_hash, model_bindings, traceparent, waited_s, agent_name, agent_version, tokens, cost,
-    infra_retries, redrives
+    infra_retries, redrives, run_format, code_version
 """
 
 
@@ -319,8 +342,9 @@ class RunRepository:
                 INSERT INTO runs (id, graph_name, kind, thread_id, input, options, limits,
                                   session_id, parent_run_id, root_run_id, depth, child_key,
                                   traceparent, agent_hash, agent_name, agent_version,
-                                  idempotency_key, model_bindings)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                  idempotency_key, model_bindings, code_version)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s)
                 RETURNING {_RUN_COLUMNS}
                 """,
                 (
@@ -342,6 +366,7 @@ class RunRepository:
                     agent[2] if agent else None,
                     idempotency_key,
                     Jsonb(model_bindings) if model_bindings is not None else None,
+                    code_version(),  # the release that created it (support; not a gate)
                 ),
             )
             row = _required(await cur.fetchone(), "INSERT INTO runs … RETURNING")
@@ -768,12 +793,17 @@ class RunRepository:
 
     # ------------------------------------------------------------- ownership
 
-    async def acquire_lease(self, run_id: uuid.UUID, owner: str, ttl_s: float) -> Lease | None:
-        """Take ownership of a runnable run (R2.3); None if someone else holds it.
+    async def acquire_lease(
+        self, run_id: uuid.UUID, owner: str, ttl_s: float, run_format: int = RUN_FORMAT
+    ) -> Lease | None:
+        """Take ownership of a runnable run (R2.3); None if someone else holds it, or if
+        newer code than `run_format` has written it (H7: left to a newer worker).
 
         Succeeds for a `queued` run, or a `running` run whose lease expired (its
         worker died or froze): that is a *reclaim* (R2.4) and is counted. The
-        epoch bump is what fences off the previous owner.
+        epoch bump is what fences off the previous owner. The run's format becomes
+        at least this worker's, in the same statement, so an older worker can never
+        take a run back once newer code has had it.
         """
         cur = await self._conn.execute(
             """
@@ -781,13 +811,15 @@ class RunRepository:
                 owner            = %(owner)s,
                 epoch            = epoch + 1,
                 lease_expires_at = now() + make_interval(secs => %(ttl)s),
-                reclaims         = reclaims + CASE WHEN status = 'running' THEN 1 ELSE 0 END
+                reclaims         = reclaims + CASE WHEN status = 'running' THEN 1 ELSE 0 END,
+                run_format       = GREATEST(run_format, %(fmt)s)
             WHERE id = %(id)s
               AND status IN ('queued', 'running')
               AND (owner IS NULL OR lease_expires_at < now())
+              AND run_format <= %(fmt)s
             RETURNING epoch, status, reclaims
             """,
-            {"id": run_id, "owner": owner, "ttl": ttl_s},
+            {"id": run_id, "owner": owner, "ttl": ttl_s, "fmt": run_format},
         )
         row = await cur.fetchone()
         if row is None:
@@ -797,6 +829,22 @@ class RunRepository:
             reclaimed=row["status"] == RunStatus.RUNNING,
             reclaims=row["reclaims"],
         )
+
+    async def last_turn_before(self, run: Run) -> uuid.UUID | None:
+        """The chat turn before `run` that wrote anything (H7): the one whose unanswered
+        tool calls `run` finds in the thread. A turn that ended before its first step
+        (cancelled while queued) left nothing, so it's skipped."""
+        cur = await self._conn.execute(
+            """
+            SELECT id FROM runs
+            WHERE session_id = %s AND parent_run_id IS NULL AND id <> %s AND steps > 0
+              AND (created_at, id) < (%s, %s)
+            ORDER BY created_at DESC, id DESC LIMIT 1
+            """,
+            (run.session_id, run.id, run.created_at, run.id),
+        )
+        row = await cur.fetchone()
+        return row["id"] if row else None
 
     async def renew_lease(self, fence: Fence, owner: str, ttl_s: float) -> bool:
         """Heartbeat (R2.3). False means ownership is gone: stop working."""

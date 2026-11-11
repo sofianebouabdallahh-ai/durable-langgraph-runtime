@@ -194,8 +194,19 @@ async def list_tools(
                 return tools, client.protocol_version
 
 
+# The `_meta` key that carries the call's idempotency key (H7): the same on every attempt
+# of one call, so a server can do it once, as with an HTTP `Idempotency-Key` header.
+IDEMPOTENCY_META_KEY = "io.nuria/idempotency-key"
+
+
 async def call_tool(
-    endpoint: Endpoint, name: str, arguments: Mapping[str, Any], timeout_s: float = 60.0
+    endpoint: Endpoint,
+    name: str,
+    arguments: Mapping[str, Any],
+    timeout_s: float = 60.0,
+    *,
+    idempotency_key: str | None = None,
 ) -> McpResult:
+    meta: Any = {IDEMPOTENCY_META_KEY: idempotency_key} if idempotency_key else None
     async with _connected(endpoint, timeout_s) as client:
-        return _result(await client.call_tool(name, dict(arguments)))
+        return _result(await client.call_tool(name, dict(arguments), meta=meta))

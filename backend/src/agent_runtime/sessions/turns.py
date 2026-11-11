@@ -7,17 +7,37 @@ produced by this run.
 
 A turn that ended mid-tool (cancelled, failed) leaves an AI message whose tool
 calls have no results. Providers reject such a conversation, so the next turn's
-input first closes them with a "not executed" tool result.
+input first closes them, saying what the ledger says happened (H7): the call's real
+result, "may have run once" for one cut off mid-call, or "did not run".
 """
 
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any, Literal
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages.tool import ToolCall
 
 INTERRUPTED_TOOL_RESULT = "Error: this tool call did not run (the previous turn ended first)."
+CUT_OFF_TOOL_RESULT = (
+    "Error: this tool call was cut off when the previous turn ended, and may have run "
+    "once. Don't assume either way: ask the person before trying it again."
+)
+
+
+@dataclass(frozen=True)
+class Repair:
+    """What the next turn tells the model about a call its turn left unanswered: for
+    one that ran, its result as the model would have seen it then (`ran`)."""
+
+    content: str
+    status: Literal["success", "error"] = "error"
+    ran: bool = False
+
+
 REPAIR_PREFIX = "repair:"
 
 
@@ -36,20 +56,30 @@ def baseline(messages: list[BaseMessage], run_id: uuid.UUID) -> int | None:
     return next((i for i, m in enumerate(messages) if m.id == wanted), None)
 
 
-def turn_input(
-    prior: list[BaseMessage], text: str, run_id: uuid.UUID
-) -> dict[str, list[BaseMessage]]:
-    """The graph input that starts a turn on an existing (or empty) thread."""
+def unanswered(prior: list[BaseMessage]) -> list[ToolCall]:
+    """The tool calls in the thread that have no result (their turn ended first)."""
     answered = {m.tool_call_id for m in prior if isinstance(m, ToolMessage)}
-    repairs: list[BaseMessage] = [
-        ToolMessage(content=INTERRUPTED_TOOL_RESULT, tool_call_id=tc["id"], name=tc["name"],
-                    status="error", id=repair_id(run_id, str(tc["id"])))
-        for m in prior
-        if isinstance(m, AIMessage)
-        for tc in m.tool_calls
-        if tc["id"] not in answered
-    ]  # fmt: skip
-    return {"messages": [*repairs, HumanMessage(content=text, id=user_message_id(run_id))]}
+    return [tc for m in prior if isinstance(m, AIMessage) for tc in m.tool_calls
+            if tc["id"] not in answered]  # fmt: skip
+
+
+def turn_input(
+    prior: list[BaseMessage],
+    text: str,
+    run_id: uuid.UUID,
+    repairs: Mapping[str, Repair] | None = None,
+) -> dict[str, list[BaseMessage]]:
+    """The graph input that starts a turn on an existing (or empty) thread. `repairs`:
+    what the ledger says of each unanswered call (by id); any other "did not run"."""
+    said = repairs or {}
+    closed: list[BaseMessage] = []
+    for tc in unanswered(prior):
+        repair = said.get(str(tc["id"])) or Repair(INTERRUPTED_TOOL_RESULT)
+        closed.append(ToolMessage(content=repair.content, tool_call_id=tc["id"],
+                                  name=tc["name"], status=repair.status,
+                                  artifact={"cached": True} if repair.ran else None,
+                                  id=repair_id(run_id, str(tc["id"]))))  # fmt: skip
+    return {"messages": [*closed, HumanMessage(content=text, id=user_message_id(run_id))]}
 
 
 def script_offset(messages: list[Any]) -> int:

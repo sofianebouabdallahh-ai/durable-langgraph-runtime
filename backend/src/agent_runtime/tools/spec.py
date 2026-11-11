@@ -74,10 +74,15 @@ class ToolSpec:
     # A JSON Schema for the arguments instead of `args_model` (MCP tools, L8): the
     # pipeline validates against it, and the tool receives a dict.
     input_schema: Mapping[str, Any] | None = None
-    # A call a crash cut off is re-executed with the same key, which the tool uses to
-    # dedupe its effect. A tool that can't dedupe (a remote one) says no: the model is
-    # told it may have run once, instead.
-    retry_after_crash: bool = True
+    # Whether a call a crash cut off is made again, with the same key. Only a tool that
+    # dedupes its effect by that key may say yes; otherwise the model is told it may have
+    # run once. Unset, it's "not a side effect" (H7): a new side-effecting tool is never
+    # re-sent because its author forgot to opt out.
+    retry_after_crash: bool | None = None
+
+    def __post_init__(self) -> None:
+        if self.retry_after_crash is None:
+            object.__setattr__(self, "retry_after_crash", not self.side_effect)
 
     def json_schema(self) -> dict[str, Any]:
         if self.input_schema is not None:
@@ -121,6 +126,7 @@ class ToolRegistry:
         isolation: Isolation = "in_process",
         timeout_s: float | None = None,
         repeatable: bool = False,
+        retry_after_crash: bool | None = None,
     ) -> Callable[[ToolFn], ToolFn]:
         """Decorator: declare a tool next to its implementation."""
 
@@ -138,6 +144,7 @@ class ToolRegistry:
                     isolation=isolation,
                     timeout_s=timeout_s,
                     repeatable=repeatable,
+                    retry_after_crash=retry_after_crash,
                 )
             )
             return fn

@@ -8,6 +8,7 @@ read-only call is sent again, an ask-first one isn't). Against the fake MCP serv
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -118,7 +119,9 @@ async def test_an_agent_uses_a_servers_tools(api: Api, served_mcp: ServedMcp) ->
     assert done.status is RunStatus.COMPLETED
     (result,) = await api.results(sid)
     assert result.get("result", {}).get("text") == FACT, result
-    assert served_mcp.fake.calls[-1] == {"tool": "lookup", "topic": "Naxos"}
+    last = served_mcp.fake.calls[-1]
+    assert {k: last[k] for k in ("tool", "topic")} == {"tool": "lookup", "topic": "Naxos"}
+    assert re.fullmatch(r"[0-9a-f]{64}", last["key"])  # the call's idempotency key (H7)
 
     # A tool with effects asks first (SC2); after the approval it runs, once.
     run = await api.send(sid, [call(send, to="ops", text="hi"), {"content": "Sent."}])
@@ -209,7 +212,9 @@ async def test_a_crash_mid_call(api: Api, served_mcp: ServedMcp, settings_fast: 
     before = list(served_mcp.fake.calls)
     run = await api.send(sid, [call(lookup, topic="Naxos [slow]"), {"content": "ok"}])
     await killed_mid_call(run, "lookup")
-    assert sum(c["tool"] == "lookup" for c in served_mcp.fake.calls) == 2  # sent again
+    sent = [c for c in served_mcp.fake.calls[len(before) :] if c["tool"] == "lookup"]
+    assert len(sent) == 2  # sent again …
+    assert sent[0]["key"] == sent[1]["key"] and sent[0]["key"]  # … with the same key (H7)
     assert (await api.results(sid))[-1]["result"]["text"] == FACT
 
     before = list(served_mcp.fake.calls)

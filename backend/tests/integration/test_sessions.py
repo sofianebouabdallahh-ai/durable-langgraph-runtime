@@ -35,6 +35,8 @@ from agent_runtime.tools.hooks import (
     Deny,
     default_hooks,
 )
+from agent_runtime.tools.middleware import call_index
+from agent_runtime.tools.pipeline import ToolCall, call_key
 from tests.integration.support import wait_until
 from tests.integration.test_stream import Server
 from tests.sse import read_sse
@@ -238,7 +240,22 @@ async def test_a_turn_after_one_that_ended_mid_tool_call_is_repaired(
     assert ok.status is S.COMPLETED
     msgs = await transcript(pool, sid)
     repairs = [m for m in msgs if m.run_id == ok.id and m.type == "tool_result"]
-    assert len(repairs) == 2 and all("did not run" in m.content["error"] for m in repairs)
+    async with pool.connection() as conn:
+        cut_off = {r["call_key"] for r in await (await conn.execute(
+            "SELECT call_key FROM tool_invocations WHERE run_id = %s AND status = 'in_progress'",
+            (failed.id,))).fetchall()}  # fmt: skip
+
+    def place(tc: Any) -> str:
+        return call_key(failed.id, ToolCall(tc["id"], tc["name"], {}, call_index(state, tc["id"])))
+
+    recorded = {tc["id"] for tc in state[-1].tool_calls if place(tc) in cut_off}
+    # Each says what the ledger says (H7): the call the loop check refused never ran; the
+    # other was cancelled with the step, before it began or mid-call (timing).
+    assert len(repairs) == 2
+    for m in repairs:
+        said = m.content["error"]
+        assert ("may have run once" if m.content["tool_call_id"] in recorded
+                else "did not run") in said, said  # fmt: skip
     state = await thread_messages(pool, sid)
     answered = {m.tool_call_id for m in state if hasattr(m, "tool_call_id")}
     assert all(tc["id"] in answered for m in state for tc in getattr(m, "tool_calls", []))
