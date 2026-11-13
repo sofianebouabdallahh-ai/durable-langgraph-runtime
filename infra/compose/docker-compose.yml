@@ -21,19 +21,24 @@
 #
 # Ports bind to 127.0.0.1 so nothing is exposed on the LAN.
 #
-# Three networks, one per tier (H10, a bulkhead): a container reaches only what it has to,
-# and SearXNG and the page reader, which take in the internet's pages, reach none of
-# Nuria's own services.
+# Four networks, one per tier (H10, a bulkhead): a container shares a network only with
+# what it has to talk to.
 #   `data`    internal (no gateway, so no way out): Postgres and Redis, with the API, the
 #             workers and migrate.
 #   `app`     the UI and the API; the workers and sandboxd; the observability services.
-#   `egress`  the way to the internet: the workers and the API (model providers, MCP
-#             servers, a model on this machine), SearXNG, the page reader, Ollama.
-# Docker's DNS gives a name only to containers that share a network, and keeps the
-# networks apart (checked: from `egress`, Postgres and Redis neither resolve nor answer,
-# by name or by address). A published port needs a network with a gateway (Docker records
-# the binding and binds nothing otherwise), so Postgres and Redis have none here: `make up`
-# adds them, through docker-compose.dev.yml.
+#   `egress`  the way to the internet for the workers and the API (model providers, MCP
+#             servers, a model on this machine), with what they both ask: SearXNG, Ollama.
+#   `reader`  the page reader and the workers, which alone ask it.
+# What holds, measured by the container suite (`tiers`): from SearXNG and from the page
+# reader, Postgres, Redis and sandboxd neither resolve nor answer, by name or by address;
+# from the page reader the API doesn't either; Postgres and Redis have no way out.
+# What doesn't: a Docker network has no direction. The API asks SearXNG (Settings → Tools'
+# test) and Ollama, so they share `egress` with it and can open its port, and the API has
+# no login (docs/security.md). On Kubernetes the chart's NetworkPolicies have a direction
+# and close that too.
+# A published port needs a network with a gateway (Docker records the binding and binds
+# nothing otherwise), so Postgres and Redis have none here: `make up` adds them, through
+# docker-compose.dev.yml.
 
 name: agent-runtime
 
@@ -106,7 +111,7 @@ services:
       timeout: 5s
       retries: 40
     stop_grace_period: 15s # drain: streams are asked to reconnect (R10.7)
-    networks: [data, app, egress]
+    networks: [data, app, egress] # `egress`: it asks SearXNG and Ollama, so they can reach it
 
   worker:
     <<: *runtime
@@ -130,7 +135,7 @@ services:
       retries: 20
     # SIGTERM → finish the current step, release the run to another worker (R10.7).
     stop_grace_period: 40s
-    networks: [data, app, egress]
+    networks: [data, app, egress, reader]
 
   # A fake OpenAI-compatible model: tests and CI only (profile `test`, never started
   # by setup). Connections to http://fake-model:9999/v1 answer deterministically.
@@ -139,9 +144,9 @@ services:
     profiles: ["test"]
     command: ["fake-model", "--host", "0.0.0.0", "--port", "9999"]
     restart: "no"
-    # Asked by the API and the workers, by the page reader (the fake web) and by the
-    # browser tests' container, which joins `app`.
-    networks: [app, egress]
+    # Asked by the API and the workers and by the browser tests' container, which joins
+    # `app`; by the page reader (the fake web), on `reader`.
+    networks: [app, reader]
 
   # Web search for the agents (L6a): SearXNG, private (no host port), no key needed.
   searxng:
@@ -161,7 +166,9 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
-    networks: [egress] # and nothing of Nuria's: a third-party image that takes in the web
+    # A third-party image that takes in the web: with its callers only (the workers and
+    # the API), never with the stores or sandboxd.
+    networks: [egress]
 
   # The page reader (L6a): the one service the web tools reach the internet through. It
   # refuses private and internal addresses itself (agent_runtime/web/fetch.py).
@@ -177,7 +184,7 @@ services:
       interval: 3s
       timeout: 5s
       retries: 20
-    networks: [egress] # a page can't send it to Postgres, Redis, the API or sandboxd
+    networks: [reader] # a page can't send it to Postgres, Redis, the API or sandboxd
 
   # Code and shell (L6b): the only service that can start containers (it holds the Docker
   # socket, so it runs as root, alone). Each run gets one locked-down sandbox: no network,
@@ -395,3 +402,4 @@ networks:
     internal: true # no gateway: a container on it alone has no route out
   app:
   egress:
+  reader:

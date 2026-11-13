@@ -35,7 +35,7 @@ from agent_runtime.runs.state import TERMINAL, RunStatus
 log = logging.getLogger(__name__)
 
 DELIVERED_KEEP_DAYS = 7  # a delivered notification stays listed this long
-# The same list, in the same order, as ix_runs_retention's predicate (0030).
+# The same list, in the same order, as ix_runs_retention's predicate (0031).
 _ENDED = ", ".join(f"'{s}'" for s in RunStatus if s in TERMINAL)
 
 

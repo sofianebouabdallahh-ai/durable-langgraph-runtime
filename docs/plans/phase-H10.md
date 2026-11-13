@@ -177,6 +177,16 @@ proposed graph:
   documented as is, now with SearXNG unable to reach it.
 - Pattern: **bulkhead** (network tiers as blast-radius limits).
 
+> **Correction, 2026-11-12, after the first run of the real stack.** The property can't
+> hold as written with this graph. The API is on `egress` to ask SearXNG, and a Docker
+> network has no direction, so SearXNG and the fetcher could both open the API's port
+> (measured from the fetcher's container: `GET /sessions` answered). What was built
+> instead: a fourth network, `reader`, for the fetcher and the workers that alone ask it.
+> From the fetcher, Postgres, Redis, the API and sandboxd are unreachable; from SearXNG,
+> Postgres, Redis and sandboxd are, and the API is not. Closing that on Compose takes a
+> credential between the UI's proxy and the API, or an API that no longer asks SearXNG;
+> neither is in this phase. On Kubernetes the chart's NetworkPolicies already close it.
+
 ### 2.6 The page reader unwraps NAT64
 
 `net._effective` becomes `net.effective_address` and `web/fetch.py` `public()` uses it;
@@ -280,7 +290,8 @@ without hurting the rest.
 ## 5. Out of scope
 
 - **A login for the API** (#7): comes with accounts (tenancy). Documented; 2.5 removes the
-  only in-network third party that could reach it.
+  only in-network third party that could reach it. *(Corrected 2026-11-12: it doesn't.
+  SearXNG still shares a network with the API; see the correction under 2.5.)*
 - **Multilingual claim detection** (#18): a quality heuristic for small models, not a
   control; documented as such.
 - **Counting a zombie's model call** (#14): a deliberate trade-off (an unfenced write would
