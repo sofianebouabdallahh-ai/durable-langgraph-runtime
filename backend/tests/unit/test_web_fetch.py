@@ -111,6 +111,9 @@ LOCAL = ("127.0.0.1",)
         ("::1", False),
         ("fe80::1", False),
         ("::ffff:127.0.0.1", False),  # IPv4-mapped loopback
+        ("64:ff9b::a9fe:a9fe", False),  # NAT64 (RFC 6052) form of cloud metadata (H10)
+        ("64:ff9b:1::a9fe:a9fe", False),  # the same behind RFC 8215's local-use prefix
+        ("64:ff9b::808:808", True),  # NAT64 form of 8.8.8.8: public, as 8.8.8.8 is
     ],
 )
 def test_only_public_addresses_pass(address: str, ok: bool) -> None:

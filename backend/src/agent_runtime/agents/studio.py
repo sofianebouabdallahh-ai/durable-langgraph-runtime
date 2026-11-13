@@ -133,6 +133,9 @@ class Draft:
     tests: int = 0  # its test cases (H6)
     tests_failing: list[str] = field(default_factory=list)  # not passed on this draft
     digest: str | None = None  # the bundle a test chat runs now (tests are graded on it)
+    # Skills it uses whose current version nobody has read (H10 2.2): they work as data
+    # until the person approves them on the Skills page. Not a blocker: data is safe.
+    skills_unread: list[str] = field(default_factory=list)
 
     @property
     def blockers(self) -> list[str]:
@@ -374,7 +377,7 @@ class StudioService:
                     draft_version.document, draft_version.number, mcp_tools.risks(available)
                 )
                 model_issues, untested = await self._models_of(conn, draft_version.document)
-                skill_issues = await self._skills_of(conn, draft_version.document)
+                skill_issues, unread = await self._skills_of(conn, draft_version.document)
                 # "Tested" means: this exact draft with the library's skills and the MCP
                 # tools as they are now. A skill edited, or an MCP tool approved again,
                 # since the test makes it untested (the hash moves).
@@ -387,7 +390,8 @@ class StudioService:
                     tested = await store.tested(agent_id, current)
                     failing = await EvalStore(conn).failing(agent_id, current)
                 draft = Draft(draft_version, issues + model_issues + skill_issues, tested, untested,
-                              tests=len(cases), tests_failing=failing, digest=current)  # fmt: skip
+                              tests=len(cases), tests_failing=failing, digest=current,
+                              skills_unread=unread)  # fmt: skip
         return AgentState(agent, draft, published, versions)
 
     async def save_draft(
@@ -564,7 +568,9 @@ class StudioService:
         return f"{agent.name}.agent.md", text.encode(), "text/markdown; charset=utf-8"
 
     async def import_(self, filename: str, data: bytes) -> AgentState:
-        """A new agent from an uploaded agent.md or zipped folder, as a draft."""
+        """A new agent from an uploaded agent.md or zipped folder, as a draft. The skills
+        it carries enter the library unread (H10 2.2): they work as data until a person
+        opens each one and approves it, and the draft names them (`skills_unread`)."""
         files = read_upload(filename, data)  # ImportRejected → 422
         main, helpers, problems = from_files(files)
         if main is None or problems:
@@ -660,14 +666,20 @@ class StudioService:
                 untested.append(connection.display_name)
         return issues, untested
 
-    async def _skills_of(self, conn: Conn, raw: dict[str, Any]) -> list[PlainIssue]:
-        """An issue for each skill the document names that isn't in the library."""
+    async def _skills_of(
+        self, conn: Conn, raw: dict[str, Any]
+    ) -> tuple[list[PlainIssue], list[str]]:
+        """An issue for each skill the document names that isn't in the library, and the
+        names of those nobody has read yet (their current version isn't approved, H10
+        2.2): they work as data until then, so they're told, not blocked."""
         places = [("agent", raw.get("skills") or [])]
         places += [(f"helpers.{h.get('name')}", h.get("skills") or [])
                    for h in raw.get("helpers") or []]  # fmt: skip
         wanted = {n for _, names in places for n in names if isinstance(n, str)}
-        found = await SkillStore(conn).by_names(wanted) if wanted else {}
-        return [
+        store = SkillStore(conn)
+        found = await store.by_names(wanted) if wanted else {}
+        read = await store.approved(s.current_hash for s in found.values()) if found else set()
+        issues = [
             PlainIssue(
                 where,
                 "skills",
@@ -678,6 +690,7 @@ class StudioService:
             for name in names
             if isinstance(name, str) and name not in found
         ]
+        return issues, sorted(n for n, s in found.items() if s.current_hash not in read)
 
     def _check(
         self, raw: dict[str, Any], version: int, mcp: Mapping[str, RiskClass] | None = None

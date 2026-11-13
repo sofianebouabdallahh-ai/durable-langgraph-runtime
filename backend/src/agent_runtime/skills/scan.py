@@ -9,8 +9,12 @@ findings; the report is the sum. Severities:
 
 Findings say where (file, line) and what, in plain words, and **never echo a
 secret**. A scan informs people; it's not what keeps agents safe. That's the
-harness: skill text arrives as data (R14.15), skills never grant tools, and scripts
-never run (no sandbox yet).
+harness: skill text arrives as data (R14.15) until a person has read exactly that
+version and approved it (`skill_approvals`, H10 2.2; `graphs/assistant.trusted_text`
+decides, and needs a clean scan *and* a reader), skills never grant tools, and scripts
+never run (no sandbox yet). The scan can't be the boundary: a skill is instructions, so
+a trap written as plain advice looks like any other advice, and these checks are English
+regexes, so the same trap in French scores clean (the 2026-11-12 review showed one).
 """
 
 from __future__ import annotations

@@ -9,6 +9,13 @@ an agent import, a built-in folder):
 A skill's `name` is its identity: agents refer to skills by name, so it is fixed
 once created (like an agent's id). Editing makes a new version and points the skill
 at it; old versions stay, because published agents may have locked them.
+
+A third gate decides what a version may be in a prompt (H10 2.2, R14.15): **a person has
+read it**. Text typed in the Studio (`create`, `edit`) and the built-ins are approved at
+save; an upload, a replaced version or an agent import is not, until the person opens
+the skill, sees its text and the scan's findings, and says so (`approve`). The scan can't
+stand in for that: a skill is instructions, so a trap written as plain advice (in English
+or in French) scores clean. Pattern: promotion gate, as H6's publish gate for agents.
 """
 
 from __future__ import annotations
@@ -116,13 +123,15 @@ class SkillService:
         content, issues = spec.build(
             name=name, description=description, instructions=instructions, meta=meta, files=files
         )
-        return await self._add(content, issues, "created")
+        # The person typed this text: they have read it.
+        return await self._add(content, issues, "created", approved=True)
 
     async def upload(self, filename: str, data: bytes, *, origin: Origin = "uploaded") -> Saved:
-        """A new skill from a zip or a `SKILL.md`. SkillRejected if it can't be read."""
+        """A new skill from a zip or a `SKILL.md`. SkillRejected if it can't be read. Not
+        approved: nothing says the person read what the file contains."""
         files, folder = spec.read_upload(filename, data)
         content, issues = spec.parse(files, folder)
-        return await self._add(content, issues, origin)
+        return await self._add(content, issues, origin, approved=False)
 
     async def edit(
         self,
@@ -133,7 +142,8 @@ class SkillService:
         files: Mapping[str, bytes | None] | None = None,
     ) -> Saved:
         """A new version from the current one with these changes (files: path → new
-        bytes, or None to remove). The name never changes."""
+        bytes, or None to remove). The name never changes. Approved at save: the form
+        showed the whole text, and the person wrote what changed."""
         async with self._pool.connection() as conn:
             store = SkillStore(conn)
             skill = await self._editable(store, skill_id)
@@ -151,10 +161,11 @@ class SkillService:
             meta=current.meta,
             files=kept,
         )
-        return await self._replace(skill_id, content, issues)
+        return await self._replace(skill_id, content, issues, approved=True)
 
     async def replace(self, skill_id: uuid.UUID, filename: str, data: bytes) -> Saved:
-        """A new version of this skill from an upload (its name must match)."""
+        """A new version of this skill from an upload (its name must match). Not approved:
+        the new text hasn't been read here, whatever the old one was."""
         files, folder = spec.read_upload(filename, data)
         content, issues = spec.parse(files, folder)
         async with self._pool.connection() as conn:
@@ -169,7 +180,22 @@ class SkillService:
                     )
                 ]
             )
-        return await self._replace(skill_id, content, issues)
+        return await self._replace(skill_id, content, issues, approved=False)
+
+    async def approve(self, skill_id: uuid.UUID) -> tuple[Skill, SkillVersion]:
+        """The person says "I've read this": they saw the current version's text and the
+        scan's findings. From now on that exact version may be plain text in a prompt (if
+        its scan is clean too); an edit makes a new hash and starts over. Idempotent: the
+        audit row (`skill.approved`, with the hash) is written once per version."""
+        async with self._pool.connection() as conn, conn.transaction():
+            store = SkillStore(conn)
+            skill = await store.get(skill_id)
+            if skill.archived_at is not None:
+                raise SkillNotFound(str(skill_id))
+            if await store.approve(skill.current_hash, "read on the Skills page"):
+                await AuditLog(conn).record("skill.approved", "skill", skill.name,
+                                            after={"version": skill.current_hash})  # fmt: skip
+            return skill, await store.version(skill.current_hash)
 
     async def archive(self, skill_id: uuid.UUID) -> None:
         """Out of the library. Published agents keep the version they locked."""
@@ -215,7 +241,8 @@ class SkillService:
     async def sync_builtins(self, folder: Path) -> list[str]:
         """Load `backend/skills/<name>/` into the library as built-in skills, and point
         each at its current content. Idempotent; run at API startup. A folder that
-        fails the spec or the scan is skipped with a warning (it's our bug)."""
+        fails the spec or the scan is skipped with a warning (it's our bug). What ships
+        with Nuria was reviewed in git, so each version is approved as it is synced."""
         names: list[str] = []
         checked = await asyncio.to_thread(read_builtins, folder)
         async with self._pool.connection() as conn, conn.transaction():
@@ -224,6 +251,7 @@ class SkillService:
             store = SkillStore(conn)
             for content, report in checked:
                 digest = await store.put_version(content, report)
+                await store.approve(digest, "built in")
                 existing = await store.by_name(content.name, archived=True)
                 if existing is None:
                     await store.insert(new_id(), content.name, "built_in", "built_in", digest)
@@ -260,31 +288,49 @@ class SkillService:
         return content, report
 
     async def _add(
-        self, content: SkillContent | None, issues: list[SkillIssue], origin: Origin
+        self,
+        content: SkillContent | None,
+        issues: list[SkillIssue],
+        origin: Origin,
+        *,
+        approved: bool,
     ) -> Saved:
+        """`approved`: the person has read this text (they typed it), so the version is
+        approved as it is saved; an upload waits for its reader."""
         checked, report = self._gate(content, issues)
         async with self._pool.connection() as conn, conn.transaction():
             store = SkillStore(conn)
             if await store.by_name(checked.name, archived=True) is not None:
                 raise SkillExists(checked.name)
             digest = await store.put_version(checked, report)
+            if approved:
+                await store.approve(digest, "written in the Studio")
             skill = await store.insert(new_id(), checked.name, "private", origin, digest)
             version = await store.version(digest)
             await AuditLog(conn).record("skill.created", "skill", skill.name,
-                                        after={"origin": origin, "version": digest})  # fmt: skip
+                                        after={"origin": origin, "version": digest,
+                                               "approved": version.approved})  # fmt: skip
         return Saved(skill, version, [i for i in issues if not i.blocking])
 
     async def _replace(
-        self, skill_id: uuid.UUID, content: SkillContent | None, issues: list[SkillIssue]
+        self,
+        skill_id: uuid.UUID,
+        content: SkillContent | None,
+        issues: list[SkillIssue],
+        *,
+        approved: bool,
     ) -> Saved:
         checked, report = self._gate(content, issues)
         async with self._pool.connection() as conn, conn.transaction():
             store = SkillStore(conn)
             before = await store.get(skill_id)
             digest = await store.put_version(checked, report)
+            if approved:
+                await store.approve(digest, "written in the Studio")
             skill = await store.point(skill_id, digest)
             version = await store.version(digest)
             await AuditLog(conn).record("skill.updated", "skill", skill.name,
                                         before={"version": before.current_hash},
-                                        after={"version": digest})  # fmt: skip
+                                        after={"version": digest,
+                                               "approved": version.approved})  # fmt: skip
         return Saved(skill, version, [i for i in issues if not i.blocking])

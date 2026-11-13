@@ -36,6 +36,7 @@ Action = Literal[
     "skill.created",
     "skill.updated",
     "skill.archived",
+    "skill.approved",  # a person read this version (H10 2.2); `after` carries its hash
     "model_connection.added",
     "model_connection.changed",
     "model_connection.removed",

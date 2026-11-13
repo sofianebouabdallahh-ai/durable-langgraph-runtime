@@ -23,7 +23,8 @@ def fresh_cache() -> None:
         "http://[fd00:ec2::254]/",  # AWS IPv6 metadata
         "http://100.100.100.200/",  # Alibaba metadata
         "http://[::ffff:169.254.169.254]/",  # IPv4-mapped
-        "http://[64:ff9b::a9fe:a9fe]/",  # NAT64 form of 169.254.169.254
+        "http://[64:ff9b::a9fe:a9fe]/",  # NAT64 form of 169.254.169.254 (RFC 6052)
+        "http://[64:ff9b:1::a9fe:a9fe]/",  # the same behind RFC 8215's local-use prefix (H10)
         "http://metadata.google.internal./",  # trailing dot
         "http://0.0.0.0:8000/",  # unspecified
         "http://224.0.0.1/",  # multicast

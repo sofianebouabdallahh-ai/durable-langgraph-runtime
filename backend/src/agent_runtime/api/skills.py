@@ -4,12 +4,14 @@
     GET  /skills/{id} · PATCH · DELETE          one skill · edit (a new version) · archive
     POST /skills/upload?filename=               a new skill from a zip or SKILL.md (the body)
     POST /skills/{id}/upload?filename=          a new version of this skill from an upload
+    POST /skills/{id}/approve                   "I've read this": the current version (H10)
     GET  /skills/{id}/export                    the standard's folder, zipped
     GET  /skills/{id}/files/{path}              one file (always as a download)
 
 Every save is checked against the Agent Skills standard and scanned; the response
 carries the scan report and any warnings. A secret refuses the save (422) without
-echoing it.
+echoing it. Every response says whether a person has read the current version
+(`approved`): until then an Always-use skill reaches the model as data, not as text.
 """
 
 from __future__ import annotations
@@ -68,6 +70,10 @@ class SkillView(BaseModel):
     meta: dict[str, Any]
     tokens: int = Field(description="About how long its instructions are")
     scan: ScanView
+    approved: bool = Field(
+        description="A person has read exactly this version. With a clean scan, an "
+        "Always-use skill is then plain text in the prompt; until then it's data"
+    )
     used_by: list[str] = Field(description="Agents whose draft or published version use it")
     updated_at: datetime
 
@@ -85,6 +91,7 @@ class SkillView(BaseModel):
             meta={k: val for k, val in v.meta.items() if k != "allowed-tools"},
             tokens=estimate_tokens(v.instructions),
             scan=ScanView.model_validate(v.scan),
+            approved=v.approved,
             used_by=used_by,
             updated_at=skill.updated_at,
         )
@@ -216,6 +223,16 @@ async def replace(
 ) -> SavedView:
     saved = await service.replace(skill_id, filename, await _body(request))
     return SavedView.of(saved, (await service.used_by()).get(saved.skill.name, []))
+
+
+@skills_router.post(
+    "/{skill_id}/approve",
+    response_model=SkillDetail,
+    summary="I've read this version: it may be plain text in prompts (idempotent)",
+)
+async def approve(skill_id: uuid.UUID, service: ServiceDep) -> SkillDetail:
+    skill, version = await service.approve(skill_id)
+    return SkillDetail.detail(skill, version, (await service.used_by()).get(skill.name, []))
 
 
 @skills_router.delete(
