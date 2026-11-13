@@ -38,9 +38,17 @@ guidance is to read `SKILL.md` and its files before enabling a skill.
      keeps "the model dropped a tracking parameter" working.
    - The `query`, `title` and `snippet` fields never count. An address the engine never
      returned can't qualify, whatever the model typed.
-   - The `runs.input` branch stays: it is the person's message. Child runs (R2.8) carry a
-     model-written `input`; today only the fan-out demo makes them and it has no
-     `read_webpage`. If that changes, that branch is restricted to root runs.
+   - On the person's side the same rule holds: the check reads the `message` of the run's
+     input and the `text` of their messages in the chat, not the stored JSON as text.
+     *Amended 2026-11-12, after replaying the chain on a real stack:* the first version
+     kept the `runs.input` branch whole ("it is the person's message"). With the scripted
+     test model the input also holds the model's replies (`script`), so a scripted turn
+     that searched for an address and read it was never asked. A real model's turn stores
+     no script (the API refuses one), so no page could use it; a test or a reviewer
+     replaying the chain could not see the fix work.
+   - Child runs (R2.8) carry a model-written `input`; today only the fan-out demo makes
+     them and it has no `read_webpage`. If that changes, that branch is restricted to
+     root runs.
 2. **A skill's text is instructions only after a person read exactly it.**
    - A new table `skill_approvals (hash REFERENCES skill_versions, approved_at, note)`;
      the API may insert, the worker may read (least privilege, as 0012).

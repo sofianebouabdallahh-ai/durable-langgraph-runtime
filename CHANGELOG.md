@@ -13,7 +13,9 @@ reason ([the review and our verdicts](docs/reviews/2026-11-12-external-review.md
   page reader's "did a search find this address?" check read the whole stored search
   result, which carries the model's own query; it now reads only each hit's `url`. An
   address from a result still passes, with or without a dropped tracking parameter; one
-  only the model typed asks you first, through a helper too.
+  only the model typed asks you first, through a helper too. On your side, only your own
+  words count (your messages): the scripted test model's replies, stored next to your
+  message, no longer vouch for the addresses they name.
 - **A skill nobody read can no longer become plain instructions.** An uploaded or imported
   skill works as data until you open it, see its text and the scan's findings, and approve
   it; an edit asks again. Skills you wrote in the Studio and the built-in ones are

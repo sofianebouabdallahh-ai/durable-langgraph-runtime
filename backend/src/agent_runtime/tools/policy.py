@@ -78,11 +78,18 @@ class RiskClassPolicy:
 # returned url, so a model that drops a tracking parameter still reads without asking.
 # A result that isn't a list of hits (capped, odd, from an older worker) vouches for
 # nothing and raises nothing: `jsonb_typeof` keeps `jsonb_array_elements` off scalars.
+#
+# Of the person's side too, only their words count: the `message` of the run's input and
+# the `text` of their messages in this chat. With the scripted test model the input also
+# holds the model's replies (`script`, `subagent_scripts`); searched as text, they let a
+# scripted replay of the same chain read the page unasked (found by running it on the
+# real stack). A field that's missing is NULL, which vouches for nothing.
 _SEEN = """
-    SELECT 1 FROM runs r WHERE r.id = %(run)s AND position(%(url)s IN r.input::text) > 0
+    SELECT 1 FROM runs r
+    WHERE r.id = %(run)s AND position(%(url)s IN (r.input ->> 'message')) > 0
     UNION ALL
     SELECT 1 FROM session_messages m
-    WHERE m.type = 'user' AND position(%(url)s IN m.content::text) > 0
+    WHERE m.type = 'user' AND position(%(url)s IN (m.content ->> 'text')) > 0
       AND m.session_id = (SELECT session_id FROM runs WHERE id = %(run)s)
     UNION ALL
     SELECT 1 FROM tool_invocations t,
@@ -104,9 +111,10 @@ class ProvenancePolicy:
     gave the agent needs your approval. The approval card shows the full address.
 
     Who "gave" it is settled by **parse, don't search** (phase H10): the check reads
-    named fields of a known shape (your messages, the run's input, each search hit's
-    `url`), never the text of a blob, because a blob holds the model's own words too
-    (R14.15: what the model wrote under influence is not provenance)."""
+    named fields of a known shape (the `text` of your messages, the `message` of the
+    run's input, each search hit's `url`), never the text of a blob, because a blob
+    holds the model's own words too (R14.15: what the model wrote under influence is
+    not provenance)."""
 
     inner: ToolPolicy
     tools: frozenset[str] = frozenset({"read_webpage"})
