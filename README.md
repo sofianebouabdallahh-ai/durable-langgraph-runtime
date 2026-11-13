@@ -185,7 +185,7 @@ Each row is an automated scenario, run against real processes (`make demo-e2e`) 
 | A worker is **killed** (`SIGKILL`) mid-reply | Its lease expires (30 s by default). The reaper reclaims the message, and another worker resumes from the last checkpoint | The reply completes; no step is lost or repeated |
 | A worker **freezes** (`SIGSTOP`) past its lease, then wakes up | Another worker takes over with a higher epoch. Every write the zombie tries carries the old epoch, so Postgres rejects it | The zombie writes nothing and notices it lost the run |
 | A worker is **asked to stop** (`SIGTERM`, a deploy, a node drain) | It stops reading new work, finishes its current step, and hands each run back to the queue | Another worker picks the runs up within seconds |
-| A worker is killed **during a tool call** | The tool ledger already holds the call's idempotency key. A read-only tool is called again; a tool with a side effect is never sent twice | No duplicate emails or charges. The chat says if a call may have run once |
+| A worker is killed **during a tool call** | The tool ledger already holds the call, recorded by its place in the run before it ran. A read-only tool is called again; a tool with a side effect is never sent twice | No duplicate emails or charges. The chat says if a call may have run once |
 | A run **waits hours for approval** and everything restarts | The pause lives in Postgres, not in a process | The approval resumes it on whichever worker is free |
 | A worker dies **just as a tool asks for approval**, before the pause is saved | Each approval is bound to the interrupt that asked and to a hash of the call's arguments; a run resumes only with decisions that match | It asks you. An earlier approval is never reused |
 | An **API replica dies** while you're watching a reply | The browser reconnects through the proxy to another replica with `Last-Event-ID` | The stream continues with no missing or duplicated events |
@@ -202,7 +202,7 @@ Each row is an automated scenario, run against real processes (`make demo-e2e`) 
 
 **Exactly-once events per committed step (transactional outbox).** The events a step produces are held in memory while the step runs, then committed inside that step's checkpoint transaction. A committed step always has its events. A step lost to a crash has none, and is simply run again. Every run's events carry a gap-free sequence number, which the stream relies on to detect holes and duplicates.
 
-**Idempotent tool calls.** Delivery is at-least-once, so tools must be safe to retry. Every call gets a deterministic key: `sha256(run · node · call index · tool · canonical arguments)`. The key is recorded *before* the tool runs ("record, then act"). A finished call returns its stored result without running again. An interrupted call is either re-sent with the **same** key, so the tool can dedupe its own effect, or, if it has a side effect and asks first, never re-sent.
+**Idempotent tool calls.** Delivery is at-least-once, so tools must be safe to retry. Since H7 a call is identified by its **place** in the run, `call_key = sha256(run · node · call index · tool)`, and the ledger looks it up by that first. Its arguments are derived by code (defaults, validation, hooks), and code changes with a deploy: a release that adds a defaulted argument can't make a done call happen again; the call is served what it did, and the change is recorded (`tool.args_changed`). The stored key still includes the canonical arguments, as before H7, so workers on the previous release find their calls during a rolling deploy or a rollback (expand/contract; the key becomes the place alone once no older worker is left). The key is recorded *before* the tool runs ("record, then act"). A finished call returns its stored result without running again. An interrupted call is either re-sent with the **same** key, so the tool can dedupe its own effect, or, if it has a side effect and asks first, never re-sent.
 
 **Durable pauses.** Approvals use LangGraph's `interrupt()` and `Command(resume=…)`. A waiting run holds no lease, no worker slot and no memory, so a thousand runs can wait for approval at no cost.
 
@@ -254,10 +254,10 @@ Every call, to a built-in tool or an MCP tool, runs through the same stages in a
 | 4 | **pre-tool hooks** | Registered code can continue, modify the arguments, deny, or ask you |
 | 5 | **re-validate** | If a hook changed the arguments, they're validated again |
 | 6 | **policy** | Allow, deny, or **ask you**. Asking pauses the run durably with `interrupt()`. On resume the whole pipeline runs again with your decision |
-| 7–8 | **ledger + budget** | The idempotency key is recorded, and the call is charged, once. A finished call returns its stored result |
+| 7–8 | **ledger + budget** | The call is recorded by its place in the run (`call_key`), and charged, once. A finished call returns its stored result, even when a release changed its arguments' defaults |
 | 9 | **execute** | With a timeout; code goes to the sandbox |
-| 10 | **post-tool hooks** | Can modify the result or withhold it (also for cached results) |
-| 11 | **truncate** | At most 16,000 characters go back to the model, with a marker. The full result is stored |
+| 10 | **post-tool hooks** | Can modify the result or withhold it, before the ledger stores it: what is stored is what the model is shown (also run on cached results) |
+| 11 | **truncate** | At most 16,000 characters go back to the model, with a marker. The hooked result is stored whole, up to a cap |
 | 12 | **mark as data** | The result is wrapped in delimiters it can't close, as untrusted data |
 
 Every decision (allowed, denied and why, approval asked, budget charged) is an audit event, committed with the step's checkpoint.

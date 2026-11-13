@@ -30,8 +30,16 @@ export function WhatHappened({ runId, active }: { runId: string; active: boolean
   const lines = events.data.events
     .map((e) => ({ seq: e.seq, ts: e.ts, type: e.type, text: eventLine(e.type, e.payload) }))
     .filter((l): l is { seq: number; ts: string; type: string; text: string } => l.text !== null);
+  // Retention removed the timeline (H10): say so, rather than show an empty one.
+  const pruned = lines.length === 0 && r.details_pruned_at != null;
+  const retentionDays = about.data?.retention_days;
   return (
     <div className="rounded-xl border border-stone-200 bg-white p-4 text-sm dark:border-stone-800 dark:bg-stone-900" data-testid="what-happened">
+      {pruned && (
+        <p className="text-stone-500" data-testid="details-pruned">
+          {retentionDays ? `Details removed after ${String(retentionDays)} days` : "Details were removed by retention"}
+        </p>
+      )}
       <ol className="relative space-y-2.5 border-l border-stone-200 pl-5 dark:border-stone-700">
         {lines.map((l) => (
           <li key={l.seq} className="relative">

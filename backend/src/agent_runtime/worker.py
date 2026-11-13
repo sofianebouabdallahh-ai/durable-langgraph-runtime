@@ -46,6 +46,7 @@ from agent_runtime.evals import grader
 from agent_runtime.graphs import GraphRegistry
 from agent_runtime.notifications.delivery import NotificationRelay
 from agent_runtime.queue import Delivery, QueueUnavailable, WorkQueue
+from agent_runtime.runs import retention
 from agent_runtime.runs.executor import RunExecutor, default_owner
 from agent_runtime.runs.relay import OutboxRelay
 from agent_runtime.runs.service import RunService
@@ -114,6 +115,9 @@ class Worker:
         if self._notifications.enabled:
             every = self._settings.notify_interval_s
             background.append(asyncio.create_task(self._every(every, self._notifications.sweep)))
+        if self._settings.retention_days > 0:  # 0 keeps everything (H10)
+            every = self._settings.retention_sweep_s
+            background.append(asyncio.create_task(self._every(every, self._prune_details)))
         log.info("worker %s up (concurrency %d)", self.consumer, self.concurrency)
         backoff = READ_BACKOFF_S
         try:
@@ -196,6 +200,14 @@ class Worker:
             self._pool, self._settings, self._graphs, runs, self._relay, self._bus
         )
         return await sessions.archive_idle(self._settings.session_idle_ttl_s)
+
+    async def _prune_details(self) -> retention.PruneReport:
+        """H10 (2.8): a run that ended RETENTION_DAYS ago loses its events and tool calls;
+        the run, the chat, the notes and the audit trail stay. Safe on every worker at
+        once: each batch claims its run with SKIP LOCKED (runs/retention.py)."""
+        return await retention.prune_details(
+            self._pool, older_than_days=self._settings.retention_days
+        )
 
     async def _handle(self, delivery: Delivery) -> None:
         executor = RunExecutor(

@@ -326,7 +326,7 @@ async def about(request: Request) -> AboutView:
         version=version, model_provider=settings.model_provider,
         demo_model=settings.model_provider == "scripted", chat_model=settings.model_chat or None,
         tracing=tracing, trace_ui_url=(settings.trace_ui_url or None) if tracing else None,
-        dashboard_url=settings.dashboard_url or None,
+        dashboard_url=settings.dashboard_url or None, retention_days=settings.retention_days,
     )  # fmt: skip
 
 

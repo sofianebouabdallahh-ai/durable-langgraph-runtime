@@ -185,6 +185,8 @@ class Run:
     redrives: int = 0
     run_format: int = 1  # H7: what it writes; older workers leave it to newer ones
     code_version: str | None = None
+    # H10: when retention removed its events and tool calls (runs/retention.py).
+    details_pruned_at: datetime | None = None
 
     @property
     def root_id(self) -> uuid.UUID:
@@ -232,6 +234,7 @@ class Run:
             redrives=row.get("redrives") or 0,
             run_format=row.get("run_format") or 1,
             code_version=row.get("code_version"),
+            details_pruned_at=row.get("details_pruned_at"),
             child_total=row["child_total"],
             child_done=row["child_done"],
         )
@@ -285,7 +288,7 @@ _RUN_COLUMNS = """
     created_at, started_at, finished_at, cancel_requested, reclaims, releases, message_id,
     interrupt_payload, resume_value, root_run_id, depth, child_key, child_total, child_done,
     agent_hash, model_bindings, traceparent, waited_s, agent_name, agent_version, tokens, cost,
-    infra_retries, redrives, run_format, code_version
+    infra_retries, redrives, run_format, code_version, details_pruned_at
 """
 
 
