@@ -3031,7 +3031,7 @@ export interface components {
             infra_retries: number;
             /**
              * Interrupt Payload
-             * @description The next approval a waiting_approval run waits on (R1.4): its `approval_id`, `tool`, `args` (secrets redacted), `call_id` and `reason`. Several can be pending; once this one is decided, the next one shows here.
+             * @description The next approval a waiting_approval run waits on (R1.4): its `approval_id`, `tool`, `args` (secrets redacted), `hidden` (how many values that redaction took out of `args`, H10), `call_id` and `reason`. Several can be pending; once this one is decided, the next one shows here.
              */
             interrupt_payload: {
                 [key: string]: unknown;
