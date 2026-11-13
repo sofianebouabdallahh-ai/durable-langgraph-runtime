@@ -9,8 +9,9 @@ image:
 
 # Secrets are never in values (R10.4): this Secret must exist in the namespace, with
 # POSTGRES_PASSWORD (the migrator), API_POSTGRES_PASSWORD, WORKER_POSTGRES_PASSWORD,
-# NURIA_SECRET_KEY, SEARXNG_SECRET (with search on), SANDBOXD_TOKEN (with the sandbox
-# on), and optionally OPENAI_API_KEY, NOTIFY_WEBHOOK_SECRET and GRAFANA_ADMIN_PASSWORD.
+# NURIA_SECRET_KEY, REDIS_PASSWORD (see `redis` below), SEARXNG_SECRET (with search on),
+# SANDBOXD_TOKEN (with the sandbox on), and optionally OPENAI_API_KEY,
+# NOTIFY_WEBHOOK_SECRET and GRAFANA_ADMIN_PASSWORD.
 # Locally, infra/kind/cluster.sh creates it from .env.
 secretName: nuria-secrets
 
@@ -23,7 +24,7 @@ config:
   POSTGRES_USER: agent # the migrator; only the migrate Job connects as it
   API_POSTGRES_USER: agent_api
   WORKER_POSTGRES_USER: agent_worker
-  REDIS_URL: redis://redis:6379/0
+  REDIS_URL: redis://redis:6379/0 # without its password: each pod puts it in (`redis` below)
   MODEL_PROVIDER: scripted
   LOG_FORMAT: json
   LOG_LEVEL: INFO
@@ -31,6 +32,13 @@ config:
   # Notifications (H4): the webhook `notify` delivers to, after approval; empty: kept,
   # not sent. Its signing secret is NOTIFY_WEBHOOK_SECRET in the Secret.
   NOTIFY_WEBHOOK_URL: ""
+
+# Redis's password (H10): REDIS_PASSWORD in the Secret. Each API and worker pod puts it into
+# REDIS_URL itself (config.REDIS_URL stays without a credential, in the ConfigMap), and KEDA
+# gets it through a TriggerAuthentication. Empty: Redis has no password (a managed one
+# behind TLS and a network rule, for instance). nuria-data's Redis reads the same key.
+redis:
+  passwordKey: REDIS_PASSWORD
 
 # The schema migration (R10.6): `runtime db init` (Alembic + LangGraph's tables +
 # the per-component logins), a pre-install and pre-upgrade hook, so new code never

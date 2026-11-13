@@ -7,15 +7,24 @@ Nuria runs entirely on your computer, in Docker.
 | Part | What it does | Reachable from |
 |---|---|---|
 | The app (UI) | The page you use, and the way in to the API | `127.0.0.1` only: this computer, not your network |
-| 2 API servers, 2 workers | Your chats and agents. The workers run the steps of each reply | Inside Docker only |
-| Postgres | Everything that's kept: chats, agents, skills, settings | Inside Docker; `127.0.0.1` for developer tools |
-| Redis | The work queue (holds nothing that can't be rebuilt) | Inside Docker; `127.0.0.1` for developer tools |
-| SearXNG | Web search for the agents (no key, no account) | Inside Docker only |
-| The page reader | Reads web pages for the agents; refuses anything that isn't a public website | Inside Docker only |
-| sandboxd *(on unless `--no-sandbox`)* | Starts the code sandboxes. The only part with the Docker socket, so it runs as root, alone, and answers only the workers' token | Inside Docker only |
+| 2 API servers, 2 workers | Your chats and agents. The workers run the steps of each reply | Inside Docker only, on all three networks (below) |
+| Postgres | Everything that's kept: chats, agents, skills, settings | Inside Docker, on `data` only: no way out, and no host port (`make up` adds one on `127.0.0.1` for developers) |
+| Redis | The work queue (holds nothing that can't be rebuilt); asks for a password that only the API and the workers hold | Inside Docker, on `data` only, as Postgres |
+| SearXNG | Web search for the agents (no key, no account) | Inside Docker, on `egress` only: the internet, and none of Nuria's own services |
+| The page reader | Reads web pages for the agents; refuses anything that isn't a public website | Inside Docker, on `egress` only, as SearXNG |
+| sandboxd *(on unless `--no-sandbox`)* | Starts the code sandboxes. The only part with the Docker socket, so it runs as root, alone, and answers only the workers' token | Inside Docker, on `app` only: the workers |
 | A sandbox per turn that runs code | Python and shell commands. **No network**, read-only, non-root, all capabilities dropped, CPU, memory, process and time limits; removed when the turn ends | Nothing: no network at all |
 | *Optional:* Ollama | A local model | `127.0.0.1` |
-| *Optional:* OpenTelemetry Collector, Tempo, Loki, Prometheus, Grafana (`--observability`) | Traces, log lines (redacted at the source and again in the collector), metrics, dashboards | `127.0.0.1` (Grafana and Prometheus); the rest inside the Compose network |
+| *Optional:* OpenTelemetry Collector, Tempo, Loki, Prometheus, Grafana (`--observability`) | Traces, log lines (redacted at the source and again in the collector), metrics, dashboards | `127.0.0.1` (Grafana and Prometheus); the rest on `app` |
+
+Three networks keep the parts apart, each a wall around what a fault or a planted page
+could reach: **`data`** (no way out) joins Postgres and Redis to the API, the workers and
+the migration; **`app`** joins the UI to the API, the workers to sandboxd, and the
+observability services; **`egress`** is the way to the internet, for the workers and the
+API (model providers, MCP servers), SearXNG, the page reader and Ollama. SearXNG (the one
+third-party image) and the page reader take in the internet's pages, so they're on
+`egress` alone: from them, Postgres, Redis, the API and sandboxd neither resolve nor
+answer. The container test suite checks it (`tiers`).
 
 The containers run as ordinary users, not root, on a read-only filesystem (sandboxd
 excepted, as above).
@@ -43,15 +52,16 @@ excepted, as above).
   is refused. The API refuses any request your browser makes on another site's behalf
   (cross-site, checked with the browser's `Sec-Fetch-Site` and `Origin`).
 - **Nuria has no login yet.** Another program running on your computer can use the API,
-  as with any local tool. Accounts come with the hosted version. On Kubernetes with a
-  public address, the chart refuses to install without a password in front
-  ([guide](kubernetes.md)).
+  as with any local tool; no container but Nuria's own can any more (SearXNG, the one
+  third-party image, is on `egress` alone, above). Accounts come with the hosted version.
+  On Kubernetes with a public address, the chart refuses to install without a password in
+  front ([guide](kubernetes.md)).
 
 ## Where your keys are
 
 - **Model keys** you add under **Models**, and a **search key** (Tavily, Brave) under **Tools**, are stored in the database, **encrypted** with `NURIA_SECRET_KEY` from `.env`. They're never shown again and never written to logs.
 - **A key stays with its address.** Changing a model's address to another host, or an MCP server's address or header, asks for the key again: a saved key is only ever sent where you entered it for.
-- **Local passwords** for Postgres and Grafana, SearXNG's secret and sandboxd's token are generated for this machine at setup, and kept only in `.env`. The sandboxes never see any of them.
+- **Local passwords** for Postgres, Redis and Grafana, SearXNG's secret and sandboxd's token are generated for this machine at setup, and kept only in `.env`. The sandboxes never see any of them.
 - **`.env` holds the secrets.** It's readable only by you, and never part of a backup or a diagnostics file. Keep it safe: anyone with `.env` and a backup can open your saved keys.
 - **Diagnostics** (`./setup.sh --doctor`) remove every password and key before writing the file.
 - **Logs never hold content or keys.** Each line says what happened and its numbers (a tool call, its status and time), never message text, tool arguments or results; every line also goes through the secret filter, and the collector drops well-known secret fields a second time. Errors in the app's page are written to the API's log on this computer, nowhere else.

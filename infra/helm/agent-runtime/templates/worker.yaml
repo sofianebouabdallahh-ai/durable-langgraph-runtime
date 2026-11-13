@@ -44,6 +44,7 @@ spec:
               valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: WORKER_POSTGRES_PASSWORD } }
             - name: WORKER_POSTGRES_PASSWORD
               valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: WORKER_POSTGRES_PASSWORD } }
+            {{- include "nuria.redisEnv" . | nindent 12 }}
             - name: NURIA_SECRET_KEY
               valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: NURIA_SECRET_KEY } }
             - name: OPENAI_API_KEY
@@ -116,4 +117,22 @@ spec:
         stream: runs:work
         consumerGroup: workers
         lagCount: {{ .Values.worker.keda.lagCount | quote }}
+      {{- if .Values.redis.passwordKey }}
+      authenticationRef: { name: {{ include "nuria.fullname" . }}-redis }
+      {{- end }}
+{{- if .Values.redis.passwordKey }}
+---
+# KEDA reads the backlog from Redis itself, so it needs the password too (H10): from the
+# same Secret, never in the ScaledObject.
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ include "nuria.fullname" . }}-redis
+  labels: {{- include "nuria.labels" . | nindent 4 }}
+spec:
+  secretTargetRef:
+    - parameter: password
+      name: {{ .Values.secretName }}
+      key: {{ .Values.redis.passwordKey }}
+{{- end }}
 {{- end }}

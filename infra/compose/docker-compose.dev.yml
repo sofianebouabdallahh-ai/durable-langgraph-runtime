@@ -1,0 +1,25 @@
+# The developer loop (R9.2): `make up` starts Postgres and Redis, `make api` and
+# `make worker` run on the host and reach them on 127.0.0.1. The stores live on the
+# `data` network, which has no gateway, and Docker binds no published port for a container
+# without one (checked in H10: the binding is recorded, nothing listens). So the Makefile
+# adds this file to every compose call: it gives the two stores one more network, `dev`,
+# for the ports alone. It is a way out for them too, which the tester stack (`./setup.sh`,
+# this file not included) never has: that's the trade the dev loop makes, on this machine
+# only. The ports bind to 127.0.0.1.
+#
+# Same project name as docker-compose.yml: starting the stores one way after the other
+# recreates them with the other's networks (their data stays, in the volumes).
+
+networks:
+  dev:
+
+services:
+  postgres:
+    networks: [data, dev]
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+
+  redis:
+    networks: [data, dev]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"

@@ -41,14 +41,14 @@ describe("turns", () => {
 
   it("pairs an approval request with its decision; errors and empty replies", () => {
     const s = state([
-      user(1, "notify"), call(2, "notify", "n1"), msg(3, "interrupt", { kind: "tool_approval", approvalId: null, callId: null, tool: "notify", args: {}, reason: null }),
+      user(1, "notify"), call(2, "notify", "n1"), msg(3, "interrupt", { kind: "tool_approval", approvalId: null, callId: null, tool: "notify", args: {}, reason: null, hidden: 0 }),
       msg(4, "approval", { approvalId: null, decision: "approve", reason: null }), reply(5, "  "), msg(6, "error", { reason: "boom", budgetLimited: false, canRetry: false }),
     ]);
     const kinds = turns(s)[0]?.items.map((i) => i.kind);
     expect(kinds).toEqual(["tool", "approval-request", "error"]);
     const tool = turns(s)[0]?.items[0];
     expect(tool?.kind === "tool" && tool.awaitingApproval).toBe(false); // decided
-    const waiting = state([user(1, "notify"), call(2, "notify", "n1"), msg(3, "interrupt", { kind: "tool_approval", approvalId: null, callId: null, tool: "notify", args: {}, reason: null })]);
+    const waiting = state([user(1, "notify"), call(2, "notify", "n1"), msg(3, "interrupt", { kind: "tool_approval", approvalId: null, callId: null, tool: "notify", args: {}, reason: null, hidden: 0 })]);
     const held = turns(waiting)[0]?.items[0];
     expect(held?.kind === "tool" && held.awaitingApproval).toBe(true);
     const request = turns(s)[0]?.items[1];
@@ -69,17 +69,17 @@ describe("turns, tried again (H4)", () => {
 
 describe("pendingApprovals", () => {
   const waiting = { runId: RUN, status: "waiting_approval" as const, reason: null };
-  const ask = msg(3, "interrupt", { kind: "tool_approval", approvalId: null, callId: null, tool: "notify", args: { to: "ops" }, reason: null });
+  const ask = msg(3, "interrupt", { kind: "tool_approval", approvalId: null, callId: null, tool: "notify", args: { to: "ops" }, reason: null, hidden: 0 });
   it("is the requests the waiting turn hasn't had decided (older, unnamed messages)", () => {
     expect(pendingApprovals(state([user(1, "x"), ask], { turn: waiting })).map((m) => m.messageId)).toEqual([ask.messageId]);
     expect(pendingApprovals(state([user(1, "x"), ask, msg(4, "approval", { approvalId: null, decision: "reject", reason: "no" })], { turn: waiting }))).toEqual([]);
     expect(pendingApprovals(state([user(1, "x"), ask], { turn: { ...waiting, status: "running" } }))).toEqual([]);
-    expect(pendingApprovals(state([user(1, "x", RUN2), msg(2, "interrupt", { kind: null, approvalId: null, callId: null, tool: null, args: {}, reason: null }, RUN2)], { turn: waiting }))).toEqual([]);
+    expect(pendingApprovals(state([user(1, "x", RUN2), msg(2, "interrupt", { kind: null, approvalId: null, callId: null, tool: null, args: {}, reason: null, hidden: 0 }, RUN2)], { turn: waiting }))).toEqual([]);
   });
 
   it("pairs each decision with the approval it names, in any order (H1)", () => {
-    const a = msg(4, "interrupt", { kind: "tool_approval", approvalId: "ap-a", callId: "n1", tool: "notify", args: { to: "ceo" }, reason: null });
-    const b = msg(5, "interrupt", { kind: "tool_approval", approvalId: "ap-b", callId: "n2", tool: "notify", args: { to: "cfo" }, reason: null });
+    const a = msg(4, "interrupt", { kind: "tool_approval", approvalId: "ap-a", callId: "n1", tool: "notify", args: { to: "ceo" }, reason: null, hidden: 0 });
+    const b = msg(5, "interrupt", { kind: "tool_approval", approvalId: "ap-b", callId: "n2", tool: "notify", args: { to: "cfo" }, reason: null, hidden: 0 });
     const base = [user(1, "both"), call(2, "notify", "n1"), call(3, "notify", "n2"), a, b];
     expect(pendingApprovals(state(base, { turn: waiting })).map((m) => m.approvalId)).toEqual(["ap-a", "ap-b"]);
 
@@ -93,7 +93,7 @@ describe("pendingApprovals", () => {
   });
 
   it("a call you refused was refused, not left unfinished", () => {
-    const ask = msg(3, "interrupt", { kind: "tool_approval", approvalId: "ap-a", callId: "n1", tool: "notify", args: {}, reason: null });
+    const ask = msg(3, "interrupt", { kind: "tool_approval", approvalId: "ap-a", callId: "n1", tool: "notify", args: {}, reason: null, hidden: 0 });
     const said = msg(4, "approval", { approvalId: "ap-a", decision: "reject", reason: "no" });
     const tool = turns(state([user(1, "x"), call(2, "notify", "n1"), ask, said]))[0]?.items[0];
     expect(tool?.kind === "tool" && [tool.rejected, tool.ended, tool.awaitingApproval]).toEqual([true, false, false]);

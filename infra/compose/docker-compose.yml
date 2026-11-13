@@ -20,6 +20,20 @@
 #   docker compose --file infra/compose/docker-compose.yml --env-file .env ...
 #
 # Ports bind to 127.0.0.1 so nothing is exposed on the LAN.
+#
+# Three networks, one per tier (H10, a bulkhead): a container reaches only what it has to,
+# and SearXNG and the page reader, which take in the internet's pages, reach none of
+# Nuria's own services.
+#   `data`    internal (no gateway, so no way out): Postgres and Redis, with the API, the
+#             workers and migrate.
+#   `app`     the UI and the API; the workers and sandboxd; the observability services.
+#   `egress`  the way to the internet: the workers and the API (model providers, MCP
+#             servers, a model on this machine), SearXNG, the page reader, Ollama.
+# Docker's DNS gives a name only to containers that share a network, and keeps the
+# networks apart (checked: from `egress`, Postgres and Redis neither resolve nor answer,
+# by name or by address). A published port needs a network with a gateway (Docker records
+# the binding and binds nothing otherwise), so Postgres and Redis have none here: `make up`
+# adds them, through docker-compose.dev.yml.
 
 name: agent-runtime
 
@@ -35,7 +49,7 @@ x-runtime: &runtime
   environment: &runtime-env
     POSTGRES_HOST: postgres
     POSTGRES_PORT: "5432"
-    REDIS_URL: redis://redis:6379/0
+    REDIS_URL: redis://:${REDIS_PASSWORD:?set in .env (setup generates it)}@redis:6379/0
     OLLAMA_BASE_URL: ${CONTAINER_OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
     # The offline demo model streams its replies word by word, like a real one.
     SCRIPTED_STREAMING: ${SCRIPTED_STREAMING:-true}
@@ -67,6 +81,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks: [data]
 
   api:
     <<: *runtime
@@ -91,6 +106,7 @@ services:
       timeout: 5s
       retries: 40
     stop_grace_period: 15s # drain: streams are asked to reconnect (R10.7)
+    networks: [data, app, egress]
 
   worker:
     <<: *runtime
@@ -114,6 +130,7 @@ services:
       retries: 20
     # SIGTERM → finish the current step, release the run to another worker (R10.7).
     stop_grace_period: 40s
+    networks: [data, app, egress]
 
   # A fake OpenAI-compatible model: tests and CI only (profile `test`, never started
   # by setup). Connections to http://fake-model:9999/v1 answer deterministically.
@@ -122,6 +139,9 @@ services:
     profiles: ["test"]
     command: ["fake-model", "--host", "0.0.0.0", "--port", "9999"]
     restart: "no"
+    # Asked by the API and the workers, by the page reader (the fake web) and by the
+    # browser tests' container, which joins `app`.
+    networks: [app, egress]
 
   # Web search for the agents (L6a): SearXNG, private (no host port), no key needed.
   searxng:
@@ -141,6 +161,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    networks: [egress] # and nothing of Nuria's: a third-party image that takes in the web
 
   # The page reader (L6a): the one service the web tools reach the internet through. It
   # refuses private and internal addresses itself (agent_runtime/web/fetch.py).
@@ -156,6 +177,7 @@ services:
       interval: 3s
       timeout: 5s
       retries: 20
+    networks: [egress] # a page can't send it to Postgres, Redis, the API or sandboxd
 
   # Code and shell (L6b): the only service that can start containers (it holds the Docker
   # socket, so it runs as root, alone). Each run gets one locked-down sandbox: no network,
@@ -177,6 +199,7 @@ services:
       interval: 3s
       timeout: 5s
       retries: 20
+    networks: [app] # the workers ask it; Docker it reaches through the socket, not the network
 
   ui:
     image: ${UI_IMAGE:-ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/ui:${NURIA_VERSION:-latest}}
@@ -201,6 +224,7 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+    networks: [app]
 
   postgres:
     image: pgvector/pgvector:0.8.0-pg16 # Postgres 16 + pgvector (R4.5)
@@ -208,8 +232,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?set in .env}
       POSTGRES_USER: ${POSTGRES_USER:?set in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
-    ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    # No host port: `data` has no gateway. docker-compose.dev.yml adds one for `make up`.
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -217,21 +240,26 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+    networks: [data]
 
   redis:
     image: redis:7.4-alpine
     # AOF on: the work stream and its pending entries survive a Redis restart.
     # Redis is still rebuildable from Postgres; AOF just avoids needless recovery.
-    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
-    ports:
-      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    # A password (H10): the work stream answers only the API and the workers, which carry
+    # it in REDIS_URL (setup generates it). The network is the first wall; this is the second.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--requirepass", "${REDIS_PASSWORD:?set in .env (setup generates it)}"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?set in .env (setup generates it)} # the health check's redis-cli
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # redis-cli exits 0 on a NOAUTH reply too (checked), so the reply itself is tested.
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
       interval: 2s
       timeout: 3s
       retries: 30
+    networks: [data]
 
   # Local model server (R3.1), opt-in: `make llm-up` (profile `llm`). In Docker on
   # macOS it runs on the CPU (no Metal): fine for demos, slower than the native app.
@@ -253,6 +281,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+    networks: [egress] # pulls models; asked by the API and the workers
 
   # ---------------------------------------------------- observability (L4a)
   # Images pinned by digest, each release at least two weeks old (supply-chain cooldown).
@@ -269,6 +298,7 @@ services:
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+    networks: [app]
 
   tempo: # traces (L7b, replacing Jaeger): searched in Grafana, linked to their log lines
     image: grafana/tempo:2.10.8@sha256:f0561deb1c68ec44d6e6e7e4487f30106c4e5e768642077695b37958b105812a
@@ -284,6 +314,7 @@ services:
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+    networks: [app]
 
   loki: # log lines (L7b), kept 7 days
     image: grafana/loki:3.7.8@sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193
@@ -298,6 +329,7 @@ services:
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+    networks: [app]
 
   prometheus:
     image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
@@ -315,6 +347,7 @@ services:
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+    networks: [app]
 
   grafana: # anonymous viewers (local only: bound to 127.0.0.1); admin to edit
     image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
@@ -346,6 +379,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 30
+    networks: [app]
 
 volumes:
   postgres-data:
@@ -355,3 +389,9 @@ volumes:
   grafana-data:
   tempo-data:
   loki-data:
+
+networks:
+  data:
+    internal: true # no gateway: a container on it alone has no route out
+  app:
+  egress:

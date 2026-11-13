@@ -51,3 +51,11 @@ def test_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_heartbeat_must_fit_three_times_in_lease() -> None:
     with pytest.raises(ValidationError, match="heartbeat_s"):
         Settings(postgres_password="pw", lease_ttl_s=30, heartbeat_s=11)  # type: ignore[arg-type]
+
+
+def test_run_max_depth_cannot_exceed_the_budget_roll_up() -> None:
+    """H10: usage is charged to the run, its parent and its root (three rows), so a
+    tree deeper than 2 would skip an ancestor's budget."""
+    with pytest.raises(ValidationError, match="run_max_depth"):
+        Settings(postgres_password="pw", run_max_depth=3)  # type: ignore[arg-type]
+    assert Settings(postgres_password="pw", run_max_depth=2).run_max_depth == 2  # type: ignore[arg-type]

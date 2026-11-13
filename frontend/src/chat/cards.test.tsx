@@ -56,7 +56,16 @@ describe("ToolCard", () => {
 });
 
 describe("ApprovalCard", () => {
-  const ask = msg(3, "interrupt", { kind: "tool_approval", approvalId: "ap-1", callId: "n1", tool: "notify", args: { to: "ops" }, reason: "external" }) as Of<"interrupt">;
+  const ask = msg(3, "interrupt", { kind: "tool_approval", approvalId: "ap-1", callId: "n1", tool: "notify", args: { to: "ops" }, reason: "external", hidden: 0 }) as Of<"interrupt">;
+
+  it("says how many values it hides, and that they go out as they are", () => {
+    const { rerender } = render(<ApprovalCard message={{ ...ask, hidden: 1 }} decided={null} pending={false} />);
+    expect(screen.getByText("1 value that looks like a key is hidden here and will be sent as it is")).toBeInTheDocument();
+    rerender(<ApprovalCard message={{ ...ask, hidden: 2 }} decided={null} pending={false} />);
+    expect(screen.getByText("2 values that look like keys are hidden here and will be sent as they are")).toBeInTheDocument();
+    rerender(<ApprovalCard message={ask} decided={null} pending={false} />);
+    expect(screen.queryByText(/hidden here/)).toBeNull(); // nothing hidden: nothing said
+  });
 
   it("approves once, or rejects with a reason", async () => {
     const onDecide = vi.fn();

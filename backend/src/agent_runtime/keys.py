@@ -11,7 +11,8 @@
 - **The master key is behind a port** (Pattern: Strategy). Locally `LocalKek` derives
   it from `NURIA_SECRET_KEY` (HKDF-SHA256); the hosted beta adds a Key Vault one
   (P8) without changing anything else.
-- Plaintext secrets live only in memory, for the call that needs them.
+- Plaintext secrets live only in memory, for the call that needs them; the redaction
+  keeps each opened value, in memory only, to mask it wherever it shows up (H10).
 """
 
 from __future__ import annotations
@@ -26,6 +27,8 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+from agent_runtime.redaction import known_secrets
 
 NONCE_BYTES = 12  # 96-bit nonces: the size AES-GCM is specified for
 KEY_BYTES = 32  # AES-256
@@ -104,13 +107,17 @@ def seal(plaintext: str, aad: str, kek: KeyEncryptionKey) -> Sealed:
 
 
 def open_secret(sealed: Sealed, aad: str, kek: KeyEncryptionKey) -> str:
-    """The plaintext, or SecretUnavailable. Keep it in memory, for one call."""
+    """The plaintext, or SecretUnavailable. Keep it in memory, for one call. Whatever is
+    opened here is known to `redact()` from then on (H10): a value Nuria holds is masked
+    wherever it shows up, no pattern needed."""
     context = aad.encode()
     data_key = kek.unwrap(sealed.wrapped_key, sealed.wrapped_nonce, context + b"|data-key")
     try:
-        return AESGCM(data_key).decrypt(sealed.nonce, sealed.ciphertext, context).decode()
+        plaintext = AESGCM(data_key).decrypt(sealed.nonce, sealed.ciphertext, context).decode()
     except InvalidTag as exc:
         raise SecretUnavailable("this secret was changed or moved") from exc
+    known_secrets.add(plaintext)
+    return plaintext
 
 
 def fingerprint(plaintext: str, kek: KeyEncryptionKey) -> str:

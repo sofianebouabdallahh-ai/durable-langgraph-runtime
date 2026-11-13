@@ -140,6 +140,13 @@ export function HelperCards({ helpers }: { helpers: Helper[] }) {
   );
 }
 
+/** The card redacts what looks like a key; the call it approves doesn't (phase H10): say so. */
+function hiddenNotice(n: number): string {
+  return n === 1
+    ? "1 value that looks like a key is hidden here and will be sent as it is"
+    : `${String(n)} values that look like keys are hidden here and will be sent as they are`;
+}
+
 export function ApprovalCard({
   message,
   decided,
@@ -175,6 +182,11 @@ export function ApprovalCard({
           <div className="mt-3">
             <DataBlock value={message.args} />
           </div>
+          {message.hidden > 0 && (
+            <p className="mt-2 text-xs text-amber-700 dark:text-amber-400" data-testid="approval-hidden">
+              {hiddenNotice(message.hidden)}
+            </p>
+          )}
         </div>
       </div>
       {decided ? (

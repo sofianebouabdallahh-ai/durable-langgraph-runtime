@@ -21,6 +21,7 @@ postgres:
 
 redis:
   image: redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+  passwordKey: REDIS_PASSWORD # its password's key in the Secret (H10), as agent-runtime's redis.passwordKey; "" = none
   storage: 512Mi
   resources:
     requests: { cpu: 50m, memory: 32Mi }

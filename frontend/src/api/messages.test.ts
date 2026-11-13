@@ -12,9 +12,9 @@ describe("parseMessage", () => {
     expect(parseMessage(view("assistant", { text: "a", interrupted: true }))).toMatchObject({ model: null, interrupted: true, budgetLimited: false });
     expect(parseMessage(view("tool_call", { tool: "search", args: [1] }))).toMatchObject({ toolCallId: "", args: {} });
     expect(parseMessage(view("tool_result", { error: "nope" }))).toMatchObject({ error: "nope", cached: false, durationMs: null });
-    expect(parseMessage(view("interrupt", { interrupt_type: "tool_approval", payload: { tool: "notify", args: { to: "x" }, reason: "r" } })))
-      .toMatchObject({ kind: "tool_approval", tool: "notify", args: { to: "x" }, reason: "r" });
-    expect(parseMessage(view("interrupt", {}))).toMatchObject({ kind: null, tool: null, args: {} });
+    expect(parseMessage(view("interrupt", { interrupt_type: "tool_approval", payload: { tool: "notify", args: { to: "x" }, reason: "r", hidden: 2 } })))
+      .toMatchObject({ kind: "tool_approval", tool: "notify", args: { to: "x" }, reason: "r", hidden: 2 });
+    expect(parseMessage(view("interrupt", {}))).toMatchObject({ kind: null, tool: null, args: {}, hidden: 0 });
     expect(parseMessage(view("approval", { decision: "approve" }))).toMatchObject({ decision: "approve", reason: null });
     expect(parseMessage(view("approval", { decision: "maybe" }))).toMatchObject({ decision: "reject" });
     expect(parseMessage(view("error", { reason: "x", budget_limited: true }))).toMatchObject({ reason: "x", budgetLimited: true, canRetry: false });

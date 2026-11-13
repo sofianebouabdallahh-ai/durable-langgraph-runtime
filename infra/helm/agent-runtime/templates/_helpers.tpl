@@ -75,6 +75,19 @@ FETCHER_URL: {{ if .Values.fetcher.enabled }}{{ printf "http://%s-fetcher:8090" 
 SANDBOXD_URL: {{ if .Values.sandbox.enabled }}{{ printf "http://%s-sandboxd:8070" $name | quote }}{{ else }}""{{ end }}
 {{- end }}
 
+{{/* Redis (H10): the ConfigMap's REDIS_URL with the Secret's password put in. An explicit
+     env entry, which wins over envFrom; the kubelet expands $(REDIS_PASSWORD) in it. */}}
+{{- define "nuria.redisEnv" -}}
+{{- if .Values.redis.passwordKey }}
+{{- $url := required "config.REDIS_URL is needed" .Values.config.REDIS_URL }}
+{{- if contains "@" $url }}{{ fail "config.REDIS_URL must carry no credential: the password is redis.passwordKey in the Secret" }}{{ end }}
+{{- $parts := splitn "://" 2 $url }}
+- name: REDIS_PASSWORD
+  valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: {{ .Values.redis.passwordKey }} } }
+- { name: REDIS_URL, value: {{ printf "%s://:$(REDIS_PASSWORD)@%s" $parts._0 $parts._1 | quote }} }
+{{- end }}
+{{- end }}
+
 {{/* Public addresses only (NetworkPolicy `to`): not the cluster, not private networks,
      not link-local (cloud metadata), not loopback or carrier-grade NAT. */}}
 {{- define "nuria.publicInternet" -}}

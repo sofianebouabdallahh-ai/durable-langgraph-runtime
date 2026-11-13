@@ -131,7 +131,7 @@ function Initialize-EnvFile {
     if ($line -match "^([A-Z0-9_]+)=change-me") { Set-EnvValue $Matches[1] (New-Secret); $changed++ }
   }
   # Secrets added by later versions: an existing .env gets them too (never overwritten).
-  foreach ($key in @("NURIA_SECRET_KEY", "SEARXNG_SECRET", "SANDBOXD_TOKEN")) {
+  foreach ($key in @("NURIA_SECRET_KEY", "SEARXNG_SECRET", "SANDBOXD_TOKEN", "REDIS_PASSWORD")) {
     if (-not (Get-EnvValue $key)) { Set-EnvValue $key (New-Secret); $changed++ }
   }
   if (-not (Get-EnvValue "NOTIFY_WEBHOOK_SECRET")) { Set-EnvValue "NOTIFY_WEBHOOK_SECRET" (New-WebhookSecret); $changed++ }
@@ -144,10 +144,12 @@ function Initialize-EnvFile {
 }
 function Select-Ports {
   $script:UiPortChosen = Select-Port "ui" 8080 "UI_PORT" 3000 $Port
-  $pg = Select-Port "postgres" 5432 "POSTGRES_PORT" 5432 0
-  $redis = Select-Port "redis" 6379 "REDIS_PORT" 6379 0
-  Set-EnvValue "REDIS_URL" "redis://localhost:$redis/0"
-  Ok "ports: app $script:UiPortChosen, Postgres $pg, Redis $redis (all on 127.0.0.1 only)"
+  # Postgres and Redis have no host port here (a network with no way out, H10); `make up`
+  # publishes them for development. REDIS_URL, with Redis's password, is for tools on this
+  # machine then; containers use redis:6379.
+  $redis = Get-EnvValue "REDIS_PORT"; if (-not $redis) { $redis = 6379 }
+  Set-EnvValue "REDIS_URL" "redis://:$(Get-EnvValue 'REDIS_PASSWORD')@localhost:$redis/0"
+  Ok "port: app $script:UiPortChosen (on 127.0.0.1 only; Postgres and Redis have no host port)"
 }
 function Read-Answer($q, $default = "") {
   if (-not $Interactive) { return $default }

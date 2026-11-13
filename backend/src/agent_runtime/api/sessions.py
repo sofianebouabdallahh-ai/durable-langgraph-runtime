@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 
 from agent_runtime.agents.schema import AgentDefinition
@@ -127,6 +127,7 @@ async def send_message(
     session_id: uuid.UUID,
     body: SendMessageRequest,
     service: SessionsDep,
+    request: Request,
     idempotency_key: Annotated[
         str | None,
         Header(
@@ -136,6 +137,12 @@ async def send_message(
         ),
     ] = None,
 ) -> TurnAccepted:
+    if (body.script is not None or body.subagent_scripts is not None) and (
+        request.app.state.settings.model_provider != "scripted"
+    ):
+        # The scripted test model's replies (R14.20): a real install has no use for them
+        # and would otherwise store whatever a caller sends in the run's input (H10).
+        raise HTTPException(422, "script is for the scripted test model")
     turn = await service.send(session_id, body.content, body.options, script=body.script,
                               subagent_scripts=body.subagent_scripts,
                               idempotency_key=idempotency_key)  # fmt: skip

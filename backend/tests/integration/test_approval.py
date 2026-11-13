@@ -14,13 +14,13 @@ from agent_runtime.config import Settings
 from agent_runtime.db import Pool
 from agent_runtime.graphs import default_registry
 from agent_runtime.queue import RedisWorkQueue
-from agent_runtime.runs.approvals import Approval, ApprovalRepository
+from agent_runtime.runs.approvals import Approval, ApprovalAsk, ApprovalRepository
 from agent_runtime.runs.events import EventType as E
 from agent_runtime.runs.executor import RunExecutor
 from agent_runtime.runs.service import RunService
 from agent_runtime.runs.state import RunStatus as S
 from agent_runtime.runs.store import NotWaitingForApproval, Run, RunTerminal
-from agent_runtime.tools.hooks import Continue, HookDecision, HookRegistry, ToolHookInput
+from agent_runtime.tools import invocations
 from agent_runtime.worker import Worker
 from tests.integration.support import events, wait_until
 
@@ -101,30 +101,26 @@ async def test_approving_a_run_that_is_not_waiting_is_rejected(
 
 
 async def test_crash_after_the_approved_side_effect_resumes_without_repeating_it(
-    pool: Pool, test_settings: Settings, checkpoint_tables: None
+    pool: Pool, test_settings: Settings, checkpoint_tables: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The dangerous window: worker A resumes after approval, sends the notification,
-    then dies before the step's checkpoint. The checkpoint still shows the pending
-    interrupt, so worker B resumes AGAIN, and the ledger must replay, not resend."""
+    """The dangerous window: worker A resumes after approval, sends the notification and
+    records it done, then dies before the step's checkpoint. The checkpoint still shows
+    the pending interrupt, so worker B resumes AGAIN, and the ledger must replay, not
+    resend. Since H10 the post_tool hooks run before the ledger write, so the window opens
+    right after `invocations.finish`, where a hook can no longer hold it."""
     fast = test_settings.model_copy(update={"lease_ttl_s": 1.0, "heartbeat_s": 0.3})
     run = await paused_run(pool, fast)
     await RunService(pool, fast, GRAPHS).decide_approval(run.id, "approve")
 
     hold = asyncio.Event()  # never set: worker A "dies" while holding here
-    stuck_hooks = HookRegistry()
+    real_finish = invocations.finish
 
-    @stuck_hooks.hook("redact_secrets_in_args", point="pre_tool")
-    async def passthrough(inp: ToolHookInput) -> HookDecision:
-        return Continue()
-
-    @stuck_hooks.hook("redact_secrets_in_result", point="post_tool", timeout_s=30)
-    async def die_here(inp: ToolHookInput) -> HookDecision:
+    async def finish_then_die(*args: Any, **kwargs: Any) -> None:
+        await real_finish(*args, **kwargs)
         await hold.wait()  # after execute + ledger, before the checkpoint
-        return Continue()
 
-    worker_a = asyncio.create_task(
-        RunExecutor(pool, fast, GRAPHS, owner="w-a:1", hooks=stuck_hooks).execute(run.id)
-    )
+    monkeypatch.setattr(invocations, "finish", finish_then_die)
+    worker_a = asyncio.create_task(RunExecutor(pool, fast, GRAPHS, owner="w-a:1").execute(run.id))
 
     async def recorded() -> bool:  # the side effect happened AND the ledger has it done
         async with pool.connection() as conn:
@@ -138,6 +134,7 @@ async def test_crash_after_the_approved_side_effect_resumes_without_repeating_it
     await wait_until(recorded, timeout_s=10)  # the side effect happened …
     worker_a.cancel()  # … and worker A died before checkpointing it
     await asyncio.gather(worker_a, return_exceptions=True)
+    monkeypatch.undo()  # worker B writes the ledger as usual
     await asyncio.sleep(fast.lease_ttl_s + 0.2)
 
     done = await RunExecutor(pool, fast, GRAPHS, owner="w-b:2").execute(run.id)
@@ -423,3 +420,49 @@ async def test_h1_the_api_decides_one_approval_by_id(
     assert twice.status_code == 409 and "approved, not pending" in twice.json()["detail"]
     last = await client.post(url, json={"decision": "approve", "approval_id": str(second.id)})
     assert last.status_code == 202 and last.json()["status"] == "queued"
+
+
+# ------------------------------------------------- the card says what it hides (H10)
+
+KEYED_SCRIPT: list[dict[str, Any]] = [
+    {"tool_calls": [{"name": "notify", "args": {"to": "ceo", "message": "use sk-" + "a" * 30}}]},
+    {"content": "Notified."},
+]
+
+
+async def test_h10_the_approval_keeps_how_many_values_its_card_hides(
+    pool: Pool, test_settings: Settings, checkpoint_tables: None
+) -> None:
+    """`hidden` travels from the interrupt to the row to the payload the person is shown;
+    an interrupt raised before H10 (no `hidden`) counts as hiding nothing."""
+    run = await started(pool, test_settings, NOTIFY_SCRIPT)
+    value: dict[str, Any] = {
+        "type": "tool_approval", "tool": "notify", "call_id": "c1", "hidden": 1,
+        "args": {"to": "ceo", "message": "key [REDACTED]"}, "args_hash": "0" * 64,
+        "reason": "external_side_effect",
+    }  # fmt: skip
+    older = {k: v for k, v in value.items() if k != "hidden"} | {"call_id": "c0"}
+    asks = [ApprovalAsk.of("i-new", value), ApprovalAsk.of("i-old", older)]
+    async with pool.connection() as conn, conn.transaction():
+        created = await ApprovalRepository(conn).ask(run.id, 1, asks)
+    assert [a.hidden for a in created] == [1, 0]
+    shown = created[0].payload()
+    assert shown["hidden"] == 1 and shown["args"] == {"to": "ceo", "message": "key [REDACTED]"}
+    assert {a.hidden for a in await pending_approvals(pool, run)} == {0, 1}
+
+
+async def test_h10_the_bundled_assistant_hides_nothing_on_its_card(
+    pool: Pool, test_settings: Settings, checkpoint_tables: None
+) -> None:
+    """With the pre_tool redaction on (every bundled agent), a key in a call's arguments is
+    masked before the hash binds them: the card shows the marker, the marker is what is
+    sent, so `hidden` is 0 and the card says nothing."""
+    run = await started(pool, test_settings, KEYED_SCRIPT)
+    paused = await RunExecutor(pool, test_settings, GRAPHS).execute(run.id)
+    assert paused.status is S.WAITING_APPROVAL and paused.interrupt_payload is not None
+    assert paused.interrupt_payload["args"]["message"] == "use [REDACTED]"
+    assert paused.interrupt_payload["hidden"] == 0
+    await RunService(pool, test_settings, GRAPHS).decide_approval(run.id, "approve")
+    done = await RunExecutor(pool, test_settings, GRAPHS).execute(run.id)
+    assert done.status is S.COMPLETED
+    assert await notifications(pool, run) == [{"recipient": "ceo", "message": "use [REDACTED]"}]

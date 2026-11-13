@@ -7,7 +7,7 @@ image:
 
 config:
   POSTGRES_HOST: my-server.postgres.database.azure.com # managed Postgres (not nuria-data)
-  REDIS_URL: rediss://my-cache.redis.cache.windows.net:6380/0
+  REDIS_URL: rediss://my-cache.redis.cache.windows.net:6380/0 # no credential here: its access key is REDIS_PASSWORD in the Secret
   MODEL_PROVIDER: openai
 
 ingress:
