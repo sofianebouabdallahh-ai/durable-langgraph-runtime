@@ -20,7 +20,7 @@ narrower sense), **refuted** (the code does not), **by design** (true, documente
 
 | # | Finding | Verdict | Where it's fixed |
 |---|---|---|---|
-| 2.1 | An address the model *searched for* passes the provenance check, because `_SEEN` looks for it in the whole stored `web_search` result, which carries the model's `query` | **confirmed**, the most serious item; the researcher helper has both tools; the existing test inserted a result without a `query` key | H10 2.1: only each hit's `url` counts |
+| 2.1 | An address the model *searched for* passes the provenance check, because `_SEEN` looks for it in the whole stored `web_search` result, which carries the model's `query` | **confirmed**, the most serious item; the researcher helper has both tools; the existing test inserted a result without a `query` key | H10 2.1: only each hit's `url` counts, and of the run's input only the person's `message` (a scripted replay on a real stack found the second) |
 | 2.2 | A trapped skill in French is scanned `clean` (English regexes) and enters the system prompt as plain text; imported agents' skills are never read by a person | **confirmed**; the scan header ("informs, doesn't protect") contradicts the use the prompt builder makes of it | H10 2.2: plain text only after a person approved exactly that version |
 | 2.3 | The README installs `v0.2.0`, 45 commits and H1–H8 behind | **confirmed** | H10 2.3: v0.3.0 after H9 merges, and a CI check that fails on drift |
 | 2.4 | The roadmap stopped on 2026-10-24 | **confirmed** | H10 2.3 |
@@ -61,9 +61,10 @@ narrower sense), **refuted** (the code does not), **by design** (true, documente
 
 ### What we did not do
 
-The replay scripts (annexes A to C) were not run here; they need the Compose stack. Their
-cases became regression tests in our own style (H10 task 0 and 2.1), which fail before the
-fix and pass after.
+The replay scripts (annexes A to C) were not run as received. Their cases became
+regression tests in our own style (H10 task 0 and 2.1), which fail before the fix and pass
+after, and the same chains were then replayed by hand on a running Compose stack
+([what that found](../progress/phase-H10.md#what-running-it-found)).
 
 ---
 
