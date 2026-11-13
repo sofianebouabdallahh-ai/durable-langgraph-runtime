@@ -17,7 +17,9 @@ DOCKER  := $(shell command -v docker 2>/dev/null || echo $(HOME)/.docker/bin/doc
 # Docker runs its credential helpers (docker-credential-desktop) from PATH; they sit
 # next to the docker binary, which may not be on PATH itself (Docker Desktop on macOS).
 export PATH := $(dir $(DOCKER)):$(PATH)
-COMPOSE := $(DOCKER) compose --file infra/compose/docker-compose.yml --env-file $(ENV_FILE)
+# The dev override publishes Postgres and Redis on 127.0.0.1; the tester stack (setup.sh,
+# the main file alone) doesn't (H10).
+COMPOSE := $(DOCKER) compose --file infra/compose/docker-compose.yml --file infra/compose/docker-compose.dev.yml --env-file $(ENV_FILE)
 
 # Python commands run inside backend/ with the locked environment (--frozen: never
 # re-resolve). BACKEND_ENV also loads .env, for commands that talk to services.
@@ -29,14 +31,14 @@ BACKEND_ENV := cd backend && uv run --frozen --env-file $(ENV_FILE)
 # With Node 24 installed natively, `cd frontend && pnpm …` works the same.
 UI_NODE_IMAGE := node:24.20.0-trixie-slim@sha256:50c3b2f6988dfc307b86e5301d69611af31f4789bdf232863b07d3b02fe55ae0
 UI_TTY := $(shell [ -t 0 ] && echo -it)
-# The Compose project the browser tests target (its network is <project>_default).
+# The Compose project the browser tests target (the UI and the fake model are on its `app` network).
 STACK := $(or $(COMPOSE_PROJECT_NAME),agent-runtime)
 UI_RUN = $(DOCKER) run --rm -v $(CURDIR)/frontend:/app -v agent-runtime-ui-node-modules:/app/node_modules \
 	-v agent-runtime-ui-pnpm:/pnpm -e COREPACK_HOME=/pnpm/corepack -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
 	-e npm_config_store_dir=/pnpm/store -w /app $(1) $(UI_NODE_IMAGE) sh -c 'corepack enable && $(2)'
 
 .DEFAULT_GOAL := help
-.PHONY: k8s-up k8s-build k8s-load k8s-secrets k8s-deploy k8s-all k8s-status k8s-down k8s-demo-podkill k8s-demo-drain k8s-demo-scale k8s-demo-upgrade k8s-demo-security k8s-lint help env hooks up down nuke ps logs setup image app-stop doctor demo-compose llm-up llm-down migrate migration api worker run-toy demo-crash demo-zombie demo-release demo-replicas demo-tools demo-approval demo-fanout demo-subagents demo-chat demo-chat-crash demo-chat-live chat demo-e2e ui-install ui-check ui-dev ui-api ui-pnpm ui-e2e lint fmt typecheck agents-validate test test-unit test-integration test-live coverage check
+.PHONY: k8s-up k8s-build k8s-load k8s-secrets k8s-deploy k8s-all k8s-status k8s-down k8s-demo-podkill k8s-demo-drain k8s-demo-scale k8s-demo-upgrade k8s-demo-security k8s-lint help env hooks up down nuke ps logs setup image app-stop doctor demo-compose llm-up llm-down migrate migration api worker run-toy demo-crash demo-zombie demo-release demo-replicas demo-tools demo-approval demo-fanout demo-subagents demo-chat demo-chat-crash demo-chat-live chat demo-e2e ui-install ui-check ui-dev ui-api ui-pnpm ui-e2e lint fmt typecheck agents-validate check-docs test test-unit test-integration test-live coverage check
 
 help: ## List targets
 	@grep -E '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -58,7 +60,7 @@ ui-api: ## Regenerate the UI's API types from the backend's OpenAPI spec
 # (H3: any other Host name gets 421), then `docker compose … up -d api ui`.
 ui-e2e: ## Browser tests (Playwright, in a container) against the running stack: ./setup.sh first
 	$(DOCKER) build -q -t agent-runtime-e2e:local frontend/e2e >/dev/null
-	$(DOCKER) run --rm --network $(STACK)_default -v /var/run/docker.sock:/var/run/docker.sock \
+	$(DOCKER) run --rm --network $(STACK)_app -v /var/run/docker.sock:/var/run/docker.sock \
 		-e COMPOSE_PROJECT=$(STACK) -e BASE_URL=http://ui:8080 -e LIVE_MODEL=$(LIVE_MODEL) \
 		-v $(CURDIR)/frontend/e2e/test-results:/e2e/test-results -v $(CURDIR)/frontend/e2e/playwright-report:/e2e/playwright-report \
 		agent-runtime-e2e:local $(ARGS)
@@ -71,6 +73,12 @@ env: ## Create .env from .env.example, or add keys that .env is missing (never o
 	@grep -E '^[A-Z_]+=' .env.example | while IFS='=' read -r key value; do \
 		grep -q "^$$key=" .env || { echo "$$key=$$value" >> .env; echo "added $$key to .env"; }; \
 	done
+	@# Redis asks for a password since H10; a REDIS_URL from before carries none: put it in.
+	@if grep -Eq '^REDIS_URL=redis://[^@]*$$' .env; then \
+		pw=$$(awk -F= '$$1=="REDIS_PASSWORD" { sub(/^[^=]*=/, ""); v=$$0 } END { print v }' .env); \
+		awk -v pw="$$pw" '/^REDIS_URL=redis:\/\/[^@]*$$/ { $$0 = "REDIS_URL=redis://:" pw "@" substr($$0, 19) } { print }' .env > .env.tmp \
+			&& cat .env.tmp > .env && rm -f .env.tmp && echo "put REDIS_PASSWORD into REDIS_URL in .env"; \
+	fi
 
 hooks: ## Install git pre-commit hooks (gitleaks, ruff, file hygiene)
 	uvx pre-commit@4.6.2 install
@@ -199,6 +207,9 @@ typecheck: ## mypy --strict
 agents-validate: ## Validate every agent definition in backend/agents (no services needed)
 	$(BACKEND) runtime agents validate
 
+check-docs: ## The README's tag, the roadmap and the CHANGELOG match VERSION and the plans
+	python3 scripts/check_docs.py
+
 # ------------------------------------------------------- local Kubernetes (kind, L4b)
 # The cluster, the images, the Secret, the charts: infra/kind/cluster.sh (tools pinned
 # in infra/kind/tools.sh, kept in .tools/). Nuria at http://localhost:$(or $(K8S_PORT),8090).
@@ -254,4 +265,4 @@ test-live: env ## Tests against the real local model (needs `make llm-up`); neve
 test: env ## All tests (needs `make up`)
 	cd backend && REQUIRE_SERVICES=1 uv run --frozen --env-file $(ENV_FILE) pytest
 
-check: lint typecheck agents-validate test ## Everything CI runs
+check: lint typecheck agents-validate check-docs test ## Everything CI runs

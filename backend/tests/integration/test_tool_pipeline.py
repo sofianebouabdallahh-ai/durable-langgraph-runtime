@@ -7,6 +7,7 @@ import pytest
 
 from agent_runtime.db import Pool
 from agent_runtime.fencing import Fence, FencedError
+from agent_runtime.redaction import known_secrets
 from agent_runtime.runs.approvals import args_hash
 from agent_runtime.runs.events import EventType as E
 from agent_runtime.runs.state import RunStatus
@@ -224,17 +225,89 @@ async def test_sc6_hook_deny_ask_and_fail_closed(pool: Pool, fence: Fence) -> No
     assert "hook_error:broken:RuntimeError" in failed.content and h.executions["echo"] == 1
 
 
-async def test_sc6_post_tool_redaction_also_applies_to_cached_results(
-    pool: Pool, fence: Fence
-) -> None:
+async def stored(pool: Pool, fence: Fence) -> list[tuple[str, Any]]:
+    """What the ledger holds for the run: (status, result) per call, oldest first."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT status, result FROM tool_invocations WHERE run_id = %s ORDER BY updated_at",
+            (fence.run_id,),
+        )
+        return [(r["status"], r["result"]) for r in await cur.fetchall()]
+
+
+async def test_h10_the_ledger_holds_what_the_model_was_shown(pool: Pool, fence: Fence) -> None:
+    """The post_tool hooks run before the ledger write: no row of tool_invocations holds a
+    value redact() would mask, and a replay can't give back what was never stored."""
     h = Harness()
     secret = "sk-" + "abcdefghijklmnopqrstuvwxyz0123"
-    await h.pipeline().run(call("echo", text=secret), h.ctx(fence, pool))  # stored unredacted
-    redact = default_hooks().get("redact_secrets_in_result")
-    replay = await h.pipeline().run(
-        call("echo", text=secret), h.ctx(fence, pool, post_hooks=[redact])
+    redacting = default_hooks().get("redact_secrets_in_result")
+    first = await h.pipeline().run(
+        call("echo", text=secret), h.ctx(fence, pool, post_hooks=[redacting])
     )
-    assert replay.cached and secret not in replay.content and "[REDACTED]" in replay.content
+    assert secret not in first.content and "[REDACTED]" in first.content
+    assert await stored(pool, fence) == [("done", {"text": "[REDACTED]"})]
+    bare = await h.pipeline().run(call("echo", text=secret), h.ctx(fence, pool))  # no hooks
+    assert bare.cached and secret not in bare.content and bare.content == first.content
+
+
+async def test_h10_a_key_nuria_holds_is_masked_in_the_ledger_and_the_events(
+    pool: Pool, fence: Fence
+) -> None:
+    """KnownSecrets: a value the runtime was given is masked whatever it looks like."""
+    held = "held-search-key-" + "7" * 24
+    known_secrets.add(held)
+    h = Harness()
+    redacting = default_hooks().get("redact_secrets_in_result")
+    out = await h.pipeline().run(
+        call("echo", text=f"the key is {held}"), h.ctx(fence, pool, post_hooks=[redacting])
+    )
+    assert held not in out.content and "[REDACTED]" in out.content
+    assert await stored(pool, fence) == [("done", {"text": "the key is [REDACTED]"})]
+    assert held not in str(h.events)  # tool.called summarises the args redacted
+
+
+async def test_sc6_post_tool_hooks_also_run_on_cached_results(pool: Pool, fence: Fence) -> None:
+    """A hook added since a result was stored still applies to it; what it changes is what
+    is shown, not what is stored."""
+    hooks = HookRegistry()
+
+    @hooks.hook("tag", point="post_tool")
+    async def tag(inp: ToolHookInput) -> HookDecision:
+        return Modify({"tagged": inp.result, "cached": inp.cached})
+
+    h = Harness()
+    await h.pipeline().run(call("echo", text="x"), h.ctx(fence, pool))
+    replay = await h.pipeline().run(
+        call("echo", text="x"), h.ctx(fence, pool, post_hooks=[hooks.get("tag")])
+    )
+    assert replay.cached and h.executions["echo"] == 1
+    assert replay.content == as_data("echo", '{"tagged": {"text": "x"}, "cached": true}')
+    assert await stored(pool, fence) == [("done", {"text": "x"})]
+
+
+async def test_h10_a_result_a_hook_withholds_is_never_stored(pool: Pool, fence: Fence) -> None:
+    """A post_tool deny is kept as a failed call with the note in the result's place: a
+    replay withholds it too, even once the hook is gone."""
+    hooks = HookRegistry()
+
+    @hooks.hook("withhold", point="post_tool")
+    async def withhold(inp: ToolHookInput) -> HookDecision:
+        return Deny("not for the model")
+
+    h = Harness()
+    held = await h.pipeline().run(
+        call("echo", text="private"), h.ctx(fence, pool, post_hooks=[hooks.get("withhold")])
+    )
+    assert held.status == "error" and held.stage == "post_tool"
+    assert "result withheld by hook: not for the model" in held.content
+    note = {"error": "result withheld by hook: not for the model"}
+    assert await stored(pool, fence) == [("failed", note)]
+    later = await h.pipeline().run(call("echo", text="private"), h.ctx(fence, pool))  # hook gone
+    assert later.cached and later.status == "error" and "private" not in later.content
+    assert later.content == as_data(
+        "echo", '{"error": "result withheld by hook: not for the model"}'
+    )
+    assert h.executions["echo"] == 1
 
 
 async def test_external_side_effects_need_approval_and_edits_are_applied(
@@ -292,6 +365,28 @@ async def test_h1_the_approval_carries_the_hash_of_the_real_args(pool: Pool, fen
     assert token not in str(asked["args"])  # the person is shown the redacted args…
     assert asked["args_hash"] == args_hash({"to": "ceo", "message": f"key {token}"})  # …bound
     assert asked["call_id"] == "c0"
+
+
+async def test_h10_the_card_says_how_many_values_it_hides(pool: Pool, fence: Fence) -> None:
+    """The card shows the arguments redacted and `hidden` says how many values that masked:
+    the real call sends them as they are (the hash binds it). With the pre_tool redaction
+    on (the default), the marker is in the real arguments and nothing is hidden."""
+    h = Harness(resume={"decision": "approve"})
+    token = "sk-" + "abcdefghijklmnopqrstuvwxyz0123"
+    await h.pipeline().run(call("notify", to="ceo", message=f"key {token}"), h.ctx(fence, pool))
+    asked = h.interrupts[0]
+    assert asked["args"] == {"to": "ceo", "message": "key [REDACTED]"} and asked["hidden"] == 1
+    assert asked["args_hash"] == args_hash({"to": "ceo", "message": f"key {token}"})
+    assert await sent(pool, fence) == [{"recipient": "ceo", "message": f"key {token}"}]  # as is
+
+    redacting = default_hooks().get("redact_secrets_in_args")
+    await h.pipeline().run(
+        call("notify", 1, to="ceo", message=f"key {token}"),
+        h.ctx(fence, pool, pre_hooks=[redacting]),
+    )
+    again = h.interrupts[1]
+    assert again["args"] == {"to": "ceo", "message": "key [REDACTED]"} and again["hidden"] == 0
+    assert again["args_hash"] == args_hash({"to": "ceo", "message": "key [REDACTED]"})
 
 
 async def test_h1_a_call_that_changed_after_approval_is_not_run(pool: Pool, fence: Fence) -> None:
@@ -376,7 +471,8 @@ async def test_sc10_large_results_are_truncated_for_the_model(pool: Pool, fence:
             (fence.run_id,),
         )
         row = await cur.fetchone()
-        assert row is not None and row["n"] > 100_000  # stored in full (under the 256 KB cap)
+        # The hooked result, whole (under the 256 KB cap): truncation is for the model only
+        assert row is not None and row["n"] > 100_000
 
 
 async def test_a_failing_tool_is_an_error_and_is_not_retried_on_replay(

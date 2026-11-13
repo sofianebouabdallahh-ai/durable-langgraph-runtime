@@ -25,6 +25,12 @@ Only public LangGraph API is used: a short-lived AsyncPostgresSaver is bound to
 the connection that holds our transaction, and its own aput/aput_writes run
 inside it. No private methods are overridden, so LangGraph upgrades can't
 silently bypass the fence.
+
+The wrapped methods are the saver's public write coroutines (`aput`, `aput_writes`,
+`adelete_thread`). `tests/unit/test_checkpointing_fence.py` pins that list against
+the installed LangGraph (H10): a dependency bump that implements another write
+(`aprune`, `acopy_thread`, `adelete_for_runs` are stubs today) fails that test until
+it is wrapped here too.
 """
 
 from __future__ import annotations

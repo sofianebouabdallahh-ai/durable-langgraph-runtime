@@ -92,13 +92,13 @@ secrets() {
   # never on the command line, never printed (R10.4).
   [ -f "$ENV_FILE" ] || { echo "no $ENV_FILE: run ./setup.sh (or make env) first" >&2; exit 1; }
   local tmp key value
-  for key in SEARXNG_SECRET SANDBOXD_TOKEN; do  # added in L6: an older .env lacks them
+  for key in SEARXNG_SECRET SANDBOXD_TOKEN REDIS_PASSWORD; do  # added in L6 and H10: an older .env lacks them
     [ -n "$(env_get "$key")" ] || { echo "$ENV_FILE has no $key: run ./setup.sh once to add it" >&2; exit 1; }
   done
   tmp=$(mktemp)
   chmod 600 "$tmp"
   for key in POSTGRES_PASSWORD API_POSTGRES_PASSWORD WORKER_POSTGRES_PASSWORD NURIA_SECRET_KEY \
-             SEARXNG_SECRET SANDBOXD_TOKEN OPENAI_API_KEY NOTIFY_WEBHOOK_SECRET \
+             REDIS_PASSWORD SEARXNG_SECRET SANDBOXD_TOKEN OPENAI_API_KEY NOTIFY_WEBHOOK_SECRET \
              GRAFANA_ADMIN_PASSWORD; do
     value=$(env_get "$key")
     value=${value#\'}; value=${value%\'}; value=${value#\"}; value=${value%\"}

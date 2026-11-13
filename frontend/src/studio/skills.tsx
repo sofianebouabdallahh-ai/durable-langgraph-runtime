@@ -40,6 +40,8 @@ export function SkillPicker({
   const [picks, setPicks] = useState(0);
   const byName = new Map((library.data ?? []).map((s) => [s.name, s]));
   const available = (library.data ?? []).filter((s) => !value.includes(s.name));
+  // Attached skills nobody has read yet (H10): used as data until then, so said, not blocked.
+  const unread = value.filter((n) => byName.get(n)?.approved === false);
   const attach = (name: string) => {
     onChange([...value, name], [...always]);
   };
@@ -64,6 +66,16 @@ export function SkillPicker({
           />
         ))}
       </ul>
+      {unread.length > 0 && (
+        <p className="mt-2 text-xs text-amber-800 dark:text-amber-300" data-testid="skills-unread">
+          {unread.length === 1 ? "1 skill waits" : `${String(unread.length)} skills wait`} for your review: used as data until you've read{" "}
+          {unread.length === 1 ? "it" : "them"} on the{" "}
+          <a href={href({ page: "skills" })} className="underline">
+            Skills page
+          </a>
+          .
+        </p>
+      )}
       {!readOnly && (
         <label className="mt-2 block text-sm">
           <span className="sr-only">Add a skill to {label.toLowerCase()}</span>
@@ -172,6 +184,7 @@ function AttachedSkill({
           <span className="font-mono text-[13px] font-medium">{name}</span>
           {!skill && <Pill tone="rose">Not in the library</Pill>}
           {scan && skill?.scan.status !== "clean" && <Pill tone={scan.tone}>{scan.label}</Pill>}
+          {skill && !skill.approved && <Pill tone="amber">Waits for your review</Pill>}
           {skill?.files.some((f) => f.kind === "script") && (
             <Pill tone="amber">
               <Code2 aria-hidden className="size-3" /> Has code: never runs

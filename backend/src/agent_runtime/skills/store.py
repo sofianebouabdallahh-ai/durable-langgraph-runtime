@@ -1,8 +1,11 @@
-"""Skills in Postgres (migration 0012): the library, its versions, their files.
+"""Skills in Postgres (migration 0012): the library, its versions, their files; and
+(0029, phase H10) which versions a person has read.
 
 Pattern: content-addressed storage (like agent bundles). A version's key is its
 content hash, files are keyed by their sha256, and both are insert-only: the same
-content is stored once, and nothing written can change (grants enforce it).
+content is stored once, and nothing written can change (grants enforce it). An approval
+is keyed by the same hash (content-addressed approval, as H1's approval of a tool call is
+bound to its arguments): an edit makes a new hash, and the approval lapses with the text.
 """
 
 from __future__ import annotations
@@ -54,6 +57,10 @@ class SkillVersion:
     files: list[dict[str, Any]]  # the manifest: path, sha256, size, kind
     scan: dict[str, Any]  # {status, findings}
     created_at: datetime
+    # A person read exactly this version (skill_approvals, H10 2.2). The scan informs; this
+    # decides, with it, whether an Always-use skill is plain text in the prompt (R14.15).
+    # Unread until proven otherwise: the safe default for a version built by hand.
+    approved: bool = False
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> SkillVersion:
@@ -69,7 +76,12 @@ _LATEST_SCAN = (
     "coalesce((SELECT sc.scan FROM skill_scans sc WHERE sc.hash = skill_versions.hash "
     "ORDER BY sc.rules DESC LIMIT 1), skill_versions.scan) AS scan"
 )
-_VERSION = f"hash, name, description, instructions, meta, files, {_LATEST_SCAN}, created_at"
+_APPROVED = (
+    "EXISTS (SELECT 1 FROM skill_approvals ap WHERE ap.hash = skill_versions.hash) AS approved"
+)
+_VERSION = (
+    f"hash, name, description, instructions, meta, files, {_LATEST_SCAN}, created_at, {_APPROVED}"
+)
 
 
 class SkillStore:
@@ -206,6 +218,25 @@ class SkillStore:
             "ON CONFLICT (hash, rules) DO NOTHING",  # another replica checked it first
             (digest, report.as_json()["rules"], Jsonb(report.as_json())),
         )
+
+    # --------------------------------------------------------------- approvals
+
+    async def approve(self, digest: str, note: str | None = None) -> bool:
+        """A person has read exactly this version (H10 2.2). Insert-only and idempotent:
+        True when this call approved it, False when it already was."""
+        cur = await self._conn.execute(
+            "INSERT INTO skill_approvals (hash, note) VALUES (%s, %s) "
+            "ON CONFLICT (hash) DO NOTHING RETURNING hash",
+            (digest, note),
+        )
+        return await cur.fetchone() is not None
+
+    async def approved(self, digests: Iterable[str]) -> set[str]:
+        """Which of these version hashes a person has read."""
+        cur = await self._conn.execute(
+            "SELECT hash FROM skill_approvals WHERE hash = ANY(%s)", (list(digests),)
+        )
+        return {r["hash"] for r in await cur.fetchall()}
 
     async def file(self, sha256: str) -> bytes:
         cur = await self._conn.execute("SELECT data FROM skill_files WHERE sha256 = %s", (sha256,))

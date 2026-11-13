@@ -11,17 +11,27 @@ Pattern: Chain of Responsibility with a FIXED order (CR-004 R15.7):
                   (the run pauses durably; on resume LangGraph re-runs this whole pipeline and
                   interrupt() returns the human's decision for THIS call: it runs only if the
                   approved args hash matches; approved edits go through validation, the
-                  pre_tool hooks and the policy again — phase H1)
-    7+8 ledger    idempotency key = sha256(run · node · call_index · tool): the call's place,
-                  never its contents, so a deploy that changes its arguments' defaults can't
-                  give a done call a new key (H7); the arguments' hash is kept apart;
-                  budgets checked and charged only when a key is first recorded (R14.1, R2.6);
-                  a budget used up denies the call (a tool error), it doesn't fail the run
+                  pre_tool hooks and the policy again — phase H1). The card shows the args
+                  redacted and says how many values that hid (H10); the hash binds the real
+                  ones
+    7+8 ledger    a call is identified by its PLACE: `call_key` = sha256(run · node ·
+                  call_index · tool), which the ledger looks up first (H7), so a deploy that
+                  changes its arguments' defaults can't make a done call a new one; the `key`
+                  column still carries the canonical arguments as well, so a worker from
+                  before H7 finds its calls during a rolling deploy (see `idempotency_key`);
+                  the arguments' own hash is kept apart; budgets checked and charged only
+                  when a key is first recorded (R14.1, R2.6); a budget used up denies the
+                  call (a tool error), it doesn't fail the run
                   done → cached result, no execution; in_progress at an older epoch → re-execute
                   with the SAME key, which the tool uses to dedupe its own effect
     9 execute     in-process (phase 7 adds isolation: sandbox), with a timeout (R14.5)
-   10 post_tool   hooks: continue · modify(result) · deny        (also for cached results)
-   11 truncate    ≤ max_result_chars to the model, with a marker (R14.5)
+   10 post_tool   hooks: continue · modify(result) · deny, BEFORE the ledger write (H10): the
+                  ledger holds what the model is shown, never what a hook took out; a deny
+                  is stored as a failed call with the withholding note in the result's place.
+                  They run again on a cached or replayed result (a hook added since still
+                  applies; a redaction is idempotent)
+   11 truncate    ≤ max_result_chars to the model, with a marker (R14.5); the ledger keeps
+                  the hooked result whole, up to max_stored_chars
    12 mark        as untrusted data, in delimiters the text can't close (R14.15)
 
 Every non-trivial decision is staged as an audit event (R14.17), committed with
@@ -49,7 +59,7 @@ from pydantic import ValidationError
 from agent_runtime import genai, logs, telemetry
 from agent_runtime.db import Conn, Pool
 from agent_runtime.fencing import Fence
-from agent_runtime.redaction import redact
+from agent_runtime.redaction import redact, redact_counted
 from agent_runtime.runs import approvals
 from agent_runtime.runs.events import EventType
 from agent_runtime.tools import invocations
@@ -128,14 +138,14 @@ def call_key(run_id: uuid.UUID, call: ToolCall) -> str:
 
 
 def idempotency_key(run_id: uuid.UUID, call: ToolCall, args: dict[str, Any]) -> str:
-    """R2.6: the key a call is recorded under and its tool dedupes by. Deliberately
+    """R2.6: the `key` column a call is recorded under and its tool dedupes by. Deliberately
     excludes the epoch: a retry after reclaim finds the same key.
 
-    It still hashes the arguments, as before H7, so that a worker on the release before
-    finds every call a newer one made (rolling upgrades, rollbacks: expand/contract).
-    Newer code finds a call by its `call_key` first, so a change of arguments doesn't
-    make it a new call; once no worker older than H7 is left, the key can become the
-    `call_key` (the contract step)."""
+    Since H7 a call is identified by its place, `call_key` (run · node · index · name),
+    which `invocations.begin` looks up first; this key still hashes the canonical arguments
+    as well, exactly as before H7, so a worker on the release before finds the calls a
+    newer one recorded during a rolling deploy (expand/contract). Once no worker older than
+    H7 is left, this can become `call_key` (the contract step)."""
     material = f"{run_id}·{call.node}·{call.index}·{call.name}·{_canonical(args)}"
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
@@ -262,11 +272,13 @@ class ToolPipeline:
                     },
                 )
             asked = approvals.args_hash(args)  # the call being asked: real args
+            shown, hidden = redact_counted(args)  # the card says what it hides (H10)
             resume = self._interrupt(
                 {
                     "type": approvals.APPROVAL_TYPE,
                     "tool": spec.name,
-                    "args": redact(args),
+                    "args": shown,
+                    "hidden": hidden,
                     "call_id": call.id,
                     "reason": reason,
                     "args_hash": asked,
@@ -328,7 +340,11 @@ class ToolPipeline:
         cached = isinstance(begun, invocations.Cached)
         t0 = time.monotonic()
         if isinstance(begun, invocations.Cached):
-            status, result = begun.status, begun.result
+            # 10 post_tool hooks, on a stored result too: a hook added since it was stored
+            # still applies, and a redaction is idempotent.
+            status, result, withheld = await self._filtered(
+                call, args, begun.status, begun.result, True, ctx
+            )
         else:
             # 9 execute
             self._at("execute")
@@ -373,6 +389,10 @@ class ToolPipeline:
                         settings=ctx.settings,
                     ),
                 )
+            # 10 post_tool hooks, BEFORE the ledger write (H10): the ledger holds what the
+            # model is shown, so a replay is byte for byte what the model saw, and nothing
+            # a hook took out is ever stored.
+            status, result, withheld = await self._filtered(call, args, status, result, False, ctx)
             async with ctx.pool.connection() as conn:
                 await invocations.finish(
                     conn,
@@ -392,40 +412,51 @@ class ToolPipeline:
             },
         )
 
-        return await self._shown(call, args, status, result, cached, ctx)
+        return self._shown(call, status, result, cached, withheld)
 
     async def replay(
         self, call: ToolCall, status: Literal["done", "failed"], result: Any, ctx: ToolRunContext
     ) -> ToolResult:
         """A result the ledger kept for a call the previous turn never answered (H7), as
         the model would have seen it then: the post_tool hooks, truncated, marked."""
-        return await self._shown(call, call.args, status, result, True, ctx)
+        status, result, withheld = await self._filtered(call, call.args, status, result, True, ctx)
+        return self._shown(call, status, result, True, withheld)
 
-    async def _shown(
+    async def _filtered(
         self,
         call: ToolCall,
         args: dict[str, Any],
-        status: str,
+        status: Literal["done", "failed"],
         result: Any,
         cached: bool,
         ctx: ToolRunContext,
-    ) -> ToolResult:
-        """Stages 10 to 12: what the model is shown of a result."""
-        # 10 post_tool hooks (also on cached results: a redaction must never be skipped)
+    ) -> tuple[Literal["done", "failed"], Any, Deny | None]:
+        """Stage 10, the post_tool hooks (Pattern: Pipes and Filters): what they let through
+        is what the ledger stores and the model is shown. A deny withholds the result: the
+        call is kept as failed, with the note in the result's place, so a replay withholds
+        it too and the data a hook refused is nowhere."""
         self._at("post_tool")
         post = await run_hooks(ctx.post_hooks, ToolHookInput(call.name, args, result, cached))
         self._audit_hooks(ctx, call, post.audit)
         if isinstance(post.decision, Deny):
+            note = {"error": f"result withheld by hook: {post.decision.reason}"}
+            return "failed", note, post.decision
+        return status, post.input.result, None
+
+    def _shown(
+        self, call: ToolCall, status: str, result: Any, cached: bool, withheld: Deny | None
+    ) -> ToolResult:
+        """Stages 11 and 12: what the model is shown of a filtered result."""
+        if withheld is not None:
             return ToolResult(
-                f"Error: result withheld by hook: {post.decision.reason}",
+                f"Error: result withheld by hook: {withheld.reason}",
                 "error",
                 cached=cached,
                 stage="post_tool",
             )
-
         # 11 truncate
         self._at("truncate")
-        content = truncate(json.dumps(post.input.result, default=str), self._max_result)
+        content = truncate(json.dumps(result, default=str), self._max_result)
         # 12 mark: whatever the tool returned is data, never instructions
         self._at("mark")
         content = as_data(call.name, content)

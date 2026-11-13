@@ -44,6 +44,7 @@ spec:
               valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: API_POSTGRES_PASSWORD } }
             - name: API_POSTGRES_PASSWORD
               valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: API_POSTGRES_PASSWORD } }
+            {{- include "nuria.redisEnv" . | nindent 12 }}
             - name: NURIA_SECRET_KEY
               valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: NURIA_SECRET_KEY } }
             - name: OPENAI_API_KEY

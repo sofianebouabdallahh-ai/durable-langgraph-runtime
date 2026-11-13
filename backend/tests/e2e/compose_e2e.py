@@ -13,6 +13,9 @@ under their least-privilege database logins.
     outage     docker restart Postgres mid-turn: the turn completes, its side effect once (H4)
     notify     an approved notification reaches the webhook once, signed, after a retry
                (H4; profile `test`; NOTIFY_WEBHOOK_URL=http://fake-model:9999/webhook)
+    tiers      the networks hold: from SearXNG and the page reader, Postgres, Redis, the
+               API and sandboxd are unreachable; Redis refuses a command without its
+               password; Postgres and Redis have no way out (H10)
 
 Usage (the stack must be up):
     COMPOSE_PROJECT_NAME=agent-runtime UI_PORT=3000 \\
@@ -452,6 +455,113 @@ def notify() -> bool:
     return not c.failed
 
 
+def _addresses(service: str) -> list[str]:
+    """Every address the service's containers have, on every network they're on."""
+    project = os.environ.get("COMPOSE_PROJECT_NAME", "agent-runtime")
+    ids = subprocess.run(
+        [DOCKER, "ps", "-q", "--filter", f"label=com.docker.compose.project={project}",
+         "--filter", f"label=com.docker.compose.service={service}"],
+        capture_output=True, text=True,
+    ).stdout.split()  # fmt: skip
+    if not ids:
+        return []
+    addresses = subprocess.run(
+        [DOCKER, "inspect", "--format",
+         "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}", *ids],
+        capture_output=True, text=True,
+    ).stdout  # fmt: skip
+    return addresses.split()
+
+
+_PROBE = """
+import socket
+def answers(host, port):
+    try:
+        socket.create_connection((host, port), timeout=2).close()
+        return True
+    except OSError:
+        return False
+for name, port, hosts in {targets!r}:
+    for host in hosts:
+        if answers(host, port):
+            print("OPEN", name, host)
+print("CONTROL", answers("127.0.0.1", {own}))
+"""
+
+
+def _probe(service: str, python: str, own: int, hosts: dict[str, list[str]],
+           ports: dict[str, int]) -> str:  # fmt: skip
+    """From inside `service`'s running container: which of `hosts` answer on their port
+    (`OPEN name host` each), then `CONTROL True` if its own port answers. The control is
+    the point: a probe that can't open a socket at all (a missing tool, an option the
+    image's build doesn't have) finds everything "unreachable" and proves nothing."""
+    script = _PROBE.format(targets=[(n, ports[n], hosts[n]) for n in hosts], own=own)
+    return compose("exec", "-T", service, python, "-c", script, check=False)
+
+
+def tiers() -> bool:
+    """H10: the networks hold. SearXNG and the page reader take in the internet's pages,
+    so from them Postgres, Redis and sandboxd must neither resolve nor answer, by name or
+    by address, and from the page reader the API must not either. Redis must refuse a
+    command without its password and take one with it; Postgres and Redis must have no way
+    out, while a worker (on `egress` too) still resolves public names.
+
+    Not claimed, because it doesn't hold on Compose: SearXNG can open the API's port. The
+    API asks SearXNG (Settings → Tools' test), a Docker network has no direction, and so
+    the two share `egress` (docs/security.md says so; the chart's NetworkPolicies close it
+    on Kubernetes)."""
+    c = Check("the network tiers hold (H10)")
+    ports = {"postgres": 5432, "redis": 6379, "api": 8000, "sandboxd": 8070}
+    hosts = {name: [name, *_addresses(name)] for name in ports}
+    if len(hosts["sandboxd"]) == 1:  # the `sandbox` profile: not in this helper's `compose`
+        c("sandboxd runs (setup without --no-sandbox)", False)
+    # From SearXNG (a third-party image, with its callers on `egress`): its own Python.
+    walled = {name: hosts[name] for name in ("postgres", "redis", "sandboxd")}
+    out = _probe("searxng", "python3", 8080, walled, ports)
+    c("control: the probe sees an open port from SearXNG (its own)", "CONTROL True" in out,
+      out.strip()[-160:])  # fmt: skip
+    for name in walled:
+        c(f"from SearXNG, {name}:{ports[name]} is unreachable ({len(hosts[name])} names/addresses)",
+          f"OPEN {name} " not in out and "CONTROL" in out, out.strip()[:160])  # fmt: skip
+    # From the page reader (on `reader`, with the workers alone).
+    out = _probe("fetcher", "python", 8090, hosts, ports)
+    c("control: the probe sees an open port from the page reader (its own)",
+      "CONTROL True" in out, out.strip()[-160:])  # fmt: skip
+    for name in hosts:
+        c(f"from the page reader, {name}:{ports[name]} is unreachable "
+          f"({len(hosts[name])} names/addresses)",
+          f"OPEN {name} " not in out and "CONTROL" in out, out.strip()[:160])  # fmt: skip
+    # Redis's password, from an API container (on `data`, with redis-py).
+    auth = (
+        "import os, redis\n"
+        "try:\n"
+        "    redis.Redis(host='redis', socket_connect_timeout=3).ping(); print('OPEN')\n"
+        "except redis.exceptions.AuthenticationError:\n"
+        "    print('NOAUTH')\n"
+        "print('WITH', redis.Redis.from_url(os.environ['REDIS_URL'], "
+        "socket_connect_timeout=3).ping())\n"
+    )
+    out = compose("exec", "-T", "api", "python", "-c", auth, check=False)
+    c("Redis refuses a command without its password", "NOAUTH" in out, out.strip()[:120])
+    c("…and takes one with it", "WITH True" in out, out.strip()[:120])
+    # No way out of `data`: no public name resolves, no route to the internet.
+    out = compose("exec", "-T", "redis", "sh", "-c",
+                  "nslookup example.com >/dev/null 2>&1 && echo RESOLVED; "
+                  "nc -zw3 1.1.1.1 443 && echo OPEN; true", check=False)  # fmt: skip
+    c("Redis has no way out", not {"RESOLVED", "OPEN"} & set(out.split()), out.strip()[:120])
+    out = compose("exec", "-T", "postgres", "bash", "-c",
+                  "getent hosts example.com >/dev/null && echo RESOLVED; "
+                  "timeout 3 bash -c 'echo > /dev/tcp/1.1.1.1/443' 2>/dev/null && echo OPEN; "
+                  "true", check=False)  # fmt: skip
+    c("Postgres has no way out", not {"RESOLVED", "OPEN"} & set(out.split()), out.strip()[:120])
+    control = compose("exec", "-T", "worker", "python", "-c",
+                      "import socket; socket.getaddrinfo('example.com', 443); print('RESOLVED')",
+                      check=False)  # fmt: skip
+    c("control: a worker (on `egress` too) resolves public names", "RESOLVED" in control,
+      control.strip()[:120])  # fmt: skip
+    return not c.failed
+
+
 SCENARIOS = {
     "crash": crash,
     "graceful": graceful,
@@ -461,6 +571,7 @@ SCENARIOS = {
     "outsiders": outsiders,
     "outage": outage,
     "notify": notify,
+    "tiers": tiers,
 }
 
 

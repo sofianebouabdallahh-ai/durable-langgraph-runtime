@@ -1,6 +1,8 @@
 """RunExecutor end to end on Postgres with the `toy` graph."""
 
 import asyncio
+import uuid
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -179,3 +181,32 @@ async def test_create_run_validation(service: RunService) -> None:
         await service.create_run("toy", {"question": "q"}, {"max_stepz": 3})
     with pytest.raises(LimitAboveCeiling, match="max_steps=999 exceeds the server maximum"):
         await service.create_run("toy", {"question": "q"}, {"max_steps": 999})
+
+
+async def test_a_run_cancelled_between_the_lease_and_its_start_is_terminal(
+    pool: Pool, settings_fast: Settings, service: RunService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """H10: Stop pressed just after the worker took the lease, while the run was still
+    `queued`: the API ends it at once, and the worker's queued → running transition finds
+    it cancelled. That is a run that ended before we got to it (RunTerminal, which the
+    worker acks), not an error that leaves the message to the reaper."""
+    run = await service.create_run("toy", {"question": "q"})
+    real = RunRepository.acquire_lease
+
+    async def then_cancelled(
+        self: RunRepository, run_id: uuid.UUID, *args: Any, **kwargs: Any
+    ) -> Any:
+        lease = await real(self, run_id, *args, **kwargs)
+        if lease is not None:
+            async with pool.connection() as conn:  # the API, in the gap
+                cancelled = await RunRepository(conn).request_cancel(run_id)
+                assert cancelled.status is S.CANCELLED  # still queued: ended at once
+        return lease
+
+    monkeypatch.setattr(RunRepository, "acquire_lease", then_cancelled)
+    with pytest.raises(RunTerminal, match="cancelled"):
+        await executor(pool, settings_fast).execute(run.id)
+    async with pool.connection() as conn:
+        done = await RunRepository(conn).get(run.id)
+    assert (done.status, done.reason, done.owner) == (S.CANCELLED, "cancel_requested", None)
+    assert (E.RUN_STARTED, None) not in summary(await events(pool, run.id))  # never started

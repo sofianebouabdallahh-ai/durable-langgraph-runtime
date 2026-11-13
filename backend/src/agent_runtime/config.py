@@ -16,6 +16,8 @@ from typing import Literal, Self
 from pydantic import BaseModel, Field, SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from agent_runtime.redaction import known_secrets
+
 _ENV_ONLY = SettingsConfigDict(
     env_file=None,  # environment only (R9.1)
     case_sensitive=False,
@@ -44,7 +46,10 @@ class AgentSettings(BaseSettings):
     run_timeout_s: int = Field(default=20 * 60, gt=0)
     run_max_steps: int = Field(default=200, gt=0)
     run_max_children: int = Field(default=6, gt=0)  # per fan-out (R2.9); options may lower it
-    run_max_depth: int = Field(default=2, ge=0)  # parent → child → grandchild (R14.6)
+    # parent → child → grandchild (R14.6). Never above 2: the budget roll-up charges the run,
+    # its parent and its root (tools/invocations.py `_lock_chain`, runs/store.py `add_usage`:
+    # three rows), so a deeper tree would skip an ancestor (H10).
+    run_max_depth: int = Field(default=2, ge=0, le=2)
     run_max_descendants: int = Field(default=20, gt=0)  # per root run (R14.6)
     queue_depth_limit: int = Field(default=100, gt=0)  # at this many queued, POST /runs → 429
     queue_depth_cache_s: float = Field(default=1.0, ge=0)  # per API replica
@@ -117,6 +122,11 @@ class Settings(AgentSettings):
     session_idle_ttl_s: float = Field(default=24 * 3600, gt=0)  # then archived (R15.6)
     session_sweep_s: float = Field(default=60.0, gt=0)  # how often workers look for idle ones
     relay_stale_s: float = Field(default=30.0, gt=0)  # re-send a queued run's message after this
+    # Retention (H10): a run that ended more than this many days ago loses its details
+    # (its events and tool calls: runs/retention.py); the run, the chat, its notes and the
+    # audit trail stay. 0 keeps everything.
+    retention_days: int = Field(default=90, ge=0)
+    retention_sweep_s: float = Field(default=3600.0, gt=0)  # how often workers look
 
     # Streaming (R2.5, §5). Pub/Sub is only a wake-up hint; Postgres is the record.
     stream_ping_s: float = Field(default=15.0, gt=0)  # SSE keep-alive comment (§5)
@@ -218,6 +228,18 @@ class Settings(AgentSettings):
     # A run released because Postgres or Redis failed is tried again this many times,
     # then ends failed(infrastructure) (H4, runs/failures.py).
     max_infra_retries: int = Field(default=5, ge=0)
+
+    @model_validator(mode="after")
+    def _known_to_redaction(self) -> Self:
+        # H10: every secret these settings hold (the sandboxd token, the webhook secret, a
+        # provider key, the master key, the database password) is masked wherever
+        # `redact()` runs, whatever it looks like.
+        known_secrets.add(*(
+            value.get_secret_value()
+            for value in (getattr(self, name) for name in type(self).model_fields)
+            if isinstance(value, SecretStr)
+        ))  # fmt: skip
+        return self
 
     @model_validator(mode="after")
     def _heartbeat_fits_in_lease(self) -> Self:

@@ -6,6 +6,7 @@ import asyncio
 import json
 import uuid
 from collections.abc import AsyncIterator
+from datetime import datetime
 from typing import Any
 
 import psycopg
@@ -33,6 +34,7 @@ from agent_runtime.streaming.bus import EventBus, RedisEventBus
 from agent_runtime.tools.hooks import (
     Context,
     Deny,
+    Summary,
     default_hooks,
 )
 from agent_runtime.tools.middleware import call_index
@@ -514,3 +516,87 @@ async def test_the_demo_model_answers_free_text_with_its_tools(
     help_turn = await service.send(sid, "hello there")  # nothing matches: how to use it
     await RunExecutor(pool, test_settings, GRAPHS).execute(help_turn.run.id)
     assert "demo model" in (await transcript(pool, sid))[-1].content["text"]
+
+
+# ------------------------------------------------------------- hardening (H10)
+
+
+async def _lease_expiry(pool: Pool, run_id: uuid.UUID) -> datetime | None:
+    async with pool.connection() as conn:
+        cur = await conn.execute("SELECT lease_expires_at FROM runs WHERE id = %s", (run_id,))
+        row = await cur.fetchone()
+    return row["lease_expires_at"] if row else None
+
+
+async def test_session_end_hooks_run_under_the_lease(
+    pool: Pool, test_settings: Settings, checkpoint_tables: None
+) -> None:
+    """H10: a slow session_end hook keeps the run's lease renewed. The hooks used to run
+    outside the heartbeat, so one that outlived the lease let the reaper hand the run to
+    another worker, which ran the hooks again. The summary is stored as before."""
+    from agent_runtime.agents.schema import MainAgentHooks
+    from agent_runtime.graphs import GraphRegistry
+    from agent_runtime.graphs.assistant import agent_spec
+    from agent_runtime.tools.builtin import default_tools
+
+    fast = test_settings.model_copy(update={"lease_ttl_s": 1.5, "heartbeat_s": 0.4})
+    ending: list[uuid.UUID] = []  # the session_end run, once the chat is archived
+    expiries: list[datetime | None] = []
+    hooks = default_hooks()
+
+    @hooks.hook("slow_summary", point="session_end", timeout_s=10)
+    async def slow_summary(inp: Any) -> Summary:
+        for _ in range(3):  # samples 1 s apart in all: longer than two heartbeats
+            expiries.append(await _lease_expiry(pool, ending[0]))
+            await asyncio.sleep(0.5)
+        return Summary("slow, but done")
+
+    base = GRAPHS.get("chat").agent
+    assert base is not None
+    fm = base.frontmatter.model_copy(update={"hooks": MainAgentHooks(session_end=["slow_summary"])})
+    graphs = GraphRegistry(
+        [agent_spec(base.model_copy(update={"frontmatter": fm}), default_tools())]
+    )
+    service = SessionService(pool, fast, graphs, RunService(pool, fast, graphs))
+    sid = (await service.create("chat")).id
+    end = await service.archive(sid)
+    assert end is not None
+    ending.append(end.id)
+    done = await RunExecutor(pool, fast, graphs, hooks=hooks).execute(end.id)
+    assert done.status is S.COMPLETED
+    assert (await service.get(sid)).summary == "slow, but done"
+    first, _, last = expiries
+    assert first is not None and last is not None
+    assert last > first  # renewed while the hook was still running
+
+
+async def test_a_script_is_refused_unless_the_model_is_the_scripted_one(
+    pool: Pool, test_settings: Settings, queue: RedisWorkQueue, bus: EventBus,
+    checkpoint_tables: None,
+) -> None:  # fmt: skip
+    """H10: `script` and `subagent_scripts` are the scripted test model's replies (R14.20).
+    A real install has no use for them and used to store whatever was sent in the run's
+    input; now it answers 422, and a plain message is still accepted."""
+    real = test_settings.model_copy(update={"model_provider": "ollama"})
+    async with Server(create_app(real, pool=pool, queue=queue, bus=bus)) as api:
+        c = api.client
+        sid = (await c.post("/sessions", json={"agent": "chat"})).json()["id"]
+        for extra in ({"script": [say("x")]}, {"subagent_scripts": {"helper": [say("x")]}}):
+            refused = await c.post(f"/sessions/{sid}/messages", json={"content": "hi", **extra})
+            assert refused.status_code == 422
+            assert refused.json()["detail"] == "script is for the scripted test model"
+        plain = await c.post(f"/sessions/{sid}/messages", json={"content": "hi"})
+        assert plain.status_code == 202
+
+
+async def test_the_scripted_model_takes_a_script_of_at_most_64_turns(api: Server) -> None:
+    """H10: under the scripted model a script is accepted (R14.20), capped in length."""
+    c = api.client
+    sid = (await c.post("/sessions", json={"agent": "chat"})).json()["id"]
+    too_long = await c.post(f"/sessions/{sid}/messages",
+                            json={"content": "hi", "script": [say("x")] * 65})  # fmt: skip
+    assert too_long.status_code == 422
+    assert too_long.json()["type"].endswith("/invalid-request")
+    ok = await c.post(f"/sessions/{sid}/messages",
+                      json={"content": "hi", "script": [say("x")] * 64})  # fmt: skip
+    assert ok.status_code == 202

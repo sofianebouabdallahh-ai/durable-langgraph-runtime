@@ -3,6 +3,8 @@
  * Write one here, or upload one in the Agent Skills format (a zip of its folder, or
  * a SKILL.md). Every save is checked and scanned, and the report says what was found
  * in plain words. Agents see a skill's name and "when to use it" until they load it.
+ * A version nobody has read (an upload, an import) is used as data until the person
+ * opens it and says "I've read this" (H10): the scan informs, the reading decides.
  */
 import { AlertTriangle, BookOpen, CheckCircle2, ChevronDown, Code2, Download, FileText, Pencil, Plus, ShieldAlert, Trash2, Upload, X } from "lucide-react";
 import { useRef, useState } from "react";
@@ -141,6 +143,9 @@ function SaveResult({ title, saved, problems, onClose }: { title: string; saved?
             </ul>
           )}
           {saved && <p className="mt-0.5 text-sm text-stone-600 dark:text-stone-400">{scanSentence(saved.skill.scan.status)}</p>}
+          {saved && !saved.skill.approved && (
+            <p className="mt-0.5 text-sm text-amber-800 dark:text-amber-300">Used as data until you've read it: open it below and click “I've read this”.</p>
+          )}
           {findings.length > 0 && <Findings findings={findings} />}
           {warnings.length > 0 && (
             <ul className="mt-2 space-y-0.5 text-sm text-amber-800 dark:text-amber-300">
@@ -209,6 +214,13 @@ function SkillCard({
             <h2 className="font-mono text-[15px] font-medium">{skill.name}</h2>
             {builtIn && <Pill tone="blue">Built in</Pill>}
             <Pill tone={scan.tone}>{scan.label}</Pill>
+            {skill.approved ? (
+              <Pill tone="green">
+                <CheckCircle2 aria-hidden className="size-3" /> Read
+              </Pill>
+            ) : (
+              <Pill tone="amber">Not read yet</Pill>
+            )}
             {hasCode && (
               <Pill tone="amber">
                 <Code2 aria-hidden className="size-3" /> Has code: never runs
@@ -250,6 +262,19 @@ function SkillCard({
       </div>
       {open && (
         <div className="border-t border-stone-100 p-5 dark:border-stone-800">
+          {!skill.approved && (
+            <ReadNotice
+              skill={skill}
+              onRead={() => {
+                skills
+                  .approve(skill.id)
+                  .then(refresh)
+                  .catch((err: unknown) => {
+                    onFailed(`“${skill.name}” wasn't marked as read`, saveProblems(err));
+                  });
+              }}
+            />
+          )}
           <SkillDetails skill={skill} />
           {!builtIn && (
             <div className="mt-4 flex flex-wrap gap-2">
@@ -314,6 +339,31 @@ function SkillCard({
         </div>
       )}
     </article>
+  );
+}
+
+/** A version nobody has read yet (H10): agents get it as data, never as instructions,
+ * until the person has read what it teaches (and what the scan found) and says so. */
+function ReadNotice({ skill, onRead }: { skill: Skill; onRead: () => void }) {
+  const from = skill.origin === "imported" ? "It came with an imported agent." : "Its text was uploaded.";
+  return (
+    <div
+      role="status"
+      data-testid="skill-unread"
+      className="mb-4 flex flex-wrap items-start gap-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-900"
+    >
+      <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-amber-600" />
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">Used as data until you've read it.</p>
+        <p className="mt-0.5">
+          {from} Agents treat it as information, not as instructions, until you've read what it teaches
+          {skill.scan.findings.length > 0 ? " and what the scan found" : ""} below. A new version asks again.
+        </p>
+      </div>
+      <Button size="sm" variant="primary" onClick={onRead} data-testid="skill-read">
+        <CheckCircle2 aria-hidden className="size-4" /> I've read this
+      </Button>
+    </div>
   );
 }
 

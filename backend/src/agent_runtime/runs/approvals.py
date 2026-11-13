@@ -5,6 +5,11 @@ hash of the call's real arguments (`args_hash`). The worker resumes a run only w
 decisions whose interrupt id and hash match what is pending (`decided_for`), so a
 crash, an earlier decision or a changed call can never pass for an approval.
 
+The person is shown the arguments redacted (`args`) and told how many values that hid
+(`hidden`, H10): those go out as they are when the call runs, since the hash binds the
+real arguments. With the pre_tool redaction on (the default) the marker is already in the
+real arguments and nothing is hidden.
+
 States: pending → approved | rejected | cancelled | superseded. Every change is a
 compare-and-set (`… WHERE status = 'pending'`), so deciding twice can't happen.
 
@@ -60,6 +65,7 @@ class ApprovalAsk:
     args: dict[str, Any]  # as shown to the person: secrets redacted
     args_hash: str | None
     reason: str | None
+    hidden: int = 0  # how many values the redaction masked in `args` (H10)
 
     @classmethod
     def of(cls, interrupt_id: str, value: dict[str, Any]) -> ApprovalAsk:
@@ -70,6 +76,7 @@ class ApprovalAsk:
             args=dict(value.get("args") or {}),
             args_hash=value.get("args_hash"),
             reason=value.get("reason"),
+            hidden=int(value.get("hidden") or 0),  # absent on interrupts raised before H10
         )
 
 
@@ -83,6 +90,7 @@ class Approval:
     args: dict[str, Any]
     args_hash: str | None
     reason: str | None
+    hidden: int
     status: Status
     edits: dict[str, Any] | None
     comment: str | None
@@ -96,12 +104,14 @@ class Approval:
         return cls(**{k: row[k] for k in _FIELDS})
 
     def payload(self) -> dict[str, Any]:
-        """What the person is shown (transcript, events, API): never the real args."""
+        """What the person is shown (transcript, events, API): never the real args, and
+        how many values the card hides (`hidden`, H10)."""
         return {
             "type": APPROVAL_TYPE,
             "approval_id": str(self.id),
             "tool": self.tool,
             "args": self.args,
+            "hidden": self.hidden,
             "call_id": self.call_id,
             "reason": self.reason,
         }
@@ -118,7 +128,7 @@ class Approval:
 
 
 _FIELDS = (
-    "id", "run_id", "interrupt_id", "call_id", "tool", "args", "args_hash", "reason",
+    "id", "run_id", "interrupt_id", "call_id", "tool", "args", "args_hash", "reason", "hidden",
     "status", "edits", "comment", "decided_by", "decided_at", "asked_epoch", "created_at",
 )  # fmt: skip
 _COLUMNS = ", ".join(_FIELDS)
@@ -178,10 +188,10 @@ class ApprovalRepository:
                 )
             cur = await self._conn.execute(
                 f"""INSERT INTO run_approvals (id, run_id, interrupt_id, call_id, tool, args,
-                        args_hash, reason, asked_epoch)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING {_COLUMNS}""",
+                        args_hash, reason, hidden, asked_epoch)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING {_COLUMNS}""",
                 (new_id(), run_id, a.interrupt_id, a.call_id, a.tool, Jsonb(a.args),
-                 a.args_hash, a.reason, epoch),
+                 a.args_hash, a.reason, a.hidden, epoch),
             )  # fmt: skip
             row = await cur.fetchone()
             if row is None:  # RETURNING on a successful INSERT always yields a row

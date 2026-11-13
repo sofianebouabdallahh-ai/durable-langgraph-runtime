@@ -57,7 +57,8 @@ class RunView(BaseModel):
     cancel_requested: bool
     interrupt_payload: dict[str, Any] | None = Field(
         description="The next approval a waiting_approval run waits on (R1.4): its "
-        "`approval_id`, `tool`, `args` (secrets redacted), `call_id` and `reason`. Several "
+        "`approval_id`, `tool`, `args` (secrets redacted), `hidden` (how many values that "
+        "redaction took out of `args`, H10), `call_id` and `reason`. Several "
         "can be pending; once this one is decided, the next one shows here."
     )
     limits: dict[str, Any]
@@ -75,6 +76,11 @@ class RunView(BaseModel):
     )
     trace_id: str | None = Field(
         default=None, description="The OpenTelemetry trace this run belongs to (R7.1)"
+    )
+    details_pruned_at: datetime | None = Field(
+        default=None,
+        description="When retention removed its events and tool calls (H10): the timeline "
+        "is empty because it was pruned, not because nothing happened. RETENTION_DAYS.",
     )
 
     @classmethod
@@ -107,6 +113,7 @@ class RunView(BaseModel):
             finished_at=run.finished_at,
             subagents=[SubagentView(**i.view(), result=i.result) for i in subagents or []],
             trace_id=trace_id_of(run.traceparent),
+            details_pruned_at=run.details_pruned_at,
         )
 
 
@@ -194,6 +201,10 @@ class AboutView(BaseModel):
         description="Grafana: a run's trace (Tempo) and its log lines (Loki) open in Explore",
     )
     dashboard_url: str | None = Field(default=None, description="The Grafana dashboard")
+    retention_days: int = Field(
+        default=90,
+        description="A run that ended this many days ago loses its details (H10); 0: never",
+    )
 
 
 class AdminStatus(BaseModel):
@@ -272,9 +283,10 @@ class SendMessageRequest(BaseModel):
 
     content: Annotated[str, Field(min_length=1, max_length=32_000)]  # R14.5: 32 KB
     options: dict[str, Any] | None = None
-    # The scripted model's replies (R14.20); real providers ignore them.
-    script: list[dict[str, Any]] | None = None
-    subagent_scripts: dict[str, list[dict[str, Any]]] | None = None
+    # The scripted test model's replies (R14.20): refused unless MODEL_PROVIDER=scripted
+    # (api/sessions.py), and at most 64 turns each (H10).
+    script: Annotated[list[dict[str, Any]], Field(max_length=64)] | None = None
+    subagent_scripts: dict[str, Annotated[list[dict[str, Any]], Field(max_length=64)]] | None = None
 
 
 class TurnAccepted(BaseModel):

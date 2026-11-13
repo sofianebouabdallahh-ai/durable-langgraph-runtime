@@ -15,9 +15,11 @@ Patterns:
   inline when each node starts and ends, before the step's checkpoint is
   written (verified in the phase 1 spike), so it can stage events, and it can
   refuse to start a node once the step budget is spent.
-- Lease + heartbeat: ownership is renewed every `heartbeat_s`; if renewal
-  fails, another worker has taken over and this execution stops. Fencing makes
-  any write it still attempts fail anyway (defence in depth).
+- Lease + heartbeat: ownership is renewed every `heartbeat_s`; if renewal is
+  refused, another worker has taken over and this execution stops. If renewal
+  keeps *failing* (Postgres unreachable) for `lease_ttl_s`, the lease has expired
+  for everyone else, so this execution stops too (H10). Fencing makes any write
+  it still attempts fail anyway (defence in depth).
 
 `durability="sync"` is mandatory: the spike showed that with async durability a
 fenced-off zombie executes extra steps before noticing.
@@ -79,7 +81,7 @@ from agent_runtime.runs.fanout import (
 from agent_runtime.runs.limits import RunLimits, RunOptions, resolve_limits
 from agent_runtime.runs.outbox import Outbox
 from agent_runtime.runs.service import prepare
-from agent_runtime.runs.state import FailureReason, RunStatus
+from agent_runtime.runs.state import FailureReason, InvalidTransition, RunStatus
 from agent_runtime.runs.store import (
     RUN_FORMAT,
     FanOutLimits,
@@ -329,7 +331,8 @@ class RunExecutor:
         """Run (or resume) `run_id` to a stopping point and return its final state.
 
         Idempotent (R1.3): if another live owner holds the run, nothing happens
-        and its current state is returned. A terminal run raises RunTerminal.
+        and its current state is returned. A terminal run raises RunTerminal, also
+        one cancelled between taking its lease and starting it (H10).
         """
         async with self._pool.connection() as conn:
             repo = RunRepository(conn)
@@ -369,6 +372,14 @@ class RunExecutor:
                     )  # fmt: skip
             except FencedError:
                 return await repo.get(run_id)
+            except InvalidTransition:
+                # Stop pressed in the gap between the lease and this transition: the run
+                # was still `queued`, so the API ended it at once (H10). Terminal, like
+                # any run that ended before we got to it: the worker acks the message.
+                current = await repo.get(run_id)
+                if current.status.is_terminal:
+                    raise RunTerminal(current) from None
+                raise
             await publish_events(self._bus, repo.emitted)  # committed above
             run = await repo.get(run_id)
         # One `run` span per execution, continuing the trace stored on the run (R2.7):
@@ -964,21 +975,42 @@ class RunExecutor:
 
     async def _session_end(self, run: Run, fence: Fence) -> Run:
         """A `session_end` run (R15.6): run the agent's session_end hooks once and
-        store the summary. It has a lease, fencing and reclaim like any run."""
+        store the summary. It has a lease, fencing and reclaim like any run, and the
+        hooks run under the lease's heartbeat (H10): a slow hook (up to 30 s each)
+        keeps the run owned instead of letting the reaper hand it to another worker,
+        and a lost lease or a Stop ends it like a graph step."""
         session_id = uuid.UUID(str(run.input["session_id"]))
         summary: str | None = None
         try:
             spec = await self._spec_of(run)
+            limits = (
+                RunLimits.model_validate(run.limits)
+                if run.limits
+                else resolve_limits(self._settings, RunOptions())
+            )
             async with self._pool.connection() as conn:
                 session = await SessionRepository(conn).get(session_id)
                 stats, last = await _transcript_stats(conn, session_id)
             if spec.agent is not None:
                 hooks = [self._hooks.get(h) for h in spec.agent.frontmatter.hooks.session_end]
-                results = await run_observers(hooks, SessionEndInput(
+                inp = SessionEndInput(
                     session_id=str(session.id), agent=spec.agent.id, stats=stats,
                     last_answer=last,
-                ))  # fmt: skip
+                )  # fmt: skip
+                results = await self._under_lease(
+                    run_observers(hooks, inp), fence, limits.timeout_s
+                )
                 summary = next((r.text for r in results if isinstance(r, Summary)), None)
+        except (FencedError, LeaseLost) as exc:
+            log.warning("run %s: lost ownership at epoch %s (%s)", run.id, fence.epoch, exc)
+            return await self._current(run.id)
+        except CancelRequested:
+            return await self._end(
+                fence, RunStatus.CANCELLED, EventType.RUN_CANCELLED,
+                FailureReason.CANCEL_REQUESTED, None,
+            )  # fmt: skip
+        except TimeoutError:
+            return await self._fail(fence, FailureReason.TIMEOUT, None)
         except Exception as exc:
             return await self._fail(fence, FailureReason.ERROR, None, detail=repr(exc))
 
@@ -1043,17 +1075,31 @@ class RunExecutor:
                 log.warning("run %s: cancel check failed; retrying", run_id, exc_info=True)
 
     async def _heartbeat(self, fence: Fence) -> None:
-        """Returns (ending the run's execution) only when the lease is gone."""
+        """Returns (ending the run's execution) only when the lease is gone: renewal
+        refused (another worker owns the run), or renewals failing since longer than
+        `lease_ttl_s` (H10). Then the lease has expired as every other worker sees it,
+        and the reaper may hand the run over at any moment, so going on would make
+        this worker the zombie the fence exists for. One failure is retried; a
+        renewal that succeeds resets the clock. Measured on the clock, not by
+        counting sleeps: a connection attempt that hangs counts toward the span."""
+        ttl = self._settings.lease_ttl_s
+        last_renewed = time.monotonic()  # the lease was acquired just before
         while True:
             await asyncio.sleep(self._settings.heartbeat_s)
             try:
                 async with self._pool.connection() as conn:
-                    renewed = await RunRepository(conn).renew_lease(
-                        fence, self.owner, self._settings.lease_ttl_s
-                    )
+                    renewed = await RunRepository(conn).renew_lease(fence, self.owner, ttl)
             except Exception:
+                failing_s = time.monotonic() - last_renewed
+                if failing_s >= ttl:
+                    log.warning(
+                        "run %s: heartbeat failing for %.1fs, past the %.1fs lease; stopping",
+                        fence.run_id, failing_s, ttl, exc_info=True,
+                    )  # fmt: skip
+                    return
                 log.warning("run %s: heartbeat failed; retrying", fence.run_id, exc_info=True)
                 continue
+            last_renewed = time.monotonic()
             if not renewed:
                 return
             if self._on_heartbeat is not None:

@@ -117,7 +117,7 @@ make_env() {
     env_set "$key" "$(random_secret)"; changed=$((changed + 1))
   done
   # Secrets added by later versions: an existing .env gets them too (never overwritten).
-  for key in NURIA_SECRET_KEY SEARXNG_SECRET SANDBOXD_TOKEN; do
+  for key in NURIA_SECRET_KEY SEARXNG_SECRET SANDBOXD_TOKEN REDIS_PASSWORD; do
     [ -n "$(env_get "$key")" ] || { env_set "$key" "$(random_secret)"; changed=$((changed + 1)); }
   done
   [ -n "$(env_get NOTIFY_WEBHOOK_SECRET)" ] || {
@@ -170,11 +170,12 @@ pick_port() {  # pick_port SERVICE CONTAINER_PORT ENV_KEY DEFAULT [WANTED] → a
 
 choose_ports() {
   UI_PORT=$(pick_port ui 8080 UI_PORT 3000 "$WANT_PORT")
-  local pg redis
-  pg=$(pick_port postgres 5432 POSTGRES_PORT 5432)
-  redis=$(pick_port redis 6379 REDIS_PORT 6379)
-  env_set REDIS_URL "redis://localhost:$redis/0"  # for tools on this machine; containers use redis:6379
-  ok "ports: app $UI_PORT, Postgres $pg, Redis $redis (all on 127.0.0.1 only)"
+  # Postgres and Redis have no host port here: they're on a network with no way out (H10).
+  # `make up` publishes them for development, at POSTGRES_PORT and REDIS_PORT; REDIS_URL,
+  # with Redis's password, is for tools on this machine then. Containers use redis:6379.
+  local redis; redis=$(env_get REDIS_PORT)
+  env_set REDIS_URL "redis://:$(env_get REDIS_PASSWORD)@localhost:${redis:-6379}/0"
+  ok "port: app $UI_PORT (on 127.0.0.1 only; Postgres and Redis have no host port)"
 }
 
 ask() {  # ask "Question" default  → REPLY

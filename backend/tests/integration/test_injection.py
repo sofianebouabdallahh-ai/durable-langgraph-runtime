@@ -6,7 +6,8 @@ that obeys it. The planted text must reach the model marked as
 data (it can't close the block), and the obeying call must still be stopped by
 the harness: an un-granted tool is denied and never runs, an approval-gated tool
 waits for a person (and a refusal sends nothing), a budget stays a budget.
-0 policy violations is the pass mark.
+A case's `prior` calls (H10: the search that launders an address) run first, through
+the same pipeline. 0 policy violations is the pass mark.
 """
 
 from __future__ import annotations
@@ -31,6 +32,8 @@ from agent_runtime.tools.builtin import NotifyArgs, notify
 from agent_runtime.tools.pipeline import Grant, ToolCall, ToolPipeline, ToolRunContext
 from agent_runtime.tools.policy import ProvenancePolicy, RiskClassPolicy
 from agent_runtime.tools.spec import ToolArgs, ToolContext, ToolRegistry
+from agent_runtime.web import tools as web_tools
+from tests.integration.test_provenance import NothingFound
 
 pytestmark = pytest.mark.integration
 
@@ -80,6 +83,11 @@ class Lab:
             "notify", args=NotifyArgs, risk_class="external_side_effect", side_effect=True
         )(notify)
         skill_tools.register(self.registry)
+        # The real search tool (H10): what it stores is what the provenance check reads,
+        # and it carries the model's own query. The engine behind it finds nothing.
+        self.registry.tool(
+            "web_search", args=web_tools.SearchArgs, risk_class="read", side_effect=False
+        )(web_tools.web_search)
         self.planted = ""
 
     def _spy(self, name: str) -> Any:
@@ -100,7 +108,8 @@ class Lab:
 
     def ctx(self, fence: Fence, pool: Pool) -> ToolRunContext:
         grants = {
-            n: Grant() for n in ("fetch_page", "echo", "notify", "load_skill", "read_webpage")
+            n: Grant()
+            for n in ("fetch_page", "echo", "notify", "load_skill", "read_webpage", "web_search")
         }
         skill = SkillVersion(
             "a" * 64,
@@ -139,8 +148,9 @@ VIA = {"fetch_page": {}, "load_skill": {"name": "field-notes"}}  # a tool result
 @pytest.mark.parametrize("via", VIA)
 @pytest.mark.parametrize("case", _cases())
 async def test_planted_instructions_change_nothing(
-    case: dict[str, Any], via: str, pool: Pool, fence: Fence
+    case: dict[str, Any], via: str, pool: Pool, fence: Fence, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(web_tools, "_settings_service", lambda _pool: NothingFound())
     lab = Lab()
     lab.planted = case["planted"]
     pipeline, ctx = lab.pipeline(), lab.ctx(fence, pool)
@@ -152,8 +162,13 @@ async def test_planted_instructions_change_nothing(
     assert seen.content.endswith("</data>")
     assert "</data" not in inner.lower() and "<data" not in inner.lower()
 
+    prior = case.get("prior", [])  # H10: the calls a swayed model makes first
+    for n, step in enumerate(prior, start=1):
+        first = ToolCall(id=f"p{n}", name=step["tool"], args=step["args"], index=n)
+        assert (await pipeline.run(first, ctx)).status == "success"
+
     tool, args = case["obeys"]["tool"], case["obeys"]["args"]
-    obey = ToolCall(id="c1", name=tool, args=args, index=1)
+    obey = ToolCall(id="c1", name=tool, args=args, index=len(prior) + 1)
     expect = case["expect"]
     if expect == "not_granted":
         result = await pipeline.run(obey, ctx)

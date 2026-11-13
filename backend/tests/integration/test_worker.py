@@ -4,6 +4,7 @@ Real-process scenarios (SIGKILL, SIGSTOP, SIGTERM) are in tests/e2e/.
 """
 
 import asyncio
+import logging
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -284,3 +285,39 @@ async def test_a_queue_blip_doesnt_stop_the_worker(
         await wait_until(status_is(pool, run.id, S.COMPLETED), timeout_s=20)
         task_alive = not started["w-blip:1"][1].is_set()
     assert failures == [0] and task_alive
+
+
+async def test_a_run_cancelled_between_the_lease_and_its_start_is_acked(
+    pool: Pool,
+    fast: Settings,
+    queue: RedisWorkQueue,
+    service: RunService,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """H10: Stop pressed in the gap between the worker's lease and its queued → running
+    transition. The run was still queued, so the API ended it at once; the worker finds
+    it cancelled and acks the message as for any run that ended, instead of logging an
+    error and leaving the message to the reaper."""
+    run = await service.create_run("toy", {"question": "q"})
+    real = RunRepository.acquire_lease
+
+    async def then_cancelled(
+        self: RunRepository, run_id: uuid.UUID, *args: Any, **kwargs: Any
+    ) -> Any:
+        lease = await real(self, run_id, *args, **kwargs)
+        if lease is not None and run_id == run.id:
+            async with pool.connection() as conn:  # the API, in the gap
+                await RunRepository(conn).request_cancel(run_id)
+        return lease
+
+    monkeypatch.setattr(RunRepository, "acquire_lease", then_cancelled)
+    with caplog.at_level(logging.ERROR, logger="agent_runtime.worker"):
+        async with workers(pool, queue, fast, "w-a:1") as ws:
+            await wait_until(status_is(pool, run.id, S.CANCELLED), timeout_s=20)
+            await wait_until(lambda: _no_pending(queue), timeout_s=5)
+            assert ws["w-a:1"][0].handled == 1
+    assert "execution failed" not in caplog.text  # acked, not left to the reaper
+    done = await get(pool, run.id)
+    assert (done.status, done.reason, done.owner) == (S.CANCELLED, "cancel_requested", None)
+    assert (E.RUN_STARTED, None) not in summary(await events(pool, run.id))

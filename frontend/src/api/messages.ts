@@ -43,6 +43,8 @@ export type Message =
       tool: string | null;
       args: Json;
       reason: string | null;
+      /** How many values redaction hid in `args`; the call sends them as they are (phase H10). */
+      hidden: number;
     })
   | (Base & { type: "approval"; approvalId: string | null; decision: "approve" | "reject"; reason: string | null })
   | (Base & {
@@ -107,6 +109,7 @@ export function parseMessage(view: Schemas["MessageView"]): Message | null {
         tool: strOrNull(payload.tool),
         args: obj(payload.args),
         reason: strOrNull(payload.reason),
+        hidden: typeof payload.hidden === "number" ? payload.hidden : 0,
       };
     }
     case "approval":

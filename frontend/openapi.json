@@ -37,6 +37,12 @@
             "title": "Model Provider",
             "type": "string"
           },
+          "retention_days": {
+            "default": 90,
+            "description": "A run that ended this many days ago loses its details (H10); 0: never",
+            "title": "Retention Days",
+            "type": "integer"
+          },
           "trace_ui_url": {
             "anyOf": [
               {
@@ -1635,6 +1641,14 @@
           "number": {
             "title": "Number",
             "type": "integer"
+          },
+          "skills_unread": {
+            "description": "Skills it uses that nobody has read yet (H10): data in prompts until approved on the Skills page. Not a blocker",
+            "items": {
+              "type": "string"
+            },
+            "title": "Skills Unread",
+            "type": "array"
           },
           "tested": {
             "description": "A test-chat reply completed on exactly this draft",
@@ -3609,6 +3623,19 @@
             "title": "Depth",
             "type": "integer"
           },
+          "details_pruned_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When retention removed its events and tool calls (H10): the timeline is empty because it was pruned, not because nothing happened. RETENTION_DAYS.",
+            "title": "Details Pruned At"
+          },
           "epoch": {
             "title": "Epoch",
             "type": "integer"
@@ -3650,7 +3677,7 @@
                 "type": "null"
               }
             ],
-            "description": "The next approval a waiting_approval run waits on (R1.4): its `approval_id`, `tool`, `args` (secrets redacted), `call_id` and `reason`. Several can be pending; once this one is decided, the next one shows here.",
+            "description": "The next approval a waiting_approval run waits on (R1.4): its `approval_id`, `tool`, `args` (secrets redacted), `hidden` (how many values that redaction took out of `args`, H10), `call_id` and `reason`. Several can be pending; once this one is decided, the next one shows here.",
             "title": "Interrupt Payload"
           },
           "kind": {
@@ -3982,6 +4009,7 @@
                   "additionalProperties": true,
                   "type": "object"
                 },
+                "maxItems": 64,
                 "type": "array"
               },
               {
@@ -3998,6 +4026,7 @@
                     "additionalProperties": true,
                     "type": "object"
                   },
+                  "maxItems": 64,
                   "type": "array"
                 },
                 "type": "object"
@@ -4253,6 +4282,11 @@
             "title": "Allowed Tools",
             "type": "array"
           },
+          "approved": {
+            "description": "A person has read exactly this version. With a clean scan, an Always-use skill is then plain text in the prompt; until then it's data",
+            "title": "Approved",
+            "type": "boolean"
+          },
           "description": {
             "description": "What it does and when to use it",
             "title": "Description",
@@ -4340,6 +4374,7 @@
           "meta",
           "tokens",
           "scan",
+          "approved",
           "used_by",
           "updated_at",
           "instructions"
@@ -4356,6 +4391,11 @@
             },
             "title": "Allowed Tools",
             "type": "array"
+          },
+          "approved": {
+            "description": "A person has read exactly this version. With a clean scan, an Always-use skill is then plain text in the prompt; until then it's data",
+            "title": "Approved",
+            "type": "boolean"
           },
           "description": {
             "description": "What it does and when to use it",
@@ -4440,6 +4480,7 @@
           "meta",
           "tokens",
           "scan",
+          "approved",
           "used_by",
           "updated_at"
         ],
@@ -9392,6 +9433,49 @@
           }
         },
         "summary": "Edit (saves a new version; the name stays)",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/approve": {
+      "post": {
+        "operationId": "approve_skills__skill_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "I've read this version: it may be plain text in prompts (idempotent)",
         "tags": [
           "skills"
         ]

@@ -7,7 +7,9 @@ The guard sits where it can't be bypassed: in the connection itself.
 - `GuardedBackend` (httpcore's network backend, Decorator) resolves every host it is
   asked to connect to, refuses any address that isn't public, and connects to the
   address it checked. So redirects, DNS rebinding and odd spellings of an IP all meet
-  the same check, and TLS still verifies the real host name.
+  the same check, and TLS still verifies the real host name. An IPv4 address in IPv6
+  clothing (IPv4-mapped, NAT64) is judged as the IPv4 address it reaches
+  (`net.effective_address`, phase H10), so `[64:ff9b::a9fe:a9fe]` is metadata too.
 - Bounded: http(s) only, no credentials in URLs, at most 5 redirects, 2 MB, 15 s.
 - Readable: HTML → the main text (trafilatura), PDF → its text, plain text as is.
 
@@ -29,6 +31,8 @@ from urllib.parse import urljoin, urlsplit
 
 import anyio
 import httpcore
+
+from agent_runtime import net
 
 MAX_BYTES = 2_000_000
 MAX_CHARS = 20_000
@@ -66,10 +70,12 @@ class Page:
 
 def public(address: str) -> bool:
     """A globally routable unicast address (not private, loopback, link-local, CGNAT,
-    multicast or reserved), also through an IPv4-mapped IPv6 address."""
-    ip = ipaddress.ip_address(address.split("%", 1)[0])
-    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
-        ip = ip.ipv4_mapped
+    multicast or reserved), judged on the address really reached: an IPv4-mapped or
+    NAT64 IPv6 form of a private address is that private address (`net.effective_address`).
+
+    Stricter than `net.check_destination` on purpose: a model chose this address, so
+    your own machine and network are refused here too."""
+    ip = net.effective_address(ipaddress.ip_address(address.split("%", 1)[0]))
     return ip.is_global and not ip.is_multicast
 
 

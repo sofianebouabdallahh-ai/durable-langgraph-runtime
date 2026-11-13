@@ -1049,6 +1049,23 @@ export interface paths {
         patch: operations["edit_skills__skill_id__patch"];
         trace?: never;
     };
+    "/skills/{skill_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** I've read this version: it may be plain text in prompts (idempotent) */
+        post: operations["approve_skills__skill_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/skills/{skill_id}/export": {
         parameters: {
             query?: never;
@@ -1490,6 +1507,12 @@ export interface components {
             demo_model: boolean;
             /** Model Provider */
             model_provider: string;
+            /**
+             * Retention Days
+             * @description A run that ended this many days ago loses its details (H10); 0: never
+             * @default 90
+             */
+            retention_days: number;
             /**
              * Trace Ui Url
              * @description Grafana: a run's trace (Tempo) and its log lines (Loki) open in Explore
@@ -2155,6 +2178,11 @@ export interface components {
             issues: components["schemas"]["IssueView"][];
             /** Number */
             number: number;
+            /**
+             * Skills Unread
+             * @description Skills it uses that nobody has read yet (H10): data in prompts until approved on the Skills page. Not a blocker
+             */
+            skills_unread?: string[];
             /**
              * Tested
              * @description A test-chat reply completed on exactly this draft
@@ -2979,6 +3007,11 @@ export interface components {
              * @description 0 for a root run, parent's + 1 for a child (R14.6)
              */
             depth: number;
+            /**
+             * Details Pruned At
+             * @description When retention removed its events and tool calls (H10): the timeline is empty because it was pruned, not because nothing happened. RETENTION_DAYS.
+             */
+            details_pruned_at?: string | null;
             /** Epoch */
             epoch: number;
             /** Finished At */
@@ -2998,7 +3031,7 @@ export interface components {
             infra_retries: number;
             /**
              * Interrupt Payload
-             * @description The next approval a waiting_approval run waits on (R1.4): its `approval_id`, `tool`, `args` (secrets redacted), `call_id` and `reason`. Several can be pending; once this one is decided, the next one shows here.
+             * @description The next approval a waiting_approval run waits on (R1.4): its `approval_id`, `tool`, `args` (secrets redacted), `hidden` (how many values that redaction took out of `args`, H10), `call_id` and `reason`. Several can be pending; once this one is decided, the next one shows here.
              */
             interrupt_payload: {
                 [key: string]: unknown;
@@ -3242,6 +3275,11 @@ export interface components {
              */
             allowed_tools: string[];
             /**
+             * Approved
+             * @description A person has read exactly this version. With a clean scan, an Always-use skill is then plain text in the prompt; until then it's data
+             */
+            approved: boolean;
+            /**
              * Description
              * @description What it does and when to use it
              */
@@ -3300,6 +3338,11 @@ export interface components {
              * @description What it asks for; never granted by it
              */
             allowed_tools: string[];
+            /**
+             * Approved
+             * @description A person has read exactly this version. With a clean scan, an Always-use skill is then plain text in the prompt; until then it's data
+             */
+            approved: boolean;
             /**
              * Description
              * @description What it does and when to use it
@@ -6151,6 +6194,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SavedView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_skills__skill_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
                 };
             };
             /** @description Validation Error */

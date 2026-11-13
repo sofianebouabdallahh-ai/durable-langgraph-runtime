@@ -49,6 +49,13 @@ async def check_fence(conn: Conn, fence: Fence) -> None:
     takeover's epoch bump, and it doesn't block foreign-key checks (KEY SHARE)
     from rows that reference the run. Fenced writers of one run serialise, as
     they already did at the event sequence.
+
+    Lock order, which every fenced writer follows: `check_fence` first, THEN the
+    inserts into fenced tables (events, invocations, messages, checkpoints), because
+    the 0004 trigger takes `FOR SHARE` on the run row for each such insert. A writer
+    that inserted first would hold that share lock when `check_fence` asks for the
+    stronger one, and two such transactions of one run would re-create the upgrade
+    deadlock (surfacing as 40P01, which `runs/failures.py` retries as transient).
     """
     cur = await conn.execute(
         "SELECT epoch FROM runs WHERE id = %s FOR NO KEY UPDATE", (fence.run_id,)

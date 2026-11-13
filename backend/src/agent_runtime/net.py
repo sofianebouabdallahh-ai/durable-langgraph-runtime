@@ -1,8 +1,9 @@
 """Where Nuria may send a request it was given an address for (phase H3).
 
 One check for every address a person (or a page) can give Nuria: an MCP server, a model
-connection, the SearXNG instance. `web/fetch.py` guards the page reader on its own, and
-connects to the address it checked.
+connection, the SearXNG instance. `web/fetch.py` guards the page reader with a stricter
+rule of its own (public addresses only), reuses `effective_address` to see through the
+IPv6 forms of an IPv4 address (phase H10), and connects to the address it checked.
 
 `check_destination` resolves the host and checks EVERY address it resolves to, so the
 forms a name check misses are refused too: decimal, hex and octal IPs (the resolver
@@ -46,7 +47,10 @@ METADATA_IPS = frozenset(
     ipaddress.ip_address(a)
     for a in ("169.254.169.254", "169.254.170.2", "100.100.100.200", "fd00:ec2::254")
 )
-NAT64 = ipaddress.ip_network("64:ff9b::/96")
+# NAT64 prefixes: the well-known one (RFC 6052) and the local-use one (RFC 8215). Both
+# carry the IPv4 address in their low 32 bits, and Python's `is_global` doesn't look
+# inside either, so a guard that doesn't unwrap them lets `169.254.169.254` through.
+NAT64 = (ipaddress.ip_network("64:ff9b::/96"), ipaddress.ip_network("64:ff9b:1::/48"))
 
 _own_cache: dict[frozenset[str], tuple[float, frozenset[IP]]] = {}
 _OWN_TTL_S = 60.0
@@ -124,9 +128,9 @@ async def check_destination(
     for ip in addresses:
         if (reason := _refused(ip)) is not None:
             raise DestinationRefused(f"{host} leads to {ip}, {reason}")
-        if _effective(ip) in own:
+        if effective_address(ip) in own:
             raise DestinationRefused(f"{host} leads to one of Nuria's own services")
-        if in_container and _effective(ip).is_loopback:
+        if in_container and effective_address(ip).is_loopback:
             raise DestinationRefused(
                 f"Inside Nuria's container, {host} is Nuria itself. For a server on your "
                 "computer, use host.docker.internal"
@@ -134,18 +138,22 @@ async def check_destination(
     return url
 
 
-def _effective(ip: IP) -> IP:
-    """The IPv4 address behind an IPv4-mapped or NAT64 IPv6 one."""
+def effective_address(ip: IP) -> IP:
+    """The address a packet really goes to: the IPv4 one behind an IPv4-mapped
+    (`::ffff:a.b.c.d`) or NAT64 (RFC 6052, RFC 8215) IPv6 address, else `ip` itself.
+
+    Every guard judges this address, never the spelling it was given, so the page reader
+    (`web/fetch.py`) and `check_destination` can't disagree on what a form reaches."""
     if isinstance(ip, ipaddress.IPv6Address):
         if ip.ipv4_mapped is not None:
             return ip.ipv4_mapped
-        if ip in NAT64:
+        if any(ip in prefix for prefix in NAT64):
             return ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
     return ip
 
 
 def _refused(ip: IP) -> str | None:
-    ip = _effective(ip)
+    ip = effective_address(ip)
     if ip in METADATA_IPS:
         return "a cloud metadata address"
     if ip.is_link_local:
@@ -186,7 +194,7 @@ async def _own_addresses(names: frozenset[str]) -> frozenset[IP]:
     if (entry := _own_cache.get(names)) is not None and time.monotonic() - entry[0] < _OWN_TTL_S:
         return entry[1]
     results = await asyncio.gather(*(_resolve_quietly(n) for n in sorted(names)))
-    own = frozenset(_effective(ip) for found in results for ip in found)
+    own = frozenset(effective_address(ip) for found in results for ip in found)
     _own_cache[names] = (time.monotonic(), own)
     return own
 

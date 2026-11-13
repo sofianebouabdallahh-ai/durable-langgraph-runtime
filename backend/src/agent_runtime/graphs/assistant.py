@@ -99,17 +99,19 @@ def split_skills(
 
 
 def always_section(skills: Sequence[SkillVersion]) -> str:
-    """Skills set to "Always use": their instructions every turn. One its scan found
-    clean is the person's own guidance, given as plain text; one the scan flagged (or
-    never checked) stays data (R14.15). In a <data> block qwen2.5:7b followed an Always-use
-    skill 1 time in 10, replaying a real chat; as plain text, 6 in 8. Either way a skill
-    can't change tools, limits or approvals: the tool pipeline enforces those, not the
-    prompt."""
+    """Skills set to "Always use": their instructions every turn. One a person has read
+    (approved exactly this version) and whose scan found nothing is the person's own
+    guidance, given as plain text; any other stays data (R14.15): the scan informs, the
+    approval decides (H10 2.2). The scan alone can't: a skill is instructions, and its
+    checks are English regexes, so an imported trap in French scores clean; only a reader
+    tells. In a <data> block qwen2.5:7b followed an Always-use skill 1 time in 10,
+    replaying a real chat; as plain text, 6 in 8. Either way a skill can't change tools,
+    limits or approvals: the tool pipeline enforces those, not the prompt."""
     parts = []
     for s in skills:
         files = [f["path"] for f in s.files if f["kind"] in READABLE_KINDS]
         listed = f"\nIts files (read_skill_file): {', '.join(files)}" if files else ""
-        body = s.instructions if scanned_clean(s) else as_data(f"skill:{s.name}", s.instructions)
+        body = s.instructions if trusted_text(s) else as_data(f"skill:{s.name}", s.instructions)
         parts.append(f"### {s.name}\n{body}{listed}")
     return (
         "\n\n## Know-how you always use\n"
@@ -118,9 +120,13 @@ def always_section(skills: Sequence[SkillVersion]) -> str:
     )
 
 
-def scanned_clean(skill: SkillVersion) -> bool:
-    """The skill's latest scan found nothing (a flagged or unchecked one stays data)."""
-    return skill.scan.get("status") == "clean"
+def trusted_text(skill: SkillVersion) -> bool:
+    """Plain text in the prompt iff a person approved exactly this version (its hash:
+    `skill_approvals`, H10 2.2) *and* its latest scan found nothing. Unread, flagged or
+    unchecked: data. Pattern: promotion gate (as H6's publish gate), content-addressed
+    (as H1's approval of a tool call's arguments): an edit is a new hash, so the approval
+    lapses with the text."""
+    return skill.approved and skill.scan.get("status") == "clean"
 
 
 def skills_section(skills: Sequence[SkillVersion]) -> str:

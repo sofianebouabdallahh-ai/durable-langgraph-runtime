@@ -6,8 +6,9 @@ from tools, helpers and files it is information to evaluate, never instructions;
 skill (know-how the person chose) it is guidance on how to do the task and shape the
 answer. Neither can change the task, the tools, the limits, approvals or the rules, or
 send anything anywhere. (L8 validation: with skills under "never instructions", a real
-model ignored "end with a Budget section".) One exception: an "Always use" skill its scan
-found clean is given as plain text (graphs/assistant.always_section). The delimiters
+model ignored "end with a Budget section".) One exception: an "Always use" skill a person
+has read (approved exactly that version, H10) and whose scan found nothing is given as
+plain text (graphs/assistant.trusted_text). The delimiters
 can't be forged from inside: look-alike tags in the text are escaped, so planted text
 can't close the block early and speak as the runtime.
 
@@ -32,8 +33,15 @@ RULE = (
     "so if it matters."
 )
 
-_TAG = re.compile(r"<(/?)(data\b)", re.IGNORECASE)
-_ESCAPED = re.compile(r"&lt;(/?)(data\b)", re.IGNORECASE)
+# What can hide inside a would-be tag without showing: whitespace (`</ data>`, `< /data >`)
+# and zero-width characters (U+200B-U+200D, U+2060, U+FEFF: `<\u200bdata>`, `<d\u200bata>`).
+# They are matched *inside the tag only*, never stripped from the text (H10): U+200D is
+# the joiner of legitimate emoji sequences, and `unwrap` must give people back exactly
+# what the tool returned. The escaped form keeps them, so unwrapping is exact.
+_GAP = r"[\s\u200b-\u200d\u2060\ufeff]*"
+_WORD = rf"d{_GAP}a{_GAP}t{_GAP}a\b"
+_TAG = re.compile(rf"<({_GAP}/?{_GAP})({_WORD})", re.IGNORECASE)
+_ESCAPED = re.compile(rf"&lt;({_GAP}/?{_GAP})({_WORD})", re.IGNORECASE)
 _SOURCE = re.compile(r"[^a-zA-Z0-9_.:/-]")
 _WRAPPED = re.compile(r'\A<data source="[^"]*">\n(.*)\n</data>\Z', re.DOTALL)
 

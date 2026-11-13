@@ -26,6 +26,7 @@ export const ACTIONS: Record<string, string> = {
   "skill.created": "Added a skill",
   "skill.updated": "Changed a skill",
   "skill.archived": "Archived a skill",
+  "skill.approved": "Marked a skill as read",
   "model_connection.added": "Added a model",
   "model_connection.changed": "Changed a model",
   "model_connection.removed": "Removed a model",

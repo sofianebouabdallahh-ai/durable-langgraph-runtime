@@ -113,6 +113,11 @@ class DraftView(BaseModel):
     tests_failing: list[str] = Field(
         default_factory=list, description="Cases not passed on exactly this draft"
     )
+    skills_unread: list[str] = Field(
+        default_factory=list,
+        description="Skills it uses that nobody has read yet (H10): data in prompts until "
+        "approved on the Skills page. Not a blocker",
+    )
 
 
 class StudioAgentView(BaseModel):
@@ -150,6 +155,7 @@ class StudioAgentView(BaseModel):
                         for i in s.draft.issues],
                 tested=s.draft.tested, blockers=s.draft.blockers,
                 tests=s.draft.tests, tests_failing=s.draft.tests_failing,
+                skills_unread=s.draft.skills_unread,
             ) if s.draft else None,
             versions=[VersionView.of(v) for v in s.versions],
         )  # fmt: skip

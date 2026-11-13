@@ -48,6 +48,8 @@ export const skills = {
   edit: (id: string, body: Schemas["EditSkill"]) => unwrap(api.PATCH("/skills/{skill_id}", { params: { path: { skill_id: id } }, body })),
   upload: (file: File) => sendFile("/api/skills/upload", file),
   replace: (id: string, file: File) => sendFile(`/api/skills/${encodeURIComponent(id)}/upload`, file),
+  /** "I've read this": the current version may be plain text in prompts (H10). Idempotent. */
+  approve: (id: string) => unwrap(api.POST("/skills/{skill_id}/approve", { params: { path: { skill_id: id } } })),
   archive: (id: string) => api.DELETE("/skills/{skill_id}", { params: { path: { skill_id: id } } }),
   exportUrl: (id: string) => `/api/skills/${encodeURIComponent(id)}/export`,
   fileUrl: (id: string, path: string) => `/api/skills/${encodeURIComponent(id)}/files/${path.split("/").map(encodeURIComponent).join("/")}`,

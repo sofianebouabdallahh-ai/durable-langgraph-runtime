@@ -44,6 +44,7 @@ TABLES = {
     "agent_evals",
     "eval_runs",
     "note_forgets",
+    "skill_approvals",
 }
 
 
@@ -378,5 +379,50 @@ def test_notes_from_before_memory_keep_their_agent_and_test_scope(
             conn.execute("DELETE FROM runs WHERE id IN (%s, %s)", (real, tested))
             conn.execute("DELETE FROM sessions WHERE id = %s", (test_chat,))
             conn.execute("DELETE FROM agents WHERE id = %s", (agent[0],))
+    finally:
+        command.upgrade(alembic_cfg, "head")
+
+
+def test_skills_written_here_or_built_in_are_read_but_uploaded_ones_wait(
+    alembic_cfg: Config, test_db_url: str
+) -> None:
+    """H10 2.2: 0029 approves the current version of every skill a person wrote in the
+    Studio or that ships with Nuria; an uploaded or imported one waits for its reader.
+    Going back to 0028 and up again works (and approves the same ones again)."""
+    url = test_db_url.replace("postgresql+psycopg", "postgresql")
+    tag = uuid.uuid4().hex[:8]
+    hashes = {origin: (str(i) * 64) for i, origin in
+              enumerate(("created", "uploaded", "imported", "built_in"), start=1)}  # fmt: skip
+    command.upgrade(alembic_cfg, "head")
+    command.downgrade(alembic_cfg, "0028")
+    try:
+        with psycopg.connect(url, autocommit=True) as conn:
+            for origin, digest in hashes.items():
+                name = f"m-{origin.replace('_', '-')}-{tag}"
+                conn.execute(
+                    "INSERT INTO skill_versions (hash, name, description, instructions, scan) "
+                    "VALUES (%s, %s, 'd', 'i', '{\"status\": \"clean\", \"findings\": []}')",
+                    (digest, name),
+                )
+                conn.execute(
+                    "INSERT INTO skills (id, name, trust, origin, current_hash) "
+                    "VALUES (gen_random_uuid(), %s, %s, %s, %s)",
+                    (name, "built_in" if origin == "built_in" else "private", origin, digest),
+                )
+        for _ in range(2):  # the backfill, and the backfill again after a rollback
+            command.upgrade(alembic_cfg, "head")
+            with psycopg.connect(url, autocommit=True) as conn:
+                rows = conn.execute(
+                    "SELECT hash FROM skill_approvals WHERE hash = ANY(%s) ORDER BY hash",
+                    (list(hashes.values()),),
+                ).fetchall()
+            assert rows == [(hashes["created"],), (hashes["built_in"],)]
+            command.downgrade(alembic_cfg, "0028")
+        command.upgrade(alembic_cfg, "head")
+        with psycopg.connect(url, autocommit=True) as conn:
+            mine = list(hashes.values())
+            conn.execute("DELETE FROM skills WHERE current_hash = ANY(%s)", (mine,))
+            conn.execute("DELETE FROM skill_approvals WHERE hash = ANY(%s)", (mine,))
+            conn.execute("DELETE FROM skill_versions WHERE hash = ANY(%s)", (mine,))
     finally:
         command.upgrade(alembic_cfg, "head")

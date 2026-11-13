@@ -42,15 +42,25 @@ spec:
       containers:
         - name: redis
           image: {{ .Values.redis.image }}
-          args: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--dir", "/data"]
+          # With redis.passwordKey set, the password (H10) comes from the Secret, and the
+          # kubelet expands $(REDIS_PASSWORD) in the arguments.
+          args: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--dir", "/data"{{ if .Values.redis.passwordKey }}, "--requirepass", "$(REDIS_PASSWORD)"{{ end }}]
+          {{- if .Values.redis.passwordKey }}
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: {{ .Values.redis.passwordKey }} } }
+            - name: REDISCLI_AUTH # the probes' redis-cli
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: {{ .Values.redis.passwordKey }} } }
+          {{- end }}
           securityContext: {{- include "nuria-data.containerSecurity" . | nindent 12 }}
           ports:
             - { name: redis, containerPort: 6379 }
+          # redis-cli exits 0 on a NOAUTH reply too, so the reply itself is tested.
           readinessProbe:
-            exec: { command: ["redis-cli", "ping"] }
+            exec: { command: ["sh", "-c", "redis-cli ping | grep -q PONG"] }
             periodSeconds: 5
           livenessProbe:
-            exec: { command: ["redis-cli", "ping"] }
+            exec: { command: ["sh", "-c", "redis-cli ping | grep -q PONG"] }
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 6
