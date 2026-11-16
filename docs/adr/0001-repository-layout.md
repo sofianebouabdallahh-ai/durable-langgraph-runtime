@@ -5,7 +5,7 @@
 | **Status** | Accepted |
 | **Date** | 2026-10-11 |
 | **Supersedes** | The flat layout used during phase 0 (`runtime/`, `tests/` and `docker-compose.yml` at the root) |
-| **Amended by** | [ADR-0003](0003-agents-as-definition-files.md): agents become `backend/agents/*.agent.md`, plus `src/agent_runtime/hooks/` and `src/workflows/` |
+| **Amended by** | [ADR-0003](0003-agents-as-definition-files.md): agents become `backend/agents/*.agent.md`, plus `src/agent_runtime/hooks/` and `src/workflows/`; [ADR-0009](0009-client-sdks.md): a top-level `sdk/`, one package per language (`sdk/python/`, phase S2) |
 
 ## Context
 

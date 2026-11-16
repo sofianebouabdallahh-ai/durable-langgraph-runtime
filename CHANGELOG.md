@@ -4,6 +4,24 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### S2 — The Python SDK
+Nuria from Python ([`sdk/python`](sdk/python/README.md), package `nuria`, CR-007).
+#### Added
+- **Send, follow, get a typed result.** `AsyncNuria` and `Nuria` (the same API, async and
+  sync): create a session, `send` a message, follow the turn's `events()` or `text()`, and
+  `wait()` for `Completed`, `Failed`, `Cancelled` or `AwaitingApproval`.
+- **A stream that doesn't lose or repeat.** It resumes after the last stored message it saw
+  (`Last-Event-ID`) through a replica that drains, a cut connection, a 429 or a 5xx, and
+  asks the turn's run when its transient status might have been missed.
+- **Sends that are safe to retry**, with one `Idempotency-Key` through every retry.
+- **A turn you can pick up anywhere:** `nuria.turn(session_id, run_id)` in another process.
+- **Approvals are shown, not decided:** the SDK has no way to approve or reject, until Nuria
+  can tell a person from a program.
+#### Fixed
+- **Two schemas had one name** (`ResultView`): the spec published both under module-qualified
+  names, and a generator dropped the four Tests endpoints. The Tests one is
+  `TestResultView`, same shape.
+
 ### S1 — The API contract
 The API's OpenAPI spec now says what the API really does, so client SDKs can be generated
 from it, and CI keeps it that way ([CR-007](docs/requirements/CR-007-client-sdks.md),

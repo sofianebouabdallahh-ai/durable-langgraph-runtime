@@ -6,6 +6,7 @@ Send a message to a Nuria agent, follow the reply as it streams, and get a typed
 import asyncio
 from nuria import AsyncNuria, AwaitingApproval, Cancelled, Completed, Failed
 
+
 async def main() -> None:
     async with AsyncNuria("http://localhost:3000/api") as nuria:
         session = await nuria.sessions.create(agent="chat")
@@ -19,6 +20,7 @@ async def main() -> None:
                 print(f"\nwaiting for your approval of {pending.tool} in Nuria")
             case Failed(reason=reason) | Cancelled(reason=reason):
                 print("\nended:", reason)
+
 
 asyncio.run(main())
 ```
