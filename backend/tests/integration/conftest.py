@@ -59,12 +59,14 @@ def settings() -> Settings:
 @pytest.fixture(scope="session")
 def test_settings(settings: Settings) -> Settings:
     # Queued runs accumulate in the shared test database, so admission control (R2.9)
-    # is effectively off; tests of it set their own limit.
+    # is effectively off; tests of it set their own limit. The code tools are off unless
+    # a test asks for them (`sandbox`), whatever the .env of ./setup.sh says.
     return settings.model_copy(
         update={
             "postgres_db": f"{settings.postgres_db}_test",
             "queue_depth_limit": 1_000_000,
             "nuria_secret_key": SecretStr("test-master-key-" + "x" * 32),
+            "sandboxd_url": "",
         }
     )
 

@@ -94,6 +94,7 @@ async def test_every_change_writes_one_row_and_no_secret(api: Api) -> None:
     await api.ok("DELETE", f"/models/connections/{conn['id']}")
     # Settings: tools, usage sharing; the kill switch; an approval.
     await api.ok("PUT", "/tools/settings", json={"web_allowlist": [f"{tag}.example"]})
+    await api.ok("PUT", "/tools/settings", json={"web_allowlist": []})  # the DB is shared
     await api.ok("PUT", "/telemetry", json={"sharing": True})
     await api.ok("PUT", "/telemetry", json={"sharing": False})
     await api.ok("POST", "/kill-switch/stop", json={"agent": agent["name"], "reason": "test"})
