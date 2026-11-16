@@ -4,6 +4,10 @@
 # Traefik (the Ingress controller) runs on the control plane with hostPort 80;
 # kind maps that to 127.0.0.1:${K8S_PORT} on this machine (default 8090). The
 # placeholder is filled in by infra/kind/cluster.sh.
+#
+# gVisor (H9): every node has runsc, from infra/gvisor/gvisor.sh (pinned, verified),
+# mounted read-only at ${GVISOR_DIR}, and containerd knows it as the runtime `runsc`. The
+# chart's RuntimeClass `gvisor` points there.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: nuria
@@ -13,6 +17,10 @@ kubeadmConfigPatches:
   - |
     kind: KubeletConfiguration
     podPidsLimit: 4096
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.cri.v1.runtime".containerd.runtimes.runsc]
+      runtime_type = "io.containerd.runsc.v1"
 nodes:
   - role: control-plane
     image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
@@ -23,7 +31,13 @@ nodes:
         hostPort: ${K8S_PORT}
         listenAddress: "127.0.0.1"
         protocol: TCP
+    extraMounts: &gvisor
+      - { hostPath: "${GVISOR_DIR}/runsc", containerPath: /usr/local/bin/runsc, readOnly: true }
+      - { hostPath: "${GVISOR_DIR}/containerd-shim-runsc-v1", containerPath: /usr/local/bin/containerd-shim-runsc-v1, readOnly: true }
+      - { hostPath: "${GVISOR_DIR}/gvisor-bin", containerPath: /usr/local/bin/gvisor-bin, readOnly: true }
   - role: worker
     image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+    extraMounts: *gvisor
   - role: worker
     image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+    extraMounts: *gvisor

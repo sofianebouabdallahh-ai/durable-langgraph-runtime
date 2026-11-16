@@ -40,11 +40,12 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")
 API = f"http://127.0.0.1:{os.environ.get('K8S_PORT', '8090')}/api"
 NS = os.environ.get("NAMESPACE", "nuria")
 RELEASE = "nuria"
+CLUSTER = os.environ.get("CLUSTER", "nuria")  # see cluster.sh
 KUBECONFIG = os.environ.get("KUBECONFIG", f"{ROOT}/.tools/kubeconfig")  # see cluster.sh
 KUBECTL = [os.environ.get("KUBECTL", f"{ROOT}/.tools/bin/kubectl"), "--kubeconfig", KUBECONFIG,
-           "--context", "kind-nuria"]  # fmt: skip
+           "--context", f"kind-{CLUSTER}"]  # fmt: skip
 HELM = [os.environ.get("HELM", f"{ROOT}/.tools/bin/helm"), "--kubeconfig", KUBECONFIG,
-        "--kube-context", "kind-nuria"]  # fmt: skip
+        "--kube-context", f"kind-{CLUSTER}"]  # fmt: skip
 
 
 def kubectl(*args: str, check: bool = True, ns: bool = True) -> str:
@@ -268,7 +269,7 @@ def upgrade() -> bool:
     tag = os.environ.get("TAG", "dev")
     new = f"{tag}-next"
     subprocess.run(["docker", "tag", f"nuria/runtime:{tag}", f"nuria/runtime:{new}"], check=True)
-    subprocess.run([f"{ROOT}/.tools/bin/kind", "load", "docker-image", "--name", "nuria",
+    subprocess.run([f"{ROOT}/.tools/bin/kind", "load", "docker-image", "--name", CLUSTER,
                     f"nuria/runtime:{new}"], check=True, capture_output=True)  # fmt: skip
     rev = _helm_revision()
     with httpx.Client(base_url=API, timeout=30) as client, Prober() as probe:
