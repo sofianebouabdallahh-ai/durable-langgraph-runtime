@@ -28,7 +28,7 @@ from agent_runtime import __doc__ as package_doc
 from agent_runtime import metrics, report, telemetry
 from agent_runtime.admin import AdminRepository, AdminState
 from agent_runtime.agents.studio import StudioService
-from agent_runtime.api import problems
+from agent_runtime.api import contract, problems
 from agent_runtime.api.access import AccessLog
 from agent_runtime.api.activity import activity_router
 from agent_runtime.api.audit import audit_router
@@ -118,6 +118,7 @@ runs = APIRouter(prefix="/runs", tags=["runs"])
     summary="Create a run",
     description="Validates the graph, input and options, then creates a `queued` run. "
     "202 Accepted: the run executes asynchronously; poll `Location`.",
+    responses=contract.problems(404, 409, 429, 503),
 )
 async def create_run(
     body: CreateRunRequest, service: ServiceDep, response: Response
@@ -127,7 +128,9 @@ async def create_run(
     return CreateRunResponse(run_id=run.id)
 
 
-@runs.get("/{run_id}", response_model=RunView, summary="Run status")
+@runs.get(
+    "/{run_id}", response_model=RunView, summary="Run status", responses=contract.problems(404)
+)
 async def get_run(run_id: uuid.UUID, pool: PoolDep) -> RunView:
     async with pool.connection() as conn:
         run = await RunRepository(conn).get(run_id)
@@ -135,7 +138,12 @@ async def get_run(run_id: uuid.UUID, pool: PoolDep) -> RunView:
     return RunView.of(run, subagents)
 
 
-@runs.get("/{run_id}/events", response_model=EventsPage, summary="Replay persisted events")
+@runs.get(
+    "/{run_id}/events",
+    response_model=EventsPage,
+    summary="Replay persisted events",
+    responses=contract.problems(404),
+)
 async def list_events(
     run_id: uuid.UUID,
     pool: PoolDep,
@@ -152,7 +160,12 @@ async def list_events(
     )
 
 
-@runs.get("/{run_id}/result", response_model=ResultView, summary="Final output")
+@runs.get(
+    "/{run_id}/result",
+    response_model=ResultView,
+    summary="Final output",
+    responses=contract.problems(404),
+)
 async def get_result(run_id: uuid.UUID, pool: PoolDep) -> ResultView:
     async with pool.connection() as conn:
         repo = RunRepository(conn)
@@ -170,9 +183,9 @@ async def get_result(run_id: uuid.UUID, pool: PoolDep) -> ResultView:
     "agent's definition when it's one you made, and the chat only if `include_chat`. Nothing "
     "is uploaded anywhere: the person downloads it.",
     response_class=Response,
-    responses={200: {"content": {"application/zip": {}}}},
+    responses={200: {"content": {"application/zip": {}}}} | contract.problems(404),
 )
-async def run_report(
+async def get_run_report(
     run_id: uuid.UUID, request: Request, pool: PoolDep, include_chat: bool = False
 ) -> Response:
     name, data = await report.build(pool, request.app.state.studio, run_id,
@@ -188,6 +201,7 @@ async def run_report(
     summary="Cancel a run (cooperative)",
     description="A queued or waiting run is cancelled now; a running run stops before its "
     "next node (R1.6). 409 if the run has already ended.",
+    responses=contract.problems(404, 409),
 )
 async def cancel_run(run_id: uuid.UUID, service: ServiceDep) -> RunView:
     return RunView.of(await service.cancel(run_id))
@@ -202,6 +216,7 @@ async def cancel_run(run_id: uuid.UUID, service: ServiceDep) -> RunView:
     "already done aren't run again. For failures that might not happen again (`error`, "
     "`infrastructure`, `max_reclaims`, `timeout`) of a top-level run; a chat turn only if "
     "it is the chat's latest. The budgets already used still count. 409 otherwise.",
+    responses=contract.problems(404, 409, 429, 503),
 )
 async def redrive_run(run_id: uuid.UUID, service: ServiceDep) -> RunView:
     return RunView.of(await service.redrive(run_id))
@@ -216,6 +231,7 @@ async def redrive_run(run_id: uuid.UUID, service: ServiceDep) -> RunView:
     "left, the run is re-queued and each approved call runs, with its edited arguments if "
     "given; `reject` cancels the run with reason `rejected`. Works with no worker alive. 409 "
     "unless the run is `waiting_approval`, or if the approval isn't pending.",
+    responses=contract.problems(404, 409),
 )
 async def approve_run(run_id: uuid.UUID, body: ApprovalRequest, service: ServiceDep) -> RunView:
     edits = body.edits.model_dump(exclude_none=True) if body.edits else None
@@ -233,6 +249,7 @@ async def approve_run(run_id: uuid.UUID, body: ApprovalRequest, service: Service
     summary="Resume a run (idempotent)",
     description="Re-sends work for a queued run or one whose worker died; does nothing for a "
     "run a live worker is executing (R1.3). 409 if the run has already ended.",
+    responses=contract.problems(404, 409),
 )
 async def resume_run(run_id: uuid.UUID, service: ServiceDep) -> RunView:
     return RunView.of(await service.resume(run_id))
@@ -246,7 +263,7 @@ async def resume_run(run_id: uuid.UUID, service: ServiceDep) -> RunView:
     "is sent when idle; the stream closes after the run's terminal event; on replica shutdown "
     "an `event: reconnect` tells the client to reconnect with its Last-Event-ID.",
     response_class=StreamingResponse,
-    responses={200: {"content": {"text/event-stream": {}}}, 503: {"description": "Draining"}},
+    responses=contract.sse("RunStreamEvent", 404, 503),
 )
 async def stream_run(
     run_id: uuid.UUID,
@@ -298,7 +315,12 @@ async def list_graphs(graphs: GraphsDep) -> list[GraphView]:
     return [_describe(spec) for spec in graphs]
 
 
-@graphs_router.get("/{name}", response_model=GraphView, summary="Describe a graph")
+@graphs_router.get(
+    "/{name}",
+    response_model=GraphView,
+    summary="Describe a graph",
+    responses=contract.problems(404),
+)
 async def get_graph(name: str, graphs: GraphsDep) -> GraphView:
     return _describe(graphs.get(name))
 
@@ -313,7 +335,7 @@ async def healthz() -> Health:
 
 
 @health.get("/about", response_model=AboutView, summary="Version and model, for the UI")
-async def about(request: Request) -> AboutView:
+async def get_about(request: Request) -> AboutView:
     from importlib import metadata
 
     settings: Settings = request.app.state.settings
@@ -341,7 +363,7 @@ async def prometheus_metrics() -> Response:
     "/readyz",
     response_model=Health,
     summary="Readiness: dependencies reachable",
-    responses={503: {"description": "Not ready"}},
+    responses={503: {"description": "Not ready (probes read the same body)", "model": Health}},
 )
 async def readyz(request: Request, pool: PoolDep, response: Response) -> Health:
     if request.app.state.draining.is_set():  # R10.7: stop receiving new traffic
@@ -481,7 +503,9 @@ def create_app(
         version="0.2.0",
         description=package_doc or "",
         lifespan=lifespan,
+        generate_unique_id_function=contract.operation_id,  # `send_message` (CR-007 R19.1)
     )
+    contract.install(app)
     app.state.graphs = graphs
     app.state.settings = settings
     app.state.redis = None

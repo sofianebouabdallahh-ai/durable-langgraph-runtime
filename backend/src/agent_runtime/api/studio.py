@@ -32,6 +32,7 @@ from agent_runtime.agents.studio import (
     presets,
 )
 from agent_runtime.agents.studio_store import AgentNotFound, Version
+from agent_runtime.api import contract
 from agent_runtime.api.schemas import SessionView
 from agent_runtime.mcp import tools as mcp_tools
 from agent_runtime.mcp.service import McpStore
@@ -200,7 +201,7 @@ class PublishRequest(BaseModel):
 
 
 @studio.get("/catalog", response_model=StudioCatalog, summary="What the form offers")
-async def catalog(request: Request) -> StudioCatalog:
+async def get_catalog(request: Request) -> StudioCatalog:
     service = _studio(request)
     risks = service.tool_risks()
     s = request.app.state.settings
@@ -234,13 +235,14 @@ async def catalog(request: Request) -> StudioCatalog:
 
 
 @studio.get("/agents", response_model=list[StudioAgentView], summary="Your agents")
-async def list_agents(service: StudioDep) -> list[StudioAgentView]:
+async def list_studio_agents(service: StudioDep) -> list[StudioAgentView]:
     return [StudioAgentView.of(s) for s in await service.all()]
 
 
 @studio.post("/agents", status_code=status.HTTP_201_CREATED, response_model=StudioAgentView,
-             summary="A new agent (blank, or a copy) with a draft")  # fmt: skip
-async def create_agent(
+             summary="A new agent (blank, or a copy) with a draft",
+             responses=contract.problems(404, 409))  # fmt: skip
+async def create_studio_agent(
     body: CreateAgentRequest, request: Request, service: StudioDep, guide: GuideFlag = False
 ) -> StudioAgentView:
     try:
@@ -261,14 +263,16 @@ async def _guide(request: Request, agent_id: uuid.UUID) -> None:
 
 
 @studio.post("/describe", status_code=status.HTTP_202_ACCEPTED, response_model=AssistStarted,
-             summary="Draft an agent from a description (the builder agent)")  # fmt: skip
-async def describe(body: DescribeRequest, service: StudioDep) -> AssistStarted:
+             summary="Draft an agent from a description (the builder agent)",
+             responses=contract.problems(409, 429, 503))  # fmt: skip
+async def describe_agent(body: DescribeRequest, service: StudioDep) -> AssistStarted:
     return AssistStarted(run_id=(await service.describe(body.description)).id)
 
 
 @studio.post("/agents/{agent_id}/improve", status_code=status.HTTP_202_ACCEPTED,
-             response_model=AssistStarted, summary="Suggest clearer instructions")  # fmt: skip
-async def improve(agent_id: uuid.UUID, service: StudioDep) -> AssistStarted:
+             response_model=AssistStarted, summary="Suggest clearer instructions",
+             responses=contract.problems(404, 409, 429, 503))  # fmt: skip
+async def improve_instructions(agent_id: uuid.UUID, service: StudioDep) -> AssistStarted:
     try:
         return AssistStarted(run_id=(await service.improve(agent_id)).id)
     except LookupError as exc:
@@ -277,8 +281,13 @@ async def improve(agent_id: uuid.UUID, service: StudioDep) -> AssistStarted:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
 
 
-@studio.get("/assist/{run_id}", response_model=AssistView, summary="A builder's proposal")
-async def assist(run_id: uuid.UUID, service: StudioDep) -> AssistView:
+@studio.get(
+    "/assist/{run_id}",
+    response_model=AssistView,
+    summary="A builder's proposal",
+    responses=contract.problems(404),
+)
+async def get_assist(run_id: uuid.UUID, service: StudioDep) -> AssistView:
     try:
         found = await service.assist(run_id)
     except LookupError as exc:
@@ -290,8 +299,9 @@ async def assist(run_id: uuid.UUID, service: StudioDep) -> AssistView:
 
 
 @studio.post("/agents/from-proposal", status_code=status.HTTP_201_CREATED,
-             response_model=StudioAgentView, summary="A new agent from a proposal")  # fmt: skip
-async def from_proposal(
+             response_model=StudioAgentView, summary="A new agent from a proposal",
+             responses=contract.problems(409))  # fmt: skip
+async def create_from_proposal(
     body: DraftProposal, request: Request, service: StudioDep, guide: GuideFlag = False
 ) -> StudioAgentView:
     state = await service.create_from_proposal(body)
@@ -300,13 +310,19 @@ async def from_proposal(
     return StudioAgentView.of(state)
 
 
-@studio.get("/agents/{agent_id}", response_model=StudioAgentView, summary="One agent")
-async def get_agent(agent_id: uuid.UUID, service: StudioDep) -> StudioAgentView:
+@studio.get(
+    "/agents/{agent_id}",
+    response_model=StudioAgentView,
+    summary="One agent",
+    responses=contract.problems(404),
+)
+async def get_studio_agent(agent_id: uuid.UUID, service: StudioDep) -> StudioAgentView:
     return StudioAgentView.of(await service.get(agent_id))
 
 
 @studio.put("/agents/{agent_id}/draft", response_model=StudioAgentView,
-            summary="Save the draft (autosave); returns its issues")  # fmt: skip
+            summary="Save the draft (autosave); returns its issues",
+            responses=contract.problems(404))  # fmt: skip
 async def save_draft(
     agent_id: uuid.UUID, document: AgentDocument, service: StudioDep
 ) -> StudioAgentView:
@@ -314,26 +330,32 @@ async def save_draft(
 
 
 @studio.post("/agents/{agent_id}/edit", response_model=StudioAgentView,
-             summary="Start editing: a draft from the published version")  # fmt: skip
-async def edit(agent_id: uuid.UUID, service: StudioDep) -> StudioAgentView:
+             summary="Start editing: a draft from the published version",
+             responses=contract.problems(404))  # fmt: skip
+async def edit_studio_agent(agent_id: uuid.UUID, service: StudioDep) -> StudioAgentView:
     return StudioAgentView.of(await service.edit(agent_id))
 
 
 @studio.delete("/agents/{agent_id}/draft", response_model=StudioAgentView,
-               summary="Throw away the draft (back to the published version)")  # fmt: skip
-async def discard(agent_id: uuid.UUID, service: StudioDep) -> StudioAgentView:
+               summary="Throw away the draft (back to the published version)",
+               responses=contract.problems(404, 409))  # fmt: skip
+async def discard_draft(agent_id: uuid.UUID, service: StudioDep) -> StudioAgentView:
     return StudioAgentView.of(await service.discard(agent_id))
 
 
 @studio.post("/agents/{agent_id}/publish", response_model=StudioAgentView,
-             summary="Publish the draft as an immutable version (needs a test)")  # fmt: skip
-async def publish(agent_id: uuid.UUID, body: PublishRequest, service: StudioDep) -> StudioAgentView:
+             summary="Publish the draft as an immutable version (needs a test)",
+             responses=contract.problems(404, 409))  # fmt: skip
+async def publish_agent(
+    agent_id: uuid.UUID, body: PublishRequest, service: StudioDep
+) -> StudioAgentView:
     return StudioAgentView.of(await service.publish(agent_id, body.changelog))
 
 
 @studio.post("/agents/{agent_id}/versions/{number}/restore", response_model=StudioAgentView,
-             summary="Make an earlier version the draft")  # fmt: skip
-async def restore(agent_id: uuid.UUID, number: int, service: StudioDep) -> StudioAgentView:
+             summary="Make an earlier version the draft",
+             responses=contract.problems(404))  # fmt: skip
+async def restore_version(agent_id: uuid.UUID, number: int, service: StudioDep) -> StudioAgentView:
     try:
         return StudioAgentView.of(await service.restore(agent_id, number))
     except LookupError as exc:
@@ -341,27 +363,31 @@ async def restore(agent_id: uuid.UUID, number: int, service: StudioDep) -> Studi
 
 
 @studio.post("/agents/{agent_id}/archive", response_model=StudioAgentView,
-             summary="Archive: no new chats; old ones stay readable")  # fmt: skip
-async def archive(agent_id: uuid.UUID, service: StudioDep) -> StudioAgentView:
+             summary="Archive: no new chats; old ones stay readable",
+             responses=contract.problems(404))  # fmt: skip
+async def archive_studio_agent(agent_id: uuid.UUID, service: StudioDep) -> StudioAgentView:
     return StudioAgentView.of(await service.archive(agent_id))
 
 
 @studio.post("/agents/{agent_id}/test-chat", status_code=status.HTTP_201_CREATED,
-             response_model=SessionView, summary="A test chat with the draft")  # fmt: skip
-async def test_chat(agent_id: uuid.UUID, service: StudioDep) -> SessionView:
+             response_model=SessionView, summary="A test chat with the draft",
+             responses=contract.problems(404))  # fmt: skip
+async def start_test_chat(agent_id: uuid.UUID, service: StudioDep) -> SessionView:
     return SessionView.of(await service.playground(agent_id))
 
 
 @studio.get("/agents/{agent_id}/test-chat", response_model=SessionView | None,
-            summary="The latest test chat still open, if any")  # fmt: skip
-async def last_test_chat(agent_id: uuid.UUID, service: StudioDep) -> SessionView | None:
+            summary="The latest test chat still open, if any",
+            responses=contract.problems(404))  # fmt: skip
+async def get_test_chat(agent_id: uuid.UUID, service: StudioDep) -> SessionView | None:
     found = await service.last_playground(agent_id)
     return SessionView.of(found) if found else None
 
 
 @studio.get("/agents/{agent_id}/export", summary="Download as agent.md (or a zipped folder)",
-            responses={200: {"content": {"application/zip": {}, "text/markdown": {}}}})  # fmt: skip
-async def export(
+            responses={200: {"content": {"application/zip": {}, "text/markdown": {}}}}
+            | contract.problems(404, 409))  # fmt: skip
+async def export_studio_agent(
     agent_id: uuid.UUID,
     service: StudioDep,
     version: Annotated[
@@ -379,7 +405,8 @@ async def export(
 
 
 @studio.post("/import", status_code=status.HTTP_201_CREATED, response_model=StudioAgentView,
-             summary="Import an agent.md or a zipped folder (the file is the body)")  # fmt: skip
+             summary="Import an agent.md or a zipped folder (the file is the body)",
+             responses=contract.problems(409))  # fmt: skip
 async def import_agent(
     request: Request,
     service: StudioDep,

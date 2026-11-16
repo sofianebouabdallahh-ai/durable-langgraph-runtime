@@ -20,6 +20,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from agent_runtime.api import contract
 from agent_runtime.models.connections import Connection, ConnectionService
 
 models_router = APIRouter(prefix="/models", tags=["models"])
@@ -156,8 +157,9 @@ async def list_connections(service: ServiceDep) -> list[ConnectionView]:
 
 
 @models_router.post("/connections", status_code=status.HTTP_201_CREATED,
-                    response_model=ConnectionView, summary="Add a model connection")  # fmt: skip
-async def add(body: AddConnection, service: ServiceDep) -> ConnectionView:
+                    response_model=ConnectionView, summary="Add a model connection",
+                    responses=contract.problems(503))  # fmt: skip
+async def add_connection(body: AddConnection, service: ServiceDep) -> ConnectionView:
     return ConnectionView.of(await service.add(
         display_name=body.display_name, kind=body.kind, base_url=body.base_url,
         api_key=body.api_key, models=body.models,
@@ -165,8 +167,9 @@ async def add(body: AddConnection, service: ServiceDep) -> ConnectionView:
 
 
 @models_router.patch("/connections/{connection_id}", response_model=ConnectionView,
-                     summary="Edit (a new key replaces the old one)")  # fmt: skip
-async def edit(
+                     summary="Edit (a new key replaces the old one)",
+                     responses=contract.problems(404, 503))  # fmt: skip
+async def update_connection(
     connection_id: uuid.UUID, body: EditConnection, service: ServiceDep
 ) -> ConnectionView:
     return ConnectionView.of(await service.update(
@@ -178,15 +181,19 @@ async def edit(
 
 
 @models_router.delete("/connections/{connection_id}", status_code=status.HTTP_204_NO_CONTENT,
-                      summary="Remove (agents using it need another model)")  # fmt: skip
-async def remove(connection_id: uuid.UUID, service: ServiceDep) -> Response:
+                      summary="Remove (agents using it need another model)",
+                      responses=contract.problems(404))  # fmt: skip
+async def remove_connection(connection_id: uuid.UUID, service: ServiceDep) -> Response:
     await service.archive(connection_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @models_router.post("/connections/{connection_id}/test", response_model=TestView,
-                    summary="Check it answers and uses tools")  # fmt: skip
-async def test(connection_id: uuid.UUID, body: TestRequest, service: ServiceDep) -> TestView:
+                    summary="Check it answers and uses tools",
+                    responses=contract.problems(404))  # fmt: skip
+async def test_connection(
+    connection_id: uuid.UUID, body: TestRequest, service: ServiceDep
+) -> TestView:
     result = await service.test(connection_id, body.model)
     connection = ConnectionView.of(await service.get(connection_id), service)
     return TestView(ok=result.ok, detail=result.detail, model=result.model,
@@ -194,20 +201,21 @@ async def test(connection_id: uuid.UUID, body: TestRequest, service: ServiceDep)
 
 
 @models_router.get("/connections/{connection_id}/models", response_model=list[str],
-                   summary="The models the service says it has")  # fmt: skip
-async def remote_models(connection_id: uuid.UUID, service: ServiceDep) -> list[str]:
+                   summary="The models the service says it has",
+                   responses=contract.problems(404))  # fmt: skip
+async def list_connection_models(connection_id: uuid.UUID, service: ServiceDep) -> list[str]:
     return await service.remote_models(connection_id)
 
 
 @models_router.get("/ollama", response_model=list[OllamaView], summary="Find Ollama")
-async def ollama(service: ServiceDep) -> list[OllamaView]:
+async def list_ollama_models(service: ServiceDep) -> list[OllamaView]:
     return [
         OllamaView(base_url=o.base_url, models=o.models) for o in await service.discover_ollama()
     ]
 
 
 @models_router.get("/default", response_model=DefaultView, summary="The default model")
-async def get_default(request: Request, service: ServiceDep) -> DefaultView:
+async def get_default_model(request: Request, service: ServiceDep) -> DefaultView:
     found = await service.default()
     setup = request.app.state.settings.model_provider
     if found is None:
@@ -217,7 +225,14 @@ async def get_default(request: Request, service: ServiceDep) -> DefaultView:
     )
 
 
-@models_router.put("/default", response_model=DefaultView, summary="Set the default model")
-async def set_default(body: DefaultModel, request: Request, service: ServiceDep) -> DefaultView:
+@models_router.put(
+    "/default",
+    response_model=DefaultView,
+    summary="Set the default model",
+    responses=contract.problems(404),
+)
+async def set_default_model(
+    body: DefaultModel, request: Request, service: ServiceDep
+) -> DefaultView:
     await service.set_default(body.connection_id, body.model)
-    return await get_default(request, service)
+    return await get_default_model(request, service)

@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, Request, Response, status
 from pydantic import BaseModel, Field
 
 from agent_runtime.agents.studio import StudioService
+from agent_runtime.api import contract
 from agent_runtime.evals.cases import Case
 from agent_runtime.evals.service import EvalService
 from agent_runtime.evals.store import Result, StoredCase
@@ -97,7 +98,8 @@ async def _digest(studio: StudioService, agent_id: uuid.UUID) -> str | None:
 
 
 @tests_router.get("/studio/agents/{agent_id}/tests", response_model=TestsView,
-                  summary="Its tests, each with its latest result")  # fmt: skip
+                  summary="Its tests, each with its latest result",
+                  responses=contract.problems(404))  # fmt: skip
 async def list_tests(agent_id: uuid.UUID, evals: EvalsDep, studio: StudioDep) -> TestsView:
     cases = await evals.cases(agent_id)
     digest = await _digest(studio, agent_id)
@@ -109,13 +111,15 @@ async def list_tests(agent_id: uuid.UUID, evals: EvalsDep, studio: StudioDep) ->
 
 
 @tests_router.post("/studio/agents/{agent_id}/tests", response_model=CaseView,
-                   status_code=status.HTTP_201_CREATED, summary="Add a test")  # fmt: skip
+                   status_code=status.HTTP_201_CREATED, summary="Add a test",
+                   responses=contract.problems(404, 409))  # fmt: skip
 async def add_test(agent_id: uuid.UUID, case: Case, evals: EvalsDep) -> CaseView:
     return _view(await evals.add(agent_id, case), {}, None)
 
 
 @tests_router.put("/studio/agents/{agent_id}/tests/{case_id}", response_model=CaseView,
-                  summary="Change a test (its earlier results no longer count)")  # fmt: skip
+                  summary="Change a test (its earlier results no longer count)",
+                  responses=contract.problems(404))  # fmt: skip
 async def change_test(
     agent_id: uuid.UUID, case_id: uuid.UUID, case: Case, evals: EvalsDep
 ) -> CaseView:
@@ -123,7 +127,8 @@ async def change_test(
 
 
 @tests_router.delete("/studio/agents/{agent_id}/tests/{case_id}",
-                     status_code=status.HTTP_204_NO_CONTENT, summary="Remove a test")  # fmt: skip
+                     status_code=status.HTTP_204_NO_CONTENT, summary="Remove a test",
+                     responses=contract.problems(404))  # fmt: skip
 async def remove_test(agent_id: uuid.UUID, case_id: uuid.UUID, evals: EvalsDep) -> Response:
     await evals.remove(agent_id, case_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -131,7 +136,8 @@ async def remove_test(agent_id: uuid.UUID, case_id: uuid.UUID, evals: EvalsDep) 
 
 @tests_router.post("/studio/agents/{agent_id}/tests/run", response_model=RunStarted,
                    status_code=status.HTTP_202_ACCEPTED,
-                   summary="Run every test on the draft, each in its own test chat")  # fmt: skip
+                   summary="Run every test on the draft, each in its own test chat",
+                   responses=contract.problems(404, 409, 429, 503))  # fmt: skip
 async def run_tests(agent_id: uuid.UUID, evals: EvalsDep) -> RunStarted:
     batch = await evals.run(agent_id)
     return RunStarted(batch=batch, cases=len(await evals.batch(batch)))
@@ -139,6 +145,7 @@ async def run_tests(agent_id: uuid.UUID, evals: EvalsDep) -> RunStarted:
 
 @tests_router.post("/runs/{run_id}/make-test", response_model=CaseView,
                    status_code=status.HTTP_201_CREATED,
-                   summary="Make a test from a reply: its message, the 👎 reason")  # fmt: skip
+                   summary="Make a test from a reply: its message, the 👎 reason",
+                   responses=contract.problems(404, 409))  # fmt: skip
 async def make_test(run_id: uuid.UUID, evals: EvalsDep) -> dict[str, Any]:
     return _view(await evals.from_run(run_id), {}, None).model_dump()

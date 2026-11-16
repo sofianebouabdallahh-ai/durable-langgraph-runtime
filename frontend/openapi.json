@@ -2309,19 +2309,6 @@
         "title": "GuideAgentView",
         "type": "object"
       },
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail",
-            "type": "array"
-          }
-        },
-        "title": "HTTPValidationError",
-        "type": "object"
-      },
       "Health": {
         "properties": {
           "status": {
@@ -2333,6 +2320,115 @@
           "status"
         ],
         "title": "Health",
+        "type": "object"
+      },
+      "HelperCompletedEvent": {
+        "properties": {
+          "after_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Transient events: the persisted seq they follow. Persisted: null",
+            "title": "After Seq"
+          },
+          "epoch": {
+            "description": "The lease epoch of the worker that wrote it",
+            "title": "Epoch",
+            "type": "integer"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/HelperCompletedPayload"
+          },
+          "run_id": {
+            "description": "The run (turn) the event belongs to",
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Persisted events: the stream's sequence number, also sent as the SSE `id` and accepted back as `Last-Event-ID`. Transient events: null",
+            "title": "Seq"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "subagent.completed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "after_seq",
+          "ts",
+          "epoch",
+          "type",
+          "payload"
+        ],
+        "title": "HelperCompletedEvent",
+        "type": "object"
+      },
+      "HelperCompletedPayload": {
+        "properties": {
+          "agent": {
+            "title": "Agent",
+            "type": "string"
+          },
+          "handle": {
+            "format": "uuid",
+            "title": "Handle",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "result_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HelperResultStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/HelperStatus"
+          }
+        },
+        "required": [
+          "handle",
+          "agent",
+          "status",
+          "result_status",
+          "reason"
+        ],
+        "title": "HelperCompletedPayload",
         "type": "object"
       },
       "HelperDocument": {
@@ -2424,6 +2520,100 @@
         "title": "HelperDocument",
         "type": "object"
       },
+      "HelperProgressEvent": {
+        "properties": {
+          "after_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Transient events: the persisted seq they follow. Persisted: null",
+            "title": "After Seq"
+          },
+          "epoch": {
+            "description": "The lease epoch of the worker that wrote it",
+            "title": "Epoch",
+            "type": "integer"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/HelperProgressPayload"
+          },
+          "run_id": {
+            "description": "The run (turn) the event belongs to",
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Persisted events: the stream's sequence number, also sent as the SSE `id` and accepted back as `Last-Event-ID`. Transient events: null",
+            "title": "Seq"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "subagent.progress",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "after_seq",
+          "ts",
+          "epoch",
+          "type",
+          "payload"
+        ],
+        "title": "HelperProgressEvent",
+        "type": "object"
+      },
+      "HelperProgressPayload": {
+        "properties": {
+          "handle": {
+            "format": "uuid",
+            "title": "Handle",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
+          }
+        },
+        "required": [
+          "handle",
+          "message",
+          "percent"
+        ],
+        "title": "HelperProgressPayload",
+        "type": "object"
+      },
       "HelperProposal": {
         "additionalProperties": false,
         "properties": {
@@ -2464,6 +2654,121 @@
         ],
         "title": "HelperProposal",
         "type": "object"
+      },
+      "HelperResultStatus": {
+        "description": "What a finished helper said of its own result (`return_result`).",
+        "enum": [
+          "success",
+          "partial",
+          "failed"
+        ],
+        "title": "HelperResultStatus",
+        "type": "string"
+      },
+      "HelperSpawnedEvent": {
+        "properties": {
+          "after_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Transient events: the persisted seq they follow. Persisted: null",
+            "title": "After Seq"
+          },
+          "epoch": {
+            "description": "The lease epoch of the worker that wrote it",
+            "title": "Epoch",
+            "type": "integer"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/HelperSpawnedPayload"
+          },
+          "run_id": {
+            "description": "The run (turn) the event belongs to",
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Persisted events: the stream's sequence number, also sent as the SSE `id` and accepted back as `Last-Event-ID`. Transient events: null",
+            "title": "Seq"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "subagent.spawned",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "after_seq",
+          "ts",
+          "epoch",
+          "type",
+          "payload"
+        ],
+        "title": "HelperSpawnedEvent",
+        "type": "object"
+      },
+      "HelperSpawnedPayload": {
+        "properties": {
+          "agent": {
+            "title": "Agent",
+            "type": "string"
+          },
+          "handle": {
+            "format": "uuid",
+            "title": "Handle",
+            "type": "string"
+          },
+          "task": {
+            "title": "Task",
+            "type": "string"
+          },
+          "worker": {
+            "description": "The worker the helper runs in (the main run's)",
+            "title": "Worker",
+            "type": "string"
+          }
+        },
+        "required": [
+          "handle",
+          "agent",
+          "task",
+          "worker"
+        ],
+        "title": "HelperSpawnedPayload",
+        "type": "object"
+      },
+      "HelperStatus": {
+        "description": "A helper's state (`subagents/store.py` Status).",
+        "enum": [
+          "running",
+          "completed",
+          "failed",
+          "cancelled",
+          "timed_out"
+        ],
+        "title": "HelperStatus",
+        "type": "string"
       },
       "HelperView": {
         "description": "A sub-agent (CR-005), as the UI shows it under its main agent.",
@@ -2798,6 +3103,70 @@
           "notes"
         ],
         "title": "MemoryView",
+        "type": "object"
+      },
+      "MessageCreatedEvent": {
+        "description": "A transcript message (persisted: it has a seq and is replayed).",
+        "properties": {
+          "after_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Transient events: the persisted seq they follow. Persisted: null",
+            "title": "After Seq"
+          },
+          "epoch": {
+            "description": "The lease epoch of the worker that wrote it",
+            "title": "Epoch",
+            "type": "integer"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/MessageView"
+          },
+          "run_id": {
+            "description": "The run (turn) the event belongs to",
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Persisted events: the stream's sequence number, also sent as the SSE `id` and accepted back as `Last-Event-ID`. Transient events: null",
+            "title": "Seq"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "message.created",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "after_seq",
+          "ts",
+          "epoch",
+          "type",
+          "payload"
+        ],
+        "title": "MessageCreatedEvent",
         "type": "object"
       },
       "MessageView": {
@@ -3475,6 +3844,40 @@
         "title": "PriceView",
         "type": "object"
       },
+      "Problem": {
+        "additionalProperties": true,
+        "description": "An error, as RFC 9457 problem details. Branch on `type`; a problem may carry more\nfields of its own (`run_id`, `limit`, `agent`, ...).",
+        "properties": {
+          "detail": {
+            "description": "This occurrence, in words for a person",
+            "title": "Detail",
+            "type": "string"
+          },
+          "status": {
+            "description": "The HTTP status code",
+            "title": "Status",
+            "type": "integer"
+          },
+          "title": {
+            "description": "A short summary of the kind of problem",
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "description": "A URI naming the kind of problem: the field to branch on",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail"
+        ],
+        "title": "Problem",
+        "type": "object"
+      },
       "ProtectionOption": {
         "properties": {
           "default": {
@@ -3533,6 +3936,20 @@
         "title": "PublishRequest",
         "type": "object"
       },
+      "ReconnectData": {
+        "description": "`event: reconnect`: this replica is shutting down. Reconnect now (any replica),\nresuming after `after_seq`.",
+        "properties": {
+          "after_seq": {
+            "title": "After Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "after_seq"
+        ],
+        "title": "ReconnectData",
+        "type": "object"
+      },
       "ResumeRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3585,6 +4002,102 @@
         ],
         "title": "RunStatus",
         "type": "string"
+      },
+      "RunStreamEvent": {
+        "description": "One event of `GET /runs/{run_id}/stream`. The stream closes after `run.completed`,\n`run.failed` or `run.cancelled`.",
+        "properties": {
+          "after_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Transient events: the persisted seq they follow. Persisted: null",
+            "title": "After Seq"
+          },
+          "epoch": {
+            "description": "The lease epoch of the worker that wrote it",
+            "title": "Epoch",
+            "type": "integer"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "run_id": {
+            "description": "The run (turn) the event belongs to",
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Persisted events: the stream's sequence number, also sent as the SSE `id` and accepted back as `Last-Event-ID`. Transient events: null",
+            "title": "Seq"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "run.created",
+              "run.started",
+              "run.completed",
+              "run.failed",
+              "run.cancelled",
+              "run.reclaimed",
+              "run.released",
+              "run.redriven",
+              "context.trimmed",
+              "context.compacted",
+              "node.started",
+              "node.completed",
+              "node.failed",
+              "tool.called",
+              "tool.completed",
+              "tool.args_changed",
+              "interrupt.raised",
+              "approval.decided",
+              "run.resumed",
+              "policy.decision",
+              "hook.decision",
+              "child.started",
+              "child.completed",
+              "children.spawned",
+              "children.completed",
+              "subagent.spawned",
+              "subagent.progress",
+              "subagent.completed",
+              "token"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "after_seq",
+          "ts",
+          "epoch",
+          "type",
+          "payload"
+        ],
+        "title": "RunStreamEvent",
+        "type": "object"
       },
       "RunView": {
         "properties": {
@@ -4129,6 +4642,39 @@
         ],
         "title": "SessionRow",
         "type": "object"
+      },
+      "SessionStreamEvent": {
+        "discriminator": {
+          "mapping": {
+            "message.created": "#/components/schemas/MessageCreatedEvent",
+            "subagent.completed": "#/components/schemas/HelperCompletedEvent",
+            "subagent.progress": "#/components/schemas/HelperProgressEvent",
+            "subagent.spawned": "#/components/schemas/HelperSpawnedEvent",
+            "token": "#/components/schemas/TokenEvent",
+            "turn.status": "#/components/schemas/TurnStatusEvent"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/MessageCreatedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/TokenEvent"
+          },
+          {
+            "$ref": "#/components/schemas/TurnStatusEvent"
+          },
+          {
+            "$ref": "#/components/schemas/HelperSpawnedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/HelperProgressEvent"
+          },
+          {
+            "$ref": "#/components/schemas/HelperCompletedEvent"
+          }
+        ]
       },
       "SessionView": {
         "properties": {
@@ -4964,6 +5510,84 @@
         "title": "TestsView",
         "type": "object"
       },
+      "TokenEvent": {
+        "description": "Transient: part of the active turn's reply. The complete reply arrives later as a\n`message.created`.",
+        "properties": {
+          "after_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Transient events: the persisted seq they follow. Persisted: null",
+            "title": "After Seq"
+          },
+          "epoch": {
+            "description": "The lease epoch of the worker that wrote it",
+            "title": "Epoch",
+            "type": "integer"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/TokenPayload"
+          },
+          "run_id": {
+            "description": "The run (turn) the event belongs to",
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Persisted events: the stream's sequence number, also sent as the SSE `id` and accepted back as `Last-Event-ID`. Transient events: null",
+            "title": "Seq"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "token",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "after_seq",
+          "ts",
+          "epoch",
+          "type",
+          "payload"
+        ],
+        "title": "TokenEvent",
+        "type": "object"
+      },
+      "TokenPayload": {
+        "properties": {
+          "text": {
+            "description": "The next piece of the reply, as the model wrote it",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "TokenPayload",
+        "type": "object"
+      },
       "ToolChoice": {
         "additionalProperties": false,
         "properties": {
@@ -5655,6 +6279,151 @@
         "title": "TurnRow",
         "type": "object"
       },
+      "TurnStatus": {
+        "description": "A chat turn's lifecycle on the session stream (`streaming/bus.py` TURN_STATUS_OF).",
+        "enum": [
+          "queued",
+          "running",
+          "waiting_approval",
+          "completed",
+          "failed",
+          "cancelled"
+        ],
+        "title": "TurnStatus",
+        "type": "string"
+      },
+      "TurnStatusEvent": {
+        "description": "Transient: the active turn changed state. Never replayed: a client that reconnects\nreads the turn's status from `GET /runs/{run_id}`.",
+        "properties": {
+          "after_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Transient events: the persisted seq they follow. Persisted: null",
+            "title": "After Seq"
+          },
+          "epoch": {
+            "description": "The lease epoch of the worker that wrote it",
+            "title": "Epoch",
+            "type": "integer"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/TurnStatusPayload"
+          },
+          "run_id": {
+            "description": "The run (turn) the event belongs to",
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Persisted events: the stream's sequence number, also sent as the SSE `id` and accepted back as `Last-Event-ID`. Transient events: null",
+            "title": "Seq"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "turn.status",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "seq",
+          "after_seq",
+          "ts",
+          "epoch",
+          "type",
+          "payload"
+        ],
+        "title": "TurnStatusEvent",
+        "type": "object"
+      },
+      "TurnStatusPayload": {
+        "properties": {
+          "event": {
+            "description": "The run event this status comes from",
+            "enum": [
+              "run.created",
+              "run.started",
+              "run.completed",
+              "run.failed",
+              "run.cancelled",
+              "run.reclaimed",
+              "run.released",
+              "run.redriven",
+              "context.trimmed",
+              "context.compacted",
+              "node.started",
+              "node.completed",
+              "node.failed",
+              "tool.called",
+              "tool.completed",
+              "tool.args_changed",
+              "interrupt.raised",
+              "approval.decided",
+              "run.resumed",
+              "policy.decision",
+              "hook.decision",
+              "child.started",
+              "child.completed",
+              "children.spawned",
+              "children.completed",
+              "subagent.spawned",
+              "subagent.progress",
+              "subagent.completed",
+              "token"
+            ],
+            "title": "Event",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it failed or was cancelled, when it did",
+            "title": "Reason"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TurnStatus"
+          }
+        },
+        "required": [
+          "run_id",
+          "status",
+          "event",
+          "reason"
+        ],
+        "title": "TurnStatusPayload",
+        "type": "object"
+      },
       "UpdateSessionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -5688,35 +6457,22 @@
         "title": "UpdateSessionRequest",
         "type": "object"
       },
-      "ValidationError": {
+      "ValidationIssue": {
         "properties": {
-          "ctx": {
-            "title": "Context",
-            "type": "object"
-          },
-          "input": {
-            "title": "Input"
-          },
           "loc": {
+            "description": "Where: `body`, `query` or `path`, then the field",
             "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
+              "type": "string"
             },
-            "title": "Location",
+            "title": "Loc",
             "type": "array"
           },
           "msg": {
-            "title": "Message",
+            "title": "Msg",
             "type": "string"
           },
           "type": {
-            "title": "Error Type",
+            "title": "Type",
             "type": "string"
           }
         },
@@ -5725,7 +6481,56 @@
           "msg",
           "type"
         ],
-        "title": "ValidationError",
+        "title": "ValidationIssue",
+        "type": "object"
+      },
+      "ValidationProblem": {
+        "additionalProperties": true,
+        "description": "A 422. When the request's own fields didn't validate, `errors` says where and why;\nother 422s say why in fields of their own (a limit's `field` and `maximum`, a skill's\n`issues`).",
+        "properties": {
+          "detail": {
+            "description": "This occurrence, in words for a person",
+            "title": "Detail",
+            "type": "string"
+          },
+          "errors": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ValidationIssue"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Errors"
+          },
+          "status": {
+            "description": "The HTTP status code",
+            "title": "Status",
+            "type": "integer"
+          },
+          "title": {
+            "description": "A short summary of the kind of problem",
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "description": "A URI naming the kind of problem: the field to branch on",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail"
+        ],
+        "title": "ValidationProblem",
         "type": "object"
       },
       "VersionView": {
@@ -5972,7 +6777,7 @@
   "paths": {
     "/about": {
       "get": {
-        "operationId": "about_about_get",
+        "operationId": "get_about",
         "responses": {
           "200": {
             "content": {
@@ -5983,6 +6788,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Version and model, for the UI",
@@ -5993,7 +6808,7 @@
     },
     "/activity": {
       "get": {
-        "operationId": "activity_activity_get",
+        "operationId": "get_activity",
         "parameters": [
           {
             "description": "24h, 7d or 30d",
@@ -6056,13 +6871,23 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "What all agents have been doing",
@@ -6073,7 +6898,7 @@
     },
     "/activity/sessions": {
       "get": {
-        "operationId": "sessions_activity_sessions_get",
+        "operationId": "list_activity_sessions",
         "parameters": [
           {
             "description": "24h, 7d or 30d",
@@ -6143,7 +6968,7 @@
                   "items": {
                     "$ref": "#/components/schemas/SessionRow"
                   },
-                  "title": "Response Sessions Activity Sessions Get",
+                  "title": "Response List Activity Sessions",
                   "type": "array"
                 }
               }
@@ -6152,13 +6977,23 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Chats in range",
@@ -6169,7 +7004,7 @@
     },
     "/activity/turns": {
       "get": {
-        "operationId": "turns_activity_turns_get",
+        "operationId": "list_activity_turns",
         "parameters": [
           {
             "description": "24h, 7d or 30d",
@@ -6311,7 +7146,7 @@
                   "items": {
                     "$ref": "#/components/schemas/TurnRow"
                   },
-                  "title": "Response Turns Activity Turns Get",
+                  "title": "Response List Activity Turns",
                   "type": "array"
                 }
               }
@@ -6320,13 +7155,23 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Turns, newest first",
@@ -6337,7 +7182,7 @@
     },
     "/activity/turns/{run_id}": {
       "get": {
-        "operationId": "turn_activity_turns__run_id__get",
+        "operationId": "get_activity_turn",
         "parameters": [
           {
             "in": "path",
@@ -6361,15 +7206,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "One turn",
@@ -6380,7 +7245,7 @@
     },
     "/admin/cancel-all": {
       "post": {
-        "operationId": "admin_cancel_all_admin_cancel_all_post",
+        "operationId": "admin_cancel_all",
         "responses": {
           "200": {
             "content": {
@@ -6389,12 +7254,22 @@
                   "additionalProperties": {
                     "type": "integer"
                   },
-                  "title": "Response Admin Cancel All Admin Cancel All Post",
+                  "title": "Response Admin Cancel All",
                   "type": "object"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Cooperatively cancel every non-terminal run",
@@ -6405,7 +7280,7 @@
     },
     "/admin/pause": {
       "post": {
-        "operationId": "admin_pause_admin_pause_post",
+        "operationId": "admin_pause",
         "requestBody": {
           "content": {
             "application/json": {
@@ -6429,13 +7304,23 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Stop admission and claiming (R14.18)",
@@ -6446,7 +7331,7 @@
     },
     "/admin/resume": {
       "post": {
-        "operationId": "admin_resume_admin_resume_post",
+        "operationId": "admin_resume",
         "responses": {
           "200": {
             "content": {
@@ -6457,6 +7342,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Resume admission and claiming",
@@ -6467,7 +7362,7 @@
     },
     "/admin/state": {
       "get": {
-        "operationId": "admin_state_admin_state_get",
+        "operationId": "admin_state",
         "responses": {
           "200": {
             "content": {
@@ -6478,6 +7373,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Kill-switch state and queue depth",
@@ -6489,7 +7394,7 @@
     "/agents": {
       "get": {
         "description": "Built-in agents (files) and published Studio agents.",
-        "operationId": "list_agents_agents_get",
+        "operationId": "list_agents",
         "responses": {
           "200": {
             "content": {
@@ -6498,12 +7403,22 @@
                   "items": {
                     "$ref": "#/components/schemas/AgentView"
                   },
-                  "title": "Response List Agents Agents Get",
+                  "title": "Response List Agents",
                   "type": "array"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "The agents you can chat with",
@@ -6514,7 +7429,7 @@
     },
     "/agents/{name}": {
       "get": {
-        "operationId": "get_agent_agents__name__get",
+        "operationId": "get_agent",
         "parameters": [
           {
             "in": "path",
@@ -6537,15 +7452,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "One agent, with its prompt",
@@ -6556,7 +7491,7 @@
     },
     "/agents/{name}/memory": {
       "delete": {
-        "operationId": "clear_memory_agents__name__memory_delete",
+        "operationId": "clear_memory",
         "parameters": [
           {
             "in": "path",
@@ -6583,13 +7518,23 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Forget everything, for good",
@@ -6598,7 +7543,7 @@
         ]
       },
       "get": {
-        "operationId": "list_memory_agents__name__memory_get",
+        "operationId": "list_memory",
         "parameters": [
           {
             "in": "path",
@@ -6625,13 +7570,23 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "What the agent remembers",
@@ -6642,7 +7597,7 @@
     },
     "/agents/{name}/memory/{note_id}": {
       "delete": {
-        "operationId": "delete_note_agents__name__memory__note_id__delete",
+        "operationId": "delete_note",
         "parameters": [
           {
             "in": "path",
@@ -6670,15 +7625,35 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Delete a note for good",
@@ -6689,7 +7664,7 @@
     },
     "/agents/{name}/memory/{note_id}/restore": {
       "post": {
-        "operationId": "restore_note_agents__name__memory__note_id__restore_post",
+        "operationId": "restore_note",
         "parameters": [
           {
             "in": "path",
@@ -6724,15 +7699,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Bring back a forgotten note",
@@ -6743,7 +7738,7 @@
     },
     "/audit": {
       "get": {
-        "operationId": "audit_audit_get",
+        "operationId": "list_audit",
         "parameters": [
           {
             "description": "e.g. agent.published",
@@ -6840,7 +7835,7 @@
                   "items": {
                     "$ref": "#/components/schemas/AuditRow"
                   },
-                  "title": "Response Audit Audit Get",
+                  "title": "Response List Audit",
                   "type": "array"
                 }
               }
@@ -6849,13 +7844,23 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Who changed what",
@@ -6866,7 +7871,7 @@
     },
     "/audit.csv": {
       "get": {
-        "operationId": "audit_csv_audit_csv_get",
+        "operationId": "export_audit_csv",
         "parameters": [
           {
             "description": "e.g. agent.published",
@@ -6930,13 +7935,23 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "The trail as a CSV file",
@@ -6947,7 +7962,7 @@
     },
     "/client-errors": {
       "post": {
-        "operationId": "client_error_client_errors_post",
+        "operationId": "report_client_error",
         "requestBody": {
           "content": {
             "application/json": {
@@ -6969,13 +7984,33 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests: retry after `Retry-After` seconds"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Log an error from the browser",
@@ -6986,7 +8021,7 @@
     },
     "/graphs": {
       "get": {
-        "operationId": "list_graphs_graphs_get",
+        "operationId": "list_graphs",
         "responses": {
           "200": {
             "content": {
@@ -6995,12 +8030,22 @@
                   "items": {
                     "$ref": "#/components/schemas/GraphView"
                   },
-                  "title": "Response List Graphs Graphs Get",
+                  "title": "Response List Graphs",
                   "type": "array"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "List graphs",
@@ -7011,7 +8056,7 @@
     },
     "/graphs/{name}": {
       "get": {
-        "operationId": "get_graph_graphs__name__get",
+        "operationId": "get_graph",
         "parameters": [
           {
             "in": "path",
@@ -7034,15 +8079,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Describe a graph",
@@ -7053,7 +8118,7 @@
     },
     "/healthz": {
       "get": {
-        "operationId": "healthz_healthz_get",
+        "operationId": "healthz",
         "responses": {
           "200": {
             "content": {
@@ -7064,6 +8129,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Liveness: the process is up",
@@ -7074,7 +8149,7 @@
     },
     "/kill-switch": {
       "get": {
-        "operationId": "state_kill_switch_get",
+        "operationId": "get_kill_switch",
         "responses": {
           "200": {
             "content": {
@@ -7085,6 +8160,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "What is switched off",
@@ -7095,7 +8180,7 @@
     },
     "/kill-switch/resume": {
       "post": {
-        "operationId": "resume_kill_switch_resume_post",
+        "operationId": "resume_all_agents",
         "requestBody": {
           "content": {
             "application/json": {
@@ -7119,13 +8204,23 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Switch back on",
@@ -7136,7 +8231,7 @@
     },
     "/kill-switch/stop": {
       "post": {
-        "operationId": "stop_kill_switch_stop_post",
+        "operationId": "stop_all_agents",
         "requestBody": {
           "content": {
             "application/json": {
@@ -7160,13 +8255,23 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Stop an agent, or all, now",
@@ -7177,7 +8282,7 @@
     },
     "/mcp/servers": {
       "get": {
-        "operationId": "servers_mcp_servers_get",
+        "operationId": "list_mcp_servers",
         "responses": {
           "200": {
             "content": {
@@ -7186,12 +8291,22 @@
                   "items": {
                     "$ref": "#/components/schemas/McpServerView"
                   },
-                  "title": "Response Servers Mcp Servers Get",
+                  "title": "Response List Mcp Servers",
                   "type": "array"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "MCP servers",
@@ -7200,7 +8315,7 @@
         ]
       },
       "post": {
-        "operationId": "add_mcp_servers_post",
+        "operationId": "add_mcp_server",
         "requestBody": {
           "content": {
             "application/json": {
@@ -7224,13 +8339,33 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unavailable for now: retry after `Retry-After` seconds (draining or paused)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Add an MCP server (it's tested at once)",
@@ -7241,7 +8376,7 @@
     },
     "/mcp/servers/{server_id}": {
       "delete": {
-        "operationId": "remove_mcp_servers__server_id__delete",
+        "operationId": "remove_mcp_server",
         "parameters": [
           {
             "in": "path",
@@ -7258,15 +8393,35 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Remove (its tools stop working for every agent)",
@@ -7275,7 +8430,7 @@
         ]
       },
       "patch": {
-        "operationId": "change_mcp_servers__server_id__patch",
+        "operationId": "update_mcp_server",
         "parameters": [
           {
             "in": "path",
@@ -7309,15 +8464,45 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unavailable for now: retry after `Retry-After` seconds (draining or paused)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Change",
@@ -7328,7 +8513,7 @@
     },
     "/mcp/servers/{server_id}/test": {
       "post": {
-        "operationId": "test_mcp_servers__server_id__test_post",
+        "operationId": "test_mcp_server",
         "parameters": [
           {
             "in": "path",
@@ -7352,15 +8537,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Ask the server for its tools",
@@ -7371,7 +8576,7 @@
     },
     "/mcp/servers/{server_id}/tools/{tool}": {
       "put": {
-        "operationId": "set_tool_mcp_servers__server_id__tools__tool__put",
+        "operationId": "set_mcp_tool",
         "parameters": [
           {
             "in": "path",
@@ -7414,15 +8619,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Switch a tool on or off",
@@ -7433,7 +8658,7 @@
     },
     "/mcp/servers/{server_id}/tools/{tool}/approve": {
       "post": {
-        "operationId": "approve_mcp_servers__server_id__tools__tool__approve_post",
+        "operationId": "approve_mcp_tool",
         "parameters": [
           {
             "in": "path",
@@ -7466,15 +8691,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Approve a tool the server changed",
@@ -7485,7 +8730,7 @@
     },
     "/models/connections": {
       "get": {
-        "operationId": "list_connections_models_connections_get",
+        "operationId": "list_connections",
         "responses": {
           "200": {
             "content": {
@@ -7494,12 +8739,22 @@
                   "items": {
                     "$ref": "#/components/schemas/ConnectionView"
                   },
-                  "title": "Response List Connections Models Connections Get",
+                  "title": "Response List Connections",
                   "type": "array"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Your models",
@@ -7508,7 +8763,7 @@
         ]
       },
       "post": {
-        "operationId": "add_models_connections_post",
+        "operationId": "add_connection",
         "requestBody": {
           "content": {
             "application/json": {
@@ -7532,13 +8787,33 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unavailable for now: retry after `Retry-After` seconds (draining or paused)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Add a model connection",
@@ -7549,7 +8824,7 @@
     },
     "/models/connections/{connection_id}": {
       "delete": {
-        "operationId": "remove_models_connections__connection_id__delete",
+        "operationId": "remove_connection",
         "parameters": [
           {
             "in": "path",
@@ -7566,15 +8841,35 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Remove (agents using it need another model)",
@@ -7583,7 +8878,7 @@
         ]
       },
       "patch": {
-        "operationId": "edit_models_connections__connection_id__patch",
+        "operationId": "update_connection",
         "parameters": [
           {
             "in": "path",
@@ -7617,15 +8912,45 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unavailable for now: retry after `Retry-After` seconds (draining or paused)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Edit (a new key replaces the old one)",
@@ -7636,7 +8961,7 @@
     },
     "/models/connections/{connection_id}/models": {
       "get": {
-        "operationId": "remote_models_models_connections__connection_id__models_get",
+        "operationId": "list_connection_models",
         "parameters": [
           {
             "in": "path",
@@ -7657,22 +8982,42 @@
                   "items": {
                     "type": "string"
                   },
-                  "title": "Response Remote Models Models Connections  Connection Id  Models Get",
+                  "title": "Response List Connection Models",
                   "type": "array"
                 }
               }
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "The models the service says it has",
@@ -7683,7 +9028,7 @@
     },
     "/models/connections/{connection_id}/test": {
       "post": {
-        "operationId": "test_models_connections__connection_id__test_post",
+        "operationId": "test_connection",
         "parameters": [
           {
             "in": "path",
@@ -7717,15 +9062,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Check it answers and uses tools",
@@ -7736,7 +9101,7 @@
     },
     "/models/default": {
       "get": {
-        "operationId": "get_default_models_default_get",
+        "operationId": "get_default_model",
         "responses": {
           "200": {
             "content": {
@@ -7747,6 +9112,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "The default model",
@@ -7755,7 +9130,7 @@
         ]
       },
       "put": {
-        "operationId": "set_default_models_default_put",
+        "operationId": "set_default_model",
         "requestBody": {
           "content": {
             "application/json": {
@@ -7777,15 +9152,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Set the default model",
@@ -7796,7 +9191,7 @@
     },
     "/models/ollama": {
       "get": {
-        "operationId": "ollama_models_ollama_get",
+        "operationId": "list_ollama_models",
         "responses": {
           "200": {
             "content": {
@@ -7805,12 +9200,22 @@
                   "items": {
                     "$ref": "#/components/schemas/OllamaView"
                   },
-                  "title": "Response Ollama Models Ollama Get",
+                  "title": "Response List Ollama Models",
                   "type": "array"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Find Ollama",
@@ -7821,7 +9226,7 @@
     },
     "/notifications": {
       "get": {
-        "operationId": "list_notifications_notifications_get",
+        "operationId": "list_notifications",
         "parameters": [
           {
             "in": "query",
@@ -7849,13 +9254,23 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "The latest notifications and their delivery",
@@ -7866,7 +9281,7 @@
     },
     "/onboarding": {
       "get": {
-        "operationId": "get_onboarding_onboarding_get",
+        "operationId": "get_onboarding",
         "responses": {
           "200": {
             "content": {
@@ -7877,6 +9292,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Where the guide stands",
@@ -7885,7 +9310,7 @@
         ]
       },
       "put": {
-        "operationId": "put_onboarding_onboarding_put",
+        "operationId": "put_onboarding",
         "requestBody": {
           "content": {
             "application/json": {
@@ -7909,13 +9334,23 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "The guide's choices",
@@ -7926,7 +9361,7 @@
     },
     "/readyz": {
       "get": {
-        "operationId": "readyz_readyz_get",
+        "operationId": "readyz",
         "responses": {
           "200": {
             "content": {
@@ -7939,7 +9374,24 @@
             "description": "Successful Response"
           },
           "503": {
-            "description": "Not ready"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Not ready (probes read the same body)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Readiness: dependencies reachable",
@@ -7951,7 +9403,7 @@
     "/runs": {
       "post": {
         "description": "Validates the graph, input and options, then creates a `queued` run. 202 Accepted: the run executes asynchronously; poll `Location`.",
-        "operationId": "create_run_runs_post",
+        "operationId": "create_run",
         "requestBody": {
           "content": {
             "application/json": {
@@ -7973,15 +9425,65 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests: retry after `Retry-After` seconds"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unavailable for now: retry after `Retry-After` seconds (draining or paused)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Create a run",
@@ -7992,7 +9494,7 @@
     },
     "/runs/{run_id}": {
       "get": {
-        "operationId": "get_run_runs__run_id__get",
+        "operationId": "get_run",
         "parameters": [
           {
             "in": "path",
@@ -8016,15 +9518,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Run status",
@@ -8036,7 +9558,7 @@
     "/runs/{run_id}/approve": {
       "post": {
         "description": "R1.4. Decides one pending approval (`approval_id`). `approve`: once none is left, the run is re-queued and each approved call runs, with its edited arguments if given; `reject` cancels the run with reason `rejected`. Works with no worker alive. 409 unless the run is `waiting_approval`, or if the approval isn't pending.",
-        "operationId": "approve_run_runs__run_id__approve_post",
+        "operationId": "approve_run",
         "parameters": [
           {
             "in": "path",
@@ -8070,15 +9592,45 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Approve or reject a paused run (human-in-the-loop)",
@@ -8090,7 +9642,7 @@
     "/runs/{run_id}/cancel": {
       "post": {
         "description": "A queued or waiting run is cancelled now; a running run stops before its next node (R1.6). 409 if the run has already ended.",
-        "operationId": "cancel_run_runs__run_id__cancel_post",
+        "operationId": "cancel_run",
         "parameters": [
           {
             "in": "path",
@@ -8114,15 +9666,45 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Cancel a run (cooperative)",
@@ -8133,7 +9715,7 @@
     },
     "/runs/{run_id}/events": {
       "get": {
-        "operationId": "list_events_runs__run_id__events_get",
+        "operationId": "list_events",
         "parameters": [
           {
             "in": "path",
@@ -8180,15 +9762,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Replay persisted events",
@@ -8199,7 +9801,7 @@
     },
     "/runs/{run_id}/feedback": {
       "delete": {
-        "operationId": "delete_feedback_runs__run_id__feedback_delete",
+        "operationId": "delete_feedback",
         "parameters": [
           {
             "in": "path",
@@ -8218,13 +9820,23 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Take a rating back",
@@ -8233,7 +9845,7 @@
         ]
       },
       "get": {
-        "operationId": "get_feedback_runs__run_id__feedback_get",
+        "operationId": "get_feedback",
         "parameters": [
           {
             "in": "path",
@@ -8259,7 +9871,7 @@
                       "type": "null"
                     }
                   ],
-                  "title": "Response Get Feedback Runs  Run Id  Feedback Get"
+                  "title": "Response Get Feedback"
                 }
               }
             },
@@ -8267,13 +9879,23 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "A reply's rating",
@@ -8282,7 +9904,7 @@
         ]
       },
       "put": {
-        "operationId": "put_feedback_runs__run_id__feedback_put",
+        "operationId": "put_feedback",
         "parameters": [
           {
             "in": "path",
@@ -8316,15 +9938,45 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Rate a reply",
@@ -8335,7 +9987,7 @@
     },
     "/runs/{run_id}/make-test": {
       "post": {
-        "operationId": "make_test_runs__run_id__make_test_post",
+        "operationId": "make_test",
         "parameters": [
           {
             "in": "path",
@@ -8359,15 +10011,45 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Make a test from a reply: its message, the \ud83d\udc4e reason",
@@ -8379,7 +10061,7 @@
     "/runs/{run_id}/redrive": {
       "post": {
         "description": "H4. `failed` \u2192 `queued`: it resumes from its last saved step, and tool calls already done aren't run again. For failures that might not happen again (`error`, `infrastructure`, `max_reclaims`, `timeout`) of a top-level run; a chat turn only if it is the chat's latest. The budgets already used still count. 409 otherwise.",
-        "operationId": "redrive_run_runs__run_id__redrive_post",
+        "operationId": "redrive_run",
         "parameters": [
           {
             "in": "path",
@@ -8403,15 +10085,65 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests: retry after `Retry-After` seconds"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unavailable for now: retry after `Retry-After` seconds (draining or paused)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Try a failed run again (from its last checkpoint)",
@@ -8423,7 +10155,7 @@
     "/runs/{run_id}/report": {
       "get": {
         "description": "README, the timeline (structural fields only unless `include_chat`), the agent's definition when it's one you made, and the chat only if `include_chat`. Nothing is uploaded anywhere: the person downloads it.",
-        "operationId": "run_report_runs__run_id__report_get",
+        "operationId": "get_run_report",
         "parameters": [
           {
             "in": "path",
@@ -8453,15 +10185,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "A zip to attach to a bug report (phase L5)",
@@ -8472,7 +10224,7 @@
     },
     "/runs/{run_id}/result": {
       "get": {
-        "operationId": "get_result_runs__run_id__result_get",
+        "operationId": "get_result",
         "parameters": [
           {
             "in": "path",
@@ -8496,15 +10248,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Final output",
@@ -8516,7 +10288,7 @@
     "/runs/{run_id}/resume": {
       "post": {
         "description": "Re-sends work for a queued run or one whose worker died; does nothing for a run a live worker is executing (R1.3). 409 if the run has already ended.",
-        "operationId": "resume_run_runs__run_id__resume_post",
+        "operationId": "resume_run",
         "parameters": [
           {
             "in": "path",
@@ -8540,15 +10312,45 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Resume a run (idempotent)",
@@ -8560,7 +10362,7 @@
     "/runs/{run_id}/stream": {
       "get": {
         "description": "Replays persisted events after `Last-Event-ID` (or `after_seq`), then streams live ones from any replica (R2.5). Persisted events carry `id: <seq>`. A `: ping` comment is sent when idle; the stream closes after the run's terminal event; on replica shutdown an `event: reconnect` tells the client to reconnect with its Last-Event-ID.",
-        "operationId": "stream_run_runs__run_id__stream_get",
+        "operationId": "stream_run",
         "parameters": [
           {
             "in": "path",
@@ -8609,22 +10411,84 @@
         "responses": {
           "200": {
             "content": {
-              "text/event-stream": {}
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+              "text/event-stream": {
+                "itemSchema": {
+                  "properties": {
+                    "data": {
+                      "contentMediaType": "application/json",
+                      "contentSchema": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/components/schemas/RunStreamEvent"
+                          },
+                          {
+                            "$ref": "#/components/schemas/ReconnectData"
+                          }
+                        ]
+                      },
+                      "type": "string"
+                    },
+                    "event": {
+                      "description": "The event's `type`, or `reconnect`",
+                      "type": "string"
+                    },
+                    "id": {
+                      "description": "Persisted events only: their `seq`",
+                      "type": "string"
+                    },
+                    "retry": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Server-sent events"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
           },
           "503": {
-            "description": "Draining"
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unavailable for now: retry after `Retry-After` seconds (draining or paused)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Live event stream (SSE)",
@@ -8635,7 +10499,7 @@
     },
     "/sessions": {
       "get": {
-        "operationId": "list_sessions_sessions_get",
+        "operationId": "list_sessions",
         "parameters": [
           {
             "in": "query",
@@ -8697,7 +10561,7 @@
                   "items": {
                     "$ref": "#/components/schemas/SessionView"
                   },
-                  "title": "Response List Sessions Sessions Get",
+                  "title": "Response List Sessions",
                   "type": "array"
                 }
               }
@@ -8706,13 +10570,23 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "List sessions, newest activity first",
@@ -8721,7 +10595,7 @@
         ]
       },
       "post": {
-        "operationId": "create_session_sessions_post",
+        "operationId": "create_session",
         "requestBody": {
           "content": {
             "application/json": {
@@ -8743,15 +10617,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Create a chat session with an agent",
@@ -8762,7 +10656,7 @@
     },
     "/sessions/{session_id}": {
       "get": {
-        "operationId": "get_session_sessions__session_id__get",
+        "operationId": "get_session",
         "parameters": [
           {
             "in": "path",
@@ -8786,15 +10680,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Session detail",
@@ -8803,7 +10717,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_session_sessions__session_id__patch",
+        "operationId": "update_session",
         "parameters": [
           {
             "in": "path",
@@ -8837,15 +10751,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Rename or archive",
@@ -8856,7 +10790,7 @@
     },
     "/sessions/{session_id}/approve": {
       "post": {
-        "operationId": "approve_turn_sessions__session_id__approve_post",
+        "operationId": "approve_turn",
         "parameters": [
           {
             "in": "path",
@@ -8890,15 +10824,45 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Approve or reject one of the active turn's approvals (R12.6)",
@@ -8909,7 +10873,7 @@
     },
     "/sessions/{session_id}/cancel": {
       "post": {
-        "operationId": "cancel_turn_sessions__session_id__cancel_post",
+        "operationId": "cancel_turn",
         "parameters": [
           {
             "in": "path",
@@ -8933,15 +10897,45 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Cancel the active turn (R12.7)",
@@ -8952,7 +10946,7 @@
     },
     "/sessions/{session_id}/export": {
       "get": {
-        "operationId": "export_session_sessions__session_id__export_get",
+        "operationId": "export_session",
         "parameters": [
           {
             "in": "path",
@@ -8972,15 +10966,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "The chat as Markdown (to keep, or to attach to a report)",
@@ -8991,7 +11005,7 @@
     },
     "/sessions/{session_id}/messages": {
       "get": {
-        "operationId": "list_messages_sessions__session_id__messages_get",
+        "operationId": "list_messages",
         "parameters": [
           {
             "in": "path",
@@ -9038,15 +11052,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Transcript page",
@@ -9055,7 +11089,7 @@
         ]
       },
       "post": {
-        "operationId": "send_message_sessions__session_id__messages_post",
+        "operationId": "send_message",
         "parameters": [
           {
             "in": "path",
@@ -9109,15 +11143,65 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests: retry after `Retry-After` seconds"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unavailable for now: retry after `Retry-After` seconds (draining or paused)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Send a message: starts a turn",
@@ -9129,7 +11213,7 @@
     "/sessions/{session_id}/stream": {
       "get": {
         "description": "Replays transcript messages after `Last-Event-ID` (or `after_seq`), then streams new ones from any replica, plus transient events of the active turn (no `id`).",
-        "operationId": "stream_session_sessions__session_id__stream_get",
+        "operationId": "stream_session",
         "parameters": [
           {
             "in": "path",
@@ -9178,22 +11262,84 @@
         "responses": {
           "200": {
             "content": {
-              "text/event-stream": {}
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+              "text/event-stream": {
+                "itemSchema": {
+                  "properties": {
+                    "data": {
+                      "contentMediaType": "application/json",
+                      "contentSchema": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/components/schemas/SessionStreamEvent"
+                          },
+                          {
+                            "$ref": "#/components/schemas/ReconnectData"
+                          }
+                        ]
+                      },
+                      "type": "string"
+                    },
+                    "event": {
+                      "description": "The event's `type`, or `reconnect`",
+                      "type": "string"
+                    },
+                    "id": {
+                      "description": "Persisted events only: their `seq`",
+                      "type": "string"
+                    },
+                    "retry": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Server-sent events"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
           },
           "503": {
-            "description": "Draining"
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unavailable for now: retry after `Retry-After` seconds (draining or paused)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "The session's live stream (SSE, R12.5)",
@@ -9204,7 +11350,7 @@
     },
     "/skills": {
       "get": {
-        "operationId": "library_skills_get",
+        "operationId": "list_skills",
         "responses": {
           "200": {
             "content": {
@@ -9213,12 +11359,22 @@
                   "items": {
                     "$ref": "#/components/schemas/SkillView"
                   },
-                  "title": "Response Library Skills Get",
+                  "title": "Response List Skills",
                   "type": "array"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "The skill library",
@@ -9227,7 +11383,7 @@
         ]
       },
       "post": {
-        "operationId": "create_skills_post",
+        "operationId": "create_skill",
         "requestBody": {
           "content": {
             "application/json": {
@@ -9249,15 +11405,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "409": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Create a skill from the form",
@@ -9268,7 +11444,7 @@
     },
     "/skills/upload": {
       "post": {
-        "operationId": "upload_skills_upload_post",
+        "operationId": "upload_skill",
         "parameters": [
           {
             "in": "query",
@@ -9293,15 +11469,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "409": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Upload a skill (a zip of its folder, or a SKILL.md) as the body",
@@ -9312,7 +11508,7 @@
     },
     "/skills/{skill_id}": {
       "delete": {
-        "operationId": "archive_skills__skill_id__delete",
+        "operationId": "archive_skill",
         "parameters": [
           {
             "in": "path",
@@ -9329,15 +11525,45 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Archive (published agents keep the version they use)",
@@ -9346,7 +11572,7 @@
         ]
       },
       "get": {
-        "operationId": "get_skills__skill_id__get",
+        "operationId": "get_skill",
         "parameters": [
           {
             "in": "path",
@@ -9370,15 +11596,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "One skill",
@@ -9387,7 +11633,7 @@
         ]
       },
       "patch": {
-        "operationId": "edit_skills__skill_id__patch",
+        "operationId": "update_skill",
         "parameters": [
           {
             "in": "path",
@@ -9421,15 +11667,45 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Edit (saves a new version; the name stays)",
@@ -9440,7 +11716,7 @@
     },
     "/skills/{skill_id}/approve": {
       "post": {
-        "operationId": "approve_skills__skill_id__approve_post",
+        "operationId": "approve_skill",
         "parameters": [
           {
             "in": "path",
@@ -9464,15 +11740,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "I've read this version: it may be plain text in prompts (idempotent)",
@@ -9483,7 +11779,7 @@
     },
     "/skills/{skill_id}/export": {
       "get": {
-        "operationId": "export_skills__skill_id__export_get",
+        "operationId": "export_skill",
         "parameters": [
           {
             "in": "path",
@@ -9506,15 +11802,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Download the skill's folder (zip)",
@@ -9525,7 +11841,7 @@
     },
     "/skills/{skill_id}/files/{path}": {
       "get": {
-        "operationId": "file_skills__skill_id__files__path__get",
+        "operationId": "get_skill_file",
         "parameters": [
           {
             "in": "path",
@@ -9557,15 +11873,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Download one of its files",
@@ -9576,7 +11912,7 @@
     },
     "/skills/{skill_id}/upload": {
       "post": {
-        "operationId": "replace_skills__skill_id__upload_post",
+        "operationId": "replace_skill",
         "parameters": [
           {
             "in": "path",
@@ -9611,15 +11947,45 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "A new version of this skill from an upload (same name)",
@@ -9630,7 +11996,7 @@
     },
     "/studio/agents": {
       "get": {
-        "operationId": "list_agents_studio_agents_get",
+        "operationId": "list_studio_agents",
         "responses": {
           "200": {
             "content": {
@@ -9639,12 +12005,22 @@
                   "items": {
                     "$ref": "#/components/schemas/StudioAgentView"
                   },
-                  "title": "Response List Agents Studio Agents Get",
+                  "title": "Response List Studio Agents",
                   "type": "array"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Your agents",
@@ -9653,7 +12029,7 @@
         ]
       },
       "post": {
-        "operationId": "create_agent_studio_agents_post",
+        "operationId": "create_studio_agent",
         "parameters": [
           {
             "description": "Built in Getting started: the guide's agent",
@@ -9689,15 +12065,45 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "A new agent (blank, or a copy) with a draft",
@@ -9708,7 +12114,7 @@
     },
     "/studio/agents/from-proposal": {
       "post": {
-        "operationId": "from_proposal_studio_agents_from_proposal_post",
+        "operationId": "create_from_proposal",
         "parameters": [
           {
             "description": "Built in Getting started: the guide's agent",
@@ -9744,15 +12150,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "409": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "A new agent from a proposal",
@@ -9763,7 +12189,7 @@
     },
     "/studio/agents/{agent_id}": {
       "get": {
-        "operationId": "get_agent_studio_agents__agent_id__get",
+        "operationId": "get_studio_agent",
         "parameters": [
           {
             "in": "path",
@@ -9787,15 +12213,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "One agent",
@@ -9806,7 +12252,7 @@
     },
     "/studio/agents/{agent_id}/archive": {
       "post": {
-        "operationId": "archive_studio_agents__agent_id__archive_post",
+        "operationId": "archive_studio_agent",
         "parameters": [
           {
             "in": "path",
@@ -9830,15 +12276,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Archive: no new chats; old ones stay readable",
@@ -9849,7 +12315,7 @@
     },
     "/studio/agents/{agent_id}/draft": {
       "delete": {
-        "operationId": "discard_studio_agents__agent_id__draft_delete",
+        "operationId": "discard_draft",
         "parameters": [
           {
             "in": "path",
@@ -9873,15 +12339,45 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Throw away the draft (back to the published version)",
@@ -9890,7 +12386,7 @@
         ]
       },
       "put": {
-        "operationId": "save_draft_studio_agents__agent_id__draft_put",
+        "operationId": "save_draft",
         "parameters": [
           {
             "in": "path",
@@ -9924,15 +12420,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Save the draft (autosave); returns its issues",
@@ -9943,7 +12459,7 @@
     },
     "/studio/agents/{agent_id}/edit": {
       "post": {
-        "operationId": "edit_studio_agents__agent_id__edit_post",
+        "operationId": "edit_studio_agent",
         "parameters": [
           {
             "in": "path",
@@ -9967,15 +12483,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Start editing: a draft from the published version",
@@ -9986,7 +12522,7 @@
     },
     "/studio/agents/{agent_id}/export": {
       "get": {
-        "operationId": "export_studio_agents__agent_id__export_get",
+        "operationId": "export_studio_agent",
         "parameters": [
           {
             "in": "path",
@@ -10029,15 +12565,45 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Download as agent.md (or a zipped folder)",
@@ -10048,7 +12614,7 @@
     },
     "/studio/agents/{agent_id}/improve": {
       "post": {
-        "operationId": "improve_studio_agents__agent_id__improve_post",
+        "operationId": "improve_instructions",
         "parameters": [
           {
             "in": "path",
@@ -10072,15 +12638,65 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests: retry after `Retry-After` seconds"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unavailable for now: retry after `Retry-After` seconds (draining or paused)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Suggest clearer instructions",
@@ -10091,7 +12707,7 @@
     },
     "/studio/agents/{agent_id}/publish": {
       "post": {
-        "operationId": "publish_studio_agents__agent_id__publish_post",
+        "operationId": "publish_agent",
         "parameters": [
           {
             "in": "path",
@@ -10125,15 +12741,45 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Publish the draft as an immutable version (needs a test)",
@@ -10144,7 +12790,7 @@
     },
     "/studio/agents/{agent_id}/test-chat": {
       "get": {
-        "operationId": "last_test_chat_studio_agents__agent_id__test_chat_get",
+        "operationId": "get_test_chat",
         "parameters": [
           {
             "in": "path",
@@ -10170,21 +12816,41 @@
                       "type": "null"
                     }
                   ],
-                  "title": "Response Last Test Chat Studio Agents  Agent Id  Test Chat Get"
+                  "title": "Response Get Test Chat"
                 }
               }
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "The latest test chat still open, if any",
@@ -10193,7 +12859,7 @@
         ]
       },
       "post": {
-        "operationId": "test_chat_studio_agents__agent_id__test_chat_post",
+        "operationId": "start_test_chat",
         "parameters": [
           {
             "in": "path",
@@ -10217,15 +12883,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "A test chat with the draft",
@@ -10236,7 +12922,7 @@
     },
     "/studio/agents/{agent_id}/tests": {
       "get": {
-        "operationId": "list_tests_studio_agents__agent_id__tests_get",
+        "operationId": "list_tests",
         "parameters": [
           {
             "in": "path",
@@ -10260,15 +12946,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Its tests, each with its latest result",
@@ -10277,7 +12983,7 @@
         ]
       },
       "post": {
-        "operationId": "add_test_studio_agents__agent_id__tests_post",
+        "operationId": "add_test",
         "parameters": [
           {
             "in": "path",
@@ -10311,15 +13017,45 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Add a test",
@@ -10330,7 +13066,7 @@
     },
     "/studio/agents/{agent_id}/tests/run": {
       "post": {
-        "operationId": "run_tests_studio_agents__agent_id__tests_run_post",
+        "operationId": "run_tests",
         "parameters": [
           {
             "in": "path",
@@ -10354,15 +13090,65 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests: retry after `Retry-After` seconds"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unavailable for now: retry after `Retry-After` seconds (draining or paused)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Run every test on the draft, each in its own test chat",
@@ -10373,7 +13159,7 @@
     },
     "/studio/agents/{agent_id}/tests/{case_id}": {
       "delete": {
-        "operationId": "remove_test_studio_agents__agent_id__tests__case_id__delete",
+        "operationId": "remove_test",
         "parameters": [
           {
             "in": "path",
@@ -10400,15 +13186,35 @@
           "204": {
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Remove a test",
@@ -10417,7 +13223,7 @@
         ]
       },
       "put": {
-        "operationId": "change_test_studio_agents__agent_id__tests__case_id__put",
+        "operationId": "change_test",
         "parameters": [
           {
             "in": "path",
@@ -10461,15 +13267,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Change a test (its earlier results no longer count)",
@@ -10480,7 +13306,7 @@
     },
     "/studio/agents/{agent_id}/versions/{number}/restore": {
       "post": {
-        "operationId": "restore_studio_agents__agent_id__versions__number__restore_post",
+        "operationId": "restore_version",
         "parameters": [
           {
             "in": "path",
@@ -10513,15 +13339,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Make an earlier version the draft",
@@ -10532,7 +13378,7 @@
     },
     "/studio/assist/{run_id}": {
       "get": {
-        "operationId": "assist_studio_assist__run_id__get",
+        "operationId": "get_assist",
         "parameters": [
           {
             "in": "path",
@@ -10556,15 +13402,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "404": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "A builder's proposal",
@@ -10575,7 +13441,7 @@
     },
     "/studio/catalog": {
       "get": {
-        "operationId": "catalog_studio_catalog_get",
+        "operationId": "get_catalog",
         "responses": {
           "200": {
             "content": {
@@ -10586,6 +13452,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "What the form offers",
@@ -10596,7 +13472,7 @@
     },
     "/studio/describe": {
       "post": {
-        "operationId": "describe_studio_describe_post",
+        "operationId": "describe_agent",
         "requestBody": {
           "content": {
             "application/json": {
@@ -10618,15 +13494,55 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "409": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests: retry after `Retry-After` seconds"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unavailable for now: retry after `Retry-After` seconds (draining or paused)"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Draft an agent from a description (the builder agent)",
@@ -10637,7 +13553,7 @@
     },
     "/studio/import": {
       "post": {
-        "operationId": "import_agent_studio_import_post",
+        "operationId": "import_agent",
         "parameters": [
           {
             "in": "query",
@@ -10662,15 +13578,35 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "409": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The resource's current state doesn't allow this"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Import an agent.md or a zipped folder (the file is the body)",
@@ -10681,7 +13617,7 @@
     },
     "/telemetry": {
       "get": {
-        "operationId": "get_telemetry_telemetry_get",
+        "operationId": "get_telemetry",
         "responses": {
           "200": {
             "content": {
@@ -10692,6 +13628,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Usage counts and the switch",
@@ -10700,7 +13646,7 @@
         ]
       },
       "put": {
-        "operationId": "set_telemetry_telemetry_put",
+        "operationId": "set_telemetry",
         "requestBody": {
           "content": {
             "application/json": {
@@ -10724,13 +13670,23 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Turn sharing usage counts on or off",
@@ -10741,7 +13697,7 @@
     },
     "/tools/search/test": {
       "post": {
-        "operationId": "test_search_tools_search_test_post",
+        "operationId": "test_search",
         "requestBody": {
           "content": {
             "application/json": {
@@ -10765,13 +13721,23 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Try the search",
@@ -10782,7 +13748,7 @@
     },
     "/tools/settings": {
       "get": {
-        "operationId": "get_settings_tools_settings_get",
+        "operationId": "get_tool_settings",
         "responses": {
           "200": {
             "content": {
@@ -10793,6 +13759,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Tool settings",
@@ -10801,7 +13777,7 @@
         ]
       },
       "put": {
-        "operationId": "put_settings_tools_settings_put",
+        "operationId": "put_tool_settings",
         "requestBody": {
           "content": {
             "application/json": {
@@ -10825,13 +13801,23 @@
           },
           "422": {
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ValidationProblem"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "The request didn't validate"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Any other error, as problem details"
           }
         },
         "summary": "Change tool settings",

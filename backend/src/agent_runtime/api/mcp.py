@@ -20,6 +20,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from agent_runtime.api import contract
 from agent_runtime.mcp.service import McpServer, McpService, McpTool, tool_name
 
 mcp_router = APIRouter(prefix="/mcp", tags=["mcp"])
@@ -109,41 +110,51 @@ class SetTool(BaseModel):
 
 
 @mcp_router.get("/servers", response_model=list[McpServerView], summary="MCP servers")
-async def servers(service: ServiceDep) -> list[McpServerView]:
+async def list_mcp_servers(service: ServiceDep) -> list[McpServerView]:
     return [McpServerView.of(s, tools) for s, tools in await service.servers()]
 
 
 @mcp_router.post("/servers", status_code=status.HTTP_201_CREATED, response_model=McpServerView,
-                 summary="Add an MCP server (it's tested at once)")  # fmt: skip
-async def add(body: AddServer, service: ServiceDep) -> McpServerView:
+                 summary="Add an MCP server (it's tested at once)",
+                 responses=contract.problems(503))  # fmt: skip
+async def add_mcp_server(body: AddServer, service: ServiceDep) -> McpServerView:
     added = await service.add(display_name=body.display_name, url=body.url, token=body.token,
                               header_name=body.header_name)  # fmt: skip
     return McpServerView.of(*await service.test(added.id))
 
 
-@mcp_router.patch("/servers/{server_id}", response_model=McpServerView, summary="Change")
-async def change(server_id: uuid.UUID, body: ChangeServer, service: ServiceDep) -> McpServerView:
+@mcp_router.patch(
+    "/servers/{server_id}",
+    response_model=McpServerView,
+    summary="Change",
+    responses=contract.problems(404, 503),
+)
+async def update_mcp_server(
+    server_id: uuid.UUID, body: ChangeServer, service: ServiceDep
+) -> McpServerView:
     await service.change(server_id, display_name=body.display_name, url=body.url,
                          token=body.token, header_name=body.header_name)  # fmt: skip
     return McpServerView.of(*await service.server(server_id))
 
 
 @mcp_router.delete("/servers/{server_id}", status_code=status.HTTP_204_NO_CONTENT,
-                   summary="Remove (its tools stop working for every agent)")  # fmt: skip
-async def remove(server_id: uuid.UUID, service: ServiceDep) -> Response:
+                   summary="Remove (its tools stop working for every agent)",
+                   responses=contract.problems(404))  # fmt: skip
+async def remove_mcp_server(server_id: uuid.UUID, service: ServiceDep) -> Response:
     await service.remove(server_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @mcp_router.post("/servers/{server_id}/test", response_model=McpServerView,
-                 summary="Ask the server for its tools")  # fmt: skip
-async def test(server_id: uuid.UUID, service: ServiceDep) -> McpServerView:
+                 summary="Ask the server for its tools",
+                 responses=contract.problems(404))  # fmt: skip
+async def test_mcp_server(server_id: uuid.UUID, service: ServiceDep) -> McpServerView:
     return McpServerView.of(*await service.test(server_id))
 
 
 @mcp_router.put("/servers/{server_id}/tools/{tool}", response_model=McpServerView,
-                summary="Switch a tool on or off")  # fmt: skip
-async def set_tool(
+                summary="Switch a tool on or off", responses=contract.problems(404))  # fmt: skip
+async def set_mcp_tool(
     server_id: uuid.UUID, tool: str, body: SetTool, service: ServiceDep
 ) -> McpServerView:
     await service.set_tool(server_id, tool, enabled=body.enabled,
@@ -152,7 +163,8 @@ async def set_tool(
 
 
 @mcp_router.post("/servers/{server_id}/tools/{tool}/approve", response_model=McpServerView,
-                 summary="Approve a tool the server changed")  # fmt: skip
-async def approve(server_id: uuid.UUID, tool: str, service: ServiceDep) -> McpServerView:
+                 summary="Approve a tool the server changed",
+                 responses=contract.problems(404))  # fmt: skip
+async def approve_mcp_tool(server_id: uuid.UUID, tool: str, service: ServiceDep) -> McpServerView:
     await service.approve_change(server_id, tool)
     return McpServerView.of(*await service.server(server_id))
