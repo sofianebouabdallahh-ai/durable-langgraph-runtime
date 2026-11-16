@@ -754,8 +754,13 @@ async def chat_subagents(c: Cluster) -> Report:
     r.check("progress reached the session stream (other replica) while they ran",
             0 <= progress_at < done_at, str(seen))  # fmt: skip
     text = notes[0]["text"] if notes else ""
+    # No note: say why, from the ledger (the refusal), not an empty detail.
+    calls = [] if notes else await c.rows(
+        "SELECT status, result::text AS result FROM tool_invocations "
+        "WHERE run_id = %s AND tool = 'save_note'", run_id)  # fmt: skip
+    why = [(x["status"], x["result"][:300]) for x in calls]
     r.check("the answer uses both results", "Work queues." in text and "48 slots." in text,
-            text[:120])  # fmt: skip
+            text[:120] or f"no note; save_note: {why}")  # fmt: skip
     denied = [e["payload"] for e in events if e["type"] == "policy.decision"]
     refused = any(p["tool"] == "save_note" and p["kind"] == "not_granted" for p in denied)
     r.check("a sub-agent can't use the chat agent's tools", refused)
