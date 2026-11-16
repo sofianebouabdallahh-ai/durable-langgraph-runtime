@@ -974,7 +974,7 @@
           "result": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/agent_runtime__api__tests__ResultView"
+                "$ref": "#/components/schemas/TestResultView"
               },
               {
                 "type": "null"
@@ -3950,6 +3950,31 @@
         "title": "ReconnectData",
         "type": "object"
       },
+      "ResultView": {
+        "properties": {
+          "output": {
+            "additionalProperties": true,
+            "title": "Output",
+            "type": "object"
+          },
+          "partial": {
+            "title": "Partial",
+            "type": "boolean"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "output",
+          "partial"
+        ],
+        "title": "ResultView",
+        "type": "object"
+      },
       "ResumeRequest": {
         "additionalProperties": false,
         "properties": {
@@ -5450,6 +5475,78 @@
         "title": "TestRequest",
         "type": "object"
       },
+      "TestResultView": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CheckView"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current": {
+            "description": "On this draft, and the case as it is now",
+            "title": "Current",
+            "type": "boolean"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its test chat, to see what happened",
+            "title": "Session Id"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "passed",
+              "failed",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "current",
+          "checks",
+          "run_id",
+          "session_id",
+          "created_at",
+          "finished_at"
+        ],
+        "title": "TestResultView",
+        "type": "object"
+      },
       "TestView": {
         "properties": {
           "connection": {
@@ -6667,103 +6764,6 @@
           "message"
         ],
         "title": "Warning",
-        "type": "object"
-      },
-      "agent_runtime__api__schemas__ResultView": {
-        "properties": {
-          "output": {
-            "additionalProperties": true,
-            "title": "Output",
-            "type": "object"
-          },
-          "partial": {
-            "title": "Partial",
-            "type": "boolean"
-          },
-          "run_id": {
-            "format": "uuid",
-            "title": "Run Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "run_id",
-          "output",
-          "partial"
-        ],
-        "title": "ResultView",
-        "type": "object"
-      },
-      "agent_runtime__api__tests__ResultView": {
-        "properties": {
-          "checks": {
-            "items": {
-              "$ref": "#/components/schemas/CheckView"
-            },
-            "title": "Checks",
-            "type": "array"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "current": {
-            "description": "On this draft, and the case as it is now",
-            "title": "Current",
-            "type": "boolean"
-          },
-          "finished_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Finished At"
-          },
-          "run_id": {
-            "format": "uuid",
-            "title": "Run Id",
-            "type": "string"
-          },
-          "session_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Its test chat, to see what happened",
-            "title": "Session Id"
-          },
-          "status": {
-            "enum": [
-              "running",
-              "passed",
-              "failed",
-              "error"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "current",
-          "checks",
-          "run_id",
-          "session_id",
-          "created_at",
-          "finished_at"
-        ],
-        "title": "ResultView",
         "type": "object"
       }
     }
@@ -10242,7 +10242,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/agent_runtime__api__schemas__ResultView"
+                  "$ref": "#/components/schemas/ResultView"
                 }
               }
             },
