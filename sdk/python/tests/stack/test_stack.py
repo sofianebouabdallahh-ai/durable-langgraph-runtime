@@ -117,7 +117,7 @@ async def test_ac51_a_turn_streams_through_a_drain_and_a_cut(
 
 
 NOTIFY: list[dict[str, Any]] = [
-    {"tool_calls": [{"name": "notify", "args": {"text": "the build is green"}}]},
+    {"tool_calls": [{"name": "notify", "args": {"to": "team", "message": "the build is green"}}]},
     {"content": "Sent."},
 ]
 
