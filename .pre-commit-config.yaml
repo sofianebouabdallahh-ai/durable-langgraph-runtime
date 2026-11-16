@@ -23,8 +23,12 @@ repos:
         # kubeconform in CI validate what they render.
         exclude: ^infra/helm/[^/]+/templates/
       - id: check-toml
+      # Generated code stays byte for byte what its generator writes: CI regenerates it and
+      # fails on any difference (CR-007 R19.3).
       - id: end-of-file-fixer
+        exclude: ^sdk/python/src/nuria/_generated/
       - id: trailing-whitespace
+        exclude: ^sdk/python/src/nuria/_generated/
       - id: detect-private-key
       - id: no-commit-to-branch # nothing lands on main without a branch + PR
         args: ["--branch", "main"]
