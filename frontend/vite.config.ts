@@ -27,7 +27,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/**/*.test.*", "src/test/**", "src/api/schema.d.ts", "src/main.tsx"],
+      exclude: ["src/**/*.test.*", "src/test/**", "src/api/schema.d.ts", "src/api/vendor/**", "src/main.tsx"],
       // The functional core (reducers, selectors, the stream's state machine) is
       // where correctness lives: it must stay almost fully covered.
       thresholds: {
