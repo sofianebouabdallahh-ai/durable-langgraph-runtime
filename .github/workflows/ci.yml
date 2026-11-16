@@ -136,6 +136,31 @@ jobs:
           git fetch --no-tags --depth=1 origin "$BASE"
           scripts/api_breaking.sh "$BASE"
 
+  sdk-python:
+    name: python sdk · lint · types · unit · generated code matches its sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: sdk/python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: sdk/python/uv.lock
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+      - run: uv run pytest
+      - name: nuria/_generated matches the spec, _sync.py matches _async.py (CR-007 R19.3)
+        working-directory: .
+        run: |
+          make sdk-python
+          test -z "$(git status --porcelain -- sdk/python/src/nuria)" \
+            || { git status --porcelain -- sdk/python/src/nuria; echo "::error::run 'make sdk-python' and commit the result"; exit 1; }
+
   containers:
     name: images · scan · setup · container + browser e2e
     runs-on: ubuntu-latest
@@ -191,6 +216,12 @@ jobs:
           echo "NOTIFY_WEBHOOK_URL=http://fake-model:9999/webhook" >> ../.env
           docker compose --file ../infra/compose/docker-compose.yml --env-file ../.env up -d --wait api worker
           uv run --locked python -m tests.e2e.compose_e2e all
+      - name: The Python SDK against the stack (CR-007 AC51 to AC53; drains and cuts the API)
+        working-directory: sdk/python
+        run: |
+          uv sync --locked
+          NURIA_URL=http://127.0.0.1:3000/api NURIA_COMPOSE_PROJECT=agent-runtime \
+            uv run --locked pytest -m stack -v -s
       - name: Turn on the observability profile (L4a; the steps above ran with it off)
         run: ./setup.sh --non-interactive --observability
       - name: Browser e2e (Playwright in a container, against the stack, with tracing on)

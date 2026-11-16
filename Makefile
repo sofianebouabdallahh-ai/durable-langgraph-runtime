@@ -38,7 +38,7 @@ UI_RUN = $(DOCKER) run --rm -v $(CURDIR)/frontend:/app -v agent-runtime-ui-node-
 	-e npm_config_store_dir=/pnpm/store -w /app $(1) $(UI_NODE_IMAGE) sh -c 'corepack enable && $(2)'
 
 .DEFAULT_GOAL := help
-.PHONY: k8s-up k8s-build k8s-load k8s-secrets k8s-deploy k8s-all k8s-status k8s-down k8s-demo-podkill k8s-demo-drain k8s-demo-scale k8s-demo-upgrade k8s-demo-security k8s-lint help env hooks up down nuke ps logs setup image app-stop doctor demo-compose llm-up llm-down migrate migration api worker run-toy demo-crash demo-zombie demo-release demo-replicas demo-tools demo-approval demo-fanout demo-subagents demo-chat demo-chat-crash demo-chat-live chat demo-e2e ui-install ui-check ui-dev ui-api ui-pnpm ui-e2e lint fmt typecheck agents-validate check-docs api-breaking test test-unit test-integration test-live coverage check
+.PHONY: k8s-up k8s-build k8s-load k8s-secrets k8s-deploy k8s-all k8s-status k8s-down k8s-demo-podkill k8s-demo-drain k8s-demo-scale k8s-demo-upgrade k8s-demo-security k8s-lint help env hooks up down nuke ps logs setup image app-stop doctor demo-compose llm-up llm-down migrate migration api worker run-toy demo-crash demo-zombie demo-release demo-replicas demo-tools demo-approval demo-fanout demo-subagents demo-chat demo-chat-crash demo-chat-live chat demo-e2e ui-install ui-check ui-dev ui-api ui-pnpm ui-e2e lint fmt typecheck agents-validate check-docs api-breaking sdk-python sdk-python-check test test-unit test-integration test-live coverage check
 
 help: ## List targets
 	@grep -E '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -212,6 +212,16 @@ check-docs: ## The README's tag, the roadmap and the CHANGELOG match VERSION and
 
 api-breaking: ## Breaking changes to the API's spec against BASE (default origin/main), with oasdiff
 	scripts/api_breaking.sh $(or $(BASE),origin/main)
+
+# ------------------------------------------------------------------ client SDKs (CR-007)
+sdk-python: ## Python SDK: regenerate nuria/_generated from the spec, and _sync.py from _async.py
+	cd sdk/python && uv run --locked openapi-python-client generate --path ../../frontend/openapi.json \
+		--meta none --output-path src/nuria/_generated --config openapi-python-client.yml --overwrite
+	cd sdk/python && uv run --locked python scripts/unasync.py
+
+sdk-python-check: ## Python SDK: lint, types, unit tests (the stack suite: see sdk/python/tests/stack)
+	cd sdk/python && uv run --locked ruff check . && uv run --locked ruff format --check . \
+		&& uv run --locked mypy && uv run --locked pytest
 
 # ------------------------------------------------------- local Kubernetes (kind, L4b)
 # The cluster, the images, the Secret, the charts: infra/kind/cluster.sh (tools pinned
