@@ -109,7 +109,9 @@ jobs:
         run: uv run pytest --cov --cov-report=term
 
   ui:
-    name: ui · lint · types · tests · build · API drift · breaking changes
+    # The ruleset on main requires a check by this exact name: renaming a job leaves every
+    # pull request waiting for a check that never reports. The breaking-change step is below.
+    name: ui · lint · types · tests · build · API drift
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
