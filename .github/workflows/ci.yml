@@ -109,6 +109,8 @@ jobs:
         run: uv run pytest --cov --cov-report=term
 
   ui:
+    # The ruleset on main requires a check by this exact name: renaming a job leaves every
+    # pull request waiting for a check that never reports. The breaking-change step is below.
     name: ui · lint · types · tests · build · API drift
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -129,6 +131,12 @@ jobs:
           make ui-api
           git diff --exit-code -- frontend/openapi.json frontend/src/api/schema.d.ts \
             || { echo "::error::the API changed: run 'make ui-api' and commit the result"; exit 1; }
+      - name: No breaking change to the API (oasdiff against the base; CR-007 R19.2)
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE"
+          scripts/api_breaking.sh "$BASE"
 
   containers:
     name: images · scan · setup · container + browser e2e

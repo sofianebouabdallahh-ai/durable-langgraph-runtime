@@ -1,0 +1,98 @@
+# Breaking changes to the API's spec that a reviewer accepted (CR-007 R19.2), read by
+# scripts/api_breaking.sh as oasdiff's --err-ignore: one line per change, "METHOD PATH
+# description", exactly as oasdiff prints it. Lines starting with # match nothing.
+#
+# Add a line only for a change that doesn't change the wire, and say why above it. A line
+# matters only while the base spec still has the old shape: once its pull request merges,
+# remove it with the next change to this file.
+#
+# S1 (2026-11-15): the 422s described FastAPI's HTTPValidationError (`detail` an array),
+# a shape this API never sent: it sends problem details, `detail` a string. A client
+# generated from the old spec was already wrong; the spec now says what the API does.
+GET /activity the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /activity/sessions the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /activity/turns the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /activity/turns/{run_id} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /admin/pause the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /agents/{name} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+DELETE /agents/{name}/memory the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /agents/{name}/memory the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+DELETE /agents/{name}/memory/{note_id} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /agents/{name}/memory/{note_id}/restore the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /audit the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /audit.csv the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /client-errors the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /graphs/{name} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /kill-switch/resume the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /kill-switch/stop the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /mcp/servers the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+DELETE /mcp/servers/{server_id} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+PATCH /mcp/servers/{server_id} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /mcp/servers/{server_id}/test the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+PUT /mcp/servers/{server_id}/tools/{tool} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /mcp/servers/{server_id}/tools/{tool}/approve the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /models/connections the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+DELETE /models/connections/{connection_id} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+PATCH /models/connections/{connection_id} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /models/connections/{connection_id}/models the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /models/connections/{connection_id}/test the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+PUT /models/default the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /notifications the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+PUT /onboarding the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /runs the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /runs/{run_id} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /runs/{run_id}/approve the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /runs/{run_id}/cancel the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /runs/{run_id}/events the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+DELETE /runs/{run_id}/feedback the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /runs/{run_id}/feedback the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+PUT /runs/{run_id}/feedback the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /runs/{run_id}/make-test the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /runs/{run_id}/redrive the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /runs/{run_id}/report the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /runs/{run_id}/result the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /runs/{run_id}/resume the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /runs/{run_id}/stream the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /sessions the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /sessions the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /sessions/{session_id} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+PATCH /sessions/{session_id} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /sessions/{session_id}/approve the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /sessions/{session_id}/cancel the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /sessions/{session_id}/export the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /sessions/{session_id}/messages the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /sessions/{session_id}/messages the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /sessions/{session_id}/stream the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /skills the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /skills/upload the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+DELETE /skills/{skill_id} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /skills/{skill_id} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+PATCH /skills/{skill_id} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /skills/{skill_id}/approve the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /skills/{skill_id}/export the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /skills/{skill_id}/files/{path} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /skills/{skill_id}/upload the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /studio/agents the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /studio/agents/from-proposal the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /studio/agents/{agent_id} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /studio/agents/{agent_id}/archive the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+DELETE /studio/agents/{agent_id}/draft the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+PUT /studio/agents/{agent_id}/draft the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /studio/agents/{agent_id}/edit the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /studio/agents/{agent_id}/export the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /studio/agents/{agent_id}/improve the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /studio/agents/{agent_id}/publish the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /studio/agents/{agent_id}/test-chat the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /studio/agents/{agent_id}/test-chat the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /studio/agents/{agent_id}/tests the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /studio/agents/{agent_id}/tests the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /studio/agents/{agent_id}/tests/run the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+DELETE /studio/agents/{agent_id}/tests/{case_id} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+PUT /studio/agents/{agent_id}/tests/{case_id} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /studio/agents/{agent_id}/versions/{number}/restore the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+GET /studio/assist/{run_id} the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /studio/describe the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /studio/import the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+PUT /telemetry the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+POST /tools/search/test the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+PUT /tools/settings the `detail` response's property `type` changed from `array<object>` to `string` for status `422`

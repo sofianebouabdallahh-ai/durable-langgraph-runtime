@@ -6,6 +6,10 @@ pass the restricted Pod Security Standard, with no service account token, no ser
 links and, from the namespace's NetworkPolicy, no network at all. A Pod's name is the
 run and epoch, so two sandboxd replicas asking at once get the same Pod.
 
+At the `gvisor` level a sandbox Pod asks for gVisor's RuntimeClass (`gvisor` unless the
+cluster names it otherwise). A Pod that asks for one the cluster doesn't have is refused
+by Kubernetes itself: it never quietly runs under runc (H9).
+
 Commands run through the exec API's WebSocket (channel protocol v4: 0 stdin, 1 stdout,
 2 stderr, 3 the exit status). The argv travels on stdin, not in the URL (code and file
 contents can be large): a one-line launcher in the sandbox reads it and execs it.
@@ -32,6 +36,7 @@ from agent_runtime.sandbox.backend import (
     ENV,
     LABEL,
     USER_ID,
+    Isolation,
     Limits,
     Output,
     Sandbox,
@@ -72,7 +77,7 @@ class Kubernetes:
         self._token_file = account / "token"
         self._ssl = ssl.create_default_context(cafile=str(account / "ca.crt"))
         self.namespace = namespace or (account / "namespace").read_text().strip()
-        self._runtime_class = runtime_class
+        self._runtime_class = runtime_class or "gvisor"  # gVisor's, as this cluster names it
         self._pull_policy = pull_policy
         self._user_namespaces = user_namespaces
         self._client = httpx.AsyncClient(
@@ -105,12 +110,28 @@ class Kubernetes:
         response = await self._call("GET", self._pods(), params={"labelSelector": selector})
         return [_sandbox(pod) for pod in response.json().get("items", [])]
 
-    async def create(self, run: str, epoch: int, image: str, limits: Limits) -> str:
+    async def supports(self, isolation: Isolation) -> bool:
+        if isolation == "container":
+            return True
+        # A dry run: admission checks the RuntimeClass exists, and nothing is created.
+        probe = self._pod("nuria-sbx-probe", "probe", 0, "probe", Limits(), isolation)
+        response = await self._client.post(
+            self._pods(), params={"dryRun": "All"}, json=probe, headers=self._headers()
+        )
+        if response.status_code < 300:
+            return True
+        if response.status_code == 403 and "RuntimeClass" in response.text:
+            return False  # the cluster has no such RuntimeClass
+        raise RuntimeError(f"kubernetes dry run: {response.status_code} {response.text[:300]}")
+
+    async def create(
+        self, run: str, epoch: int, image: str, limits: Limits, isolation: Isolation
+    ) -> str:
         name = f"nuria-sbx-{run}-{epoch}"
         deadline = time.monotonic() + START_TIMEOUT_S
         while True:
             response = await self._call(
-                "POST", self._pods(), json=self._pod(name, run, epoch, image, limits)
+                "POST", self._pods(), json=self._pod(name, run, epoch, image, limits, isolation)
             )
             if response.status_code != 409:
                 break
@@ -140,7 +161,9 @@ class Kubernetes:
                 raise SandboxStartFailed(f"{name} didn't start in {START_TIMEOUT_S} s")
             await asyncio.sleep(0.5)
 
-    def _pod(self, name: str, run: str, epoch: int, image: str, limits: Limits) -> dict[str, Any]:
+    def _pod(
+        self, name: str, run: str, epoch: int, image: str, limits: Limits, isolation: Isolation
+    ) -> dict[str, Any]:
         memory = f"{limits.memory_mb}Mi"
         spec: dict[str, Any] = {
             "restartPolicy": "Never",
@@ -190,8 +213,8 @@ class Kubernetes:
                 {"name": "tmp", "emptyDir": {"medium": "Memory", "sizeLimit": "64Mi"}},
             ],
         }
-        if self._runtime_class:
-            spec["runtimeClassName"] = self._runtime_class  # e.g. gVisor, Kata
+        if isolation == "gvisor":
+            spec["runtimeClassName"] = self._runtime_class
         if self._user_namespaces:
             spec["hostUsers"] = False  # root inside isn't root on the node
         return {
@@ -212,7 +235,9 @@ class Kubernetes:
             json={"gracePeriodSeconds": 0, "propagationPolicy": "Background"},
         )
 
-    async def exec(self, sandbox: str, argv: list[str], timeout_s: float) -> dict[str, Any]:
+    async def exec(
+        self, sandbox: str, argv: list[str], timeout_s: float, *, processes: int | None = None
+    ) -> dict[str, Any]:
         query = urlencode(
             {
                 "container": CONTAINER,
@@ -235,7 +260,8 @@ class Kubernetes:
                 max_size=4 * 1024 * 1024,
                 proxy=None,
             ) as ws:
-                await ws.send(b"\x00" + json.dumps(killed_after(argv, timeout_s)).encode() + b"\n")
+                command = killed_after(argv, timeout_s, processes)
+                await ws.send(b"\x00" + json.dumps(command).encode() + b"\n")
                 with contextlib.suppress(ConnectionClosed):
                     async for message in ws:
                         data = message.encode() if isinstance(message, str) else message

@@ -2,7 +2,7 @@
 
 The delivery plan for **Durable, Distributed Runtime for LangGraph Agents**: what we build, in what order, and how we know each part is done.
 
-**Where we are (2026-11-12):** the runtime core (phases 0–6) and the local release through **L8 are done**: one-command setup, the Nuria chat, the Agent Studio (agents, helpers, your own model, skills, a guided first agent), dashboards and local Kubernetes, real tools in a sandbox, Activity and logs, and tools from MCP servers. **v0.2.0 is the first public release** ([changelog](../CHANGELOG.md)). Since the launch, **ten hardening phases**, each from a review of the code as it stood (eight done, two in progress): **H1** approvals bound to the call (a Critical fix), **H2** budgets with real prices, **H3** an API only you can drive (421 on a foreign name, Fetch Metadata, SSRF checks on every address, unknown page addresses ask first), **H4** honest and resilient (infrastructure errors re-queue the run, **Try again**, webhooks delivered), **H5** long chats, **H6** tests for agents, the publish gate and `runtime eval` in CI, **H7** safe across deploys (the ledger finds a call by its place, run formats), **H8** memory across chats (15 of 15 recalled), **H9** a stronger sandbox (gVisor, the Docker-socket gate, `SANDBOX_ISOLATION`), in progress on its branch, and **H10** [the external review's findings](plans/phase-H10.md), in progress. **v0.3.0 is the next release**, cut once H9 and H10 merge. Milestones **M2** and **M3** are declared once testers have installed it and their feedback is collected ([tester script](setup/tester-script.md)). **Next:** H9 and H10 to `main`, then v0.3.0; after it, L8b (OAuth sign-in for MCP servers) and L8c (local MCP servers in the sandbox).
+**Where we are (2026-11-15):** the runtime core (phases 0–6) and the local release through **L8 are done**: one-command setup, the Nuria chat, the Agent Studio (agents, helpers, your own model, skills, a guided first agent), dashboards and local Kubernetes, real tools in a sandbox, Activity and logs, and tools from MCP servers. **v0.2.0 is the first public release** ([changelog](../CHANGELOG.md)). Since the launch, **ten hardening phases**, each from a review of the code as it stood (nine done, one in progress): **H1** approvals bound to the call (a Critical fix), **H2** budgets with real prices, **H3** an API only you can drive (421 on a foreign name, Fetch Metadata, SSRF checks on every address, unknown page addresses ask first), **H4** honest and resilient (infrastructure errors re-queue the run, **Try again**, webhooks delivered), **H5** long chats, **H6** tests for agents, the publish gate and `runtime eval` in CI, **H7** safe across deploys (the ledger finds a call by its place, run formats), **H8** memory across chats (15 of 15 recalled), **H9** a stronger sandbox (gVisor, the Docker-socket gate, `SANDBOX_ISOLATION`), in progress on its branch, and **H10** [the external review's findings](plans/phase-H10.md). **v0.3.0 is the next release**, cut once H9 merges. Milestones **M2** and **M3** are declared once testers have installed it and their feedback is collected ([tester script](setup/tester-script.md)). **Next:** H9 to `main`, then v0.3.0, and the [client SDKs](#client-sdks-s1s5) ([CR-007](requirements/CR-007-client-sdks.md)): S1 the API contract, S2 the Python SDK, S3 the TypeScript SDK. After them, L8b (OAuth sign-in for MCP servers) and L8c (local MCP servers in the sandbox).
 
 **Sources of truth for scope**
 - Base spec: [`Project_4_Detailed_Requirements_K8s.pdf`](requirements/Project_4_Detailed_Requirements_K8s.pdf). Requirements are `R<section>.<n>`; acceptance criteria are `AC<n>`.
@@ -13,6 +13,7 @@ The delivery plan for **Durable, Distributed Runtime for LangGraph Agents**: wha
   - [CR-004](requirements/CR-004-agent-definitions-and-hooks.md): agent definitions & hooks.
   - [CR-005](requirements/CR-005-subagents.md): sub-agents.
   - [CR-006](requirements/CR-006-agent-studio.md): Agent Studio, bring your own model, instruction-only skills.
+  - [CR-007](requirements/CR-007-client-sdks.md): client SDKs.
 - Plans:
   - [local release](plans/local-release.md): what testers run on their machine;
   - [beta platform](architecture/beta-platform.md): the hosted, multi-user system, after the feedback.
@@ -68,7 +69,12 @@ When this roadmap and a requirement disagree, the requirement wins and this file
 | **H7** | **Safe across deploys and side effects**: the ledger finds a call by its place in the run, run formats for rolling upgrades, safe retry is opt-in, unanswered calls answered from the ledger | ✅ Done ([plan](plans/phase-H7.md), [summary](progress/phase-H7.md)) | — |
 | **H8** | **Memory across chats**: what an agent remembers is in its prompt every turn, as data; forget, see and delete notes (15 of 15 recalled with qwen2.5:7b, 0 of 5 before) | ✅ Done ([plan](plans/phase-H8.md), [summary](progress/phase-H8.md)) | — |
 | **H9** | **A stronger sandbox**: gVisor as a second wall, sandboxd behind a Docker-socket gate, `SANDBOX_ISOLATION` says which wall an install has and never quietly runs without it | 🚧 In progress, on its branch | — |
-| **H10** | **The external review's findings** (2026-11-12): provenance from the engine's `url` fields only, a skill's text needs a reader, network tiers and a Redis password on Compose, secrets redacted before storing, retention, the docs check, and the small fixes | 🚧 In progress ([plan](plans/phase-H10.md)) | — |
+| **H10** | **The external review's findings** (2026-11-12): provenance from the engine's `url` fields only, a skill's text needs a reader, network tiers and a Redis password on Compose, secrets redacted before storing, retention, the docs check, and the small fixes | ✅ Done ([plan](plans/phase-H10.md), [summary](progress/phase-H10.md)) | — |
+| **S1** | **The API contract**: the streams and errors described in the spec, held to it by a contract test, breaking changes caught in CI, `openapi-fetch` vendored | ✅ Done ([plan](plans/phase-S1.md), [summary](progress/phase-S1.md)) | ~10–14 h |
+| **S2** | **The Python SDK**: generated calls under a hand-written Facade; a stream that resumes through a drain; `wait()` with typed results, approvals shown, not decided | ⏳ Next | ~16–22 h |
+| **S3** | **The TypeScript SDK**: the same Facade for Node and the browser, one type source with the web app | ⏳ After S2 | ~12–16 h |
+| **S4** | **Approving from code**: `decide()` bound to a person's credentials | ⏸ Blocked on P7 (identity) | ~4–6 h |
+| **S5** | **Protocol adapters**: A2A, then AG-UI, then MCP tasks | On demand | ~15–25 h each |
 | P7–P12 | Hosted beta → M4 | After the feedback | ~160–200 h |
 | P13–P16 | Sandboxes, research agent, evals, AKS | After the beta opens | ~65–90 h |
 
@@ -140,6 +146,32 @@ The `runtime` image (non-root, read-only, tini); the Compose `app` profile (`mig
 - Tag `v0.1.0`.
 
 **Done when:** 5–10 external testers have installed it and their feedback is collected.
+
+---
+
+## Client SDKs (S1–S5)
+
+Nuria from code, for scripts, CI jobs, evals and other services ([CR-007](requirements/CR-007-client-sdks.md), [ADR-0009](adr/0009-client-sdks.md)). The research of 2026-11-15 found that no generator, free or paid, follows Nuria's stream (its replay after `Last-Event-ID` and its `event: reconnect`), and no agent protocol replays one at all. So the **spec is the product**: the typed calls are generated from it, and a small hand-written Facade does the streaming, the waits and the results.
+
+### S1 — The API contract · ~10–14 h ([plan](plans/phase-S1.md))
+- **The streams described:** each stream's events as component schemas (the envelope, the session stream's events by `type`, the `reconnect` data), and a contract test that every event the server emits matches them.
+- **The errors described:** every operation's error responses with one problem-details model, including the 422s the spec gets wrong today; readable operation ids.
+- **Breaking changes caught:** `oasdiff` compares each pull request's spec with `main`'s.
+- **No runtime dependency on frozen code:** `openapi-fetch` vendored into the web app; its stream types generated.
+
+**Done when:** **AC49** and **AC50**.
+
+### S2 — The Python SDK · ~16–22 h
+`sdk/python`: `openapi-python-client` generates `nuria/_generated`; the Facade in `nuria/lib` gives sync and async clients, a run handle any process can rebuild, a stream that resumes by R19.5, `wait()` with typed results, idempotent sends, and approvals shown but not decided (R19.7).
+
+**Done when:** **AC51**, **AC52** and **AC53**, 5/5 on the real stack.
+
+### S3 — The TypeScript SDK · ~12–16 h
+`sdk/typescript`: the web app's stream adapter, extracted and given auth headers (a fetch loop on `eventsource-parser`), the same Facade as Python, one generated type source with the web app.
+
+**Done when:** **AC54**.
+
+**Later:** S4 adds deciding approvals once identity exists (P7); S5 adds protocol adapters when someone needs them.
 
 ---
 
@@ -234,3 +266,4 @@ Designed in [architecture/beta-platform.md](architecture/beta-platform.md), and 
 | Judge calibration (Cohen's κ) | R7.5 |
 | gVisor runtime, sandbox warm pool | R13.9 |
 | `setup.ps1` tested on a real Windows machine | L1 |
+| Replace the frozen TypeScript API generator (before TypeScript 7) | S1, CR-007 R19.9 |

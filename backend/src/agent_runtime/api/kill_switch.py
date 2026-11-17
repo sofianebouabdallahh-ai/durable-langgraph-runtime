@@ -74,18 +74,18 @@ class StopResult(KillSwitchView):
 
 
 @kill_switch_router.get("", response_model=KillSwitchView, summary="What is switched off")
-async def state(service: ServiceDep) -> KillSwitchView:
+async def get_kill_switch(service: ServiceDep) -> KillSwitchView:
     return KillSwitchView.of(await service.state())
 
 
 @kill_switch_router.post("/stop", response_model=StopResult, summary="Stop an agent, or all, now")
-async def stop(body: StopRequest, service: ServiceDep) -> StopResult:
+async def stop_all_agents(body: StopRequest, service: ServiceDep) -> StopResult:
     cancelled = await service.stop(body.agent, body.reason)
     view = KillSwitchView.of(await service.state())
     return StopResult(**view.model_dump(), cancelled=cancelled)
 
 
 @kill_switch_router.post("/resume", response_model=KillSwitchView, summary="Switch back on")
-async def resume(body: ResumeRequest, service: ServiceDep) -> KillSwitchView:
+async def resume_all_agents(body: ResumeRequest, service: ServiceDep) -> KillSwitchView:
     await service.resume(body.agent)
     return KillSwitchView.of(await service.state())

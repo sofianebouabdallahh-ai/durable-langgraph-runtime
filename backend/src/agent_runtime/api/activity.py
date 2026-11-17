@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from agent_runtime.activity import ActivityRepository, Range, Scope
+from agent_runtime.api import contract
 from agent_runtime.db import Pool
 
 activity_router = APIRouter(prefix="/activity", tags=["activity"])
@@ -196,7 +197,7 @@ class SessionRow(BaseModel):
 
 
 @activity_router.get("", response_model=ActivityView, summary="What all agents have been doing")
-async def activity(
+async def get_activity(
     pool: PoolDep, range_: RangeQ = "7d", agent: AgentQ = None, include_tests: TestsQ = False
 ) -> ActivityView:
     scope = Scope.of(range_, agent, include_tests)
@@ -215,7 +216,7 @@ async def activity(
 
 
 @activity_router.get("/turns", response_model=list[TurnRow], summary="Turns, newest first")
-async def turns(
+async def list_activity_turns(
     pool: PoolDep,
     range_: RangeQ = "7d",
     agent: AgentQ = None,
@@ -235,8 +236,13 @@ async def turns(
     return [TurnRow.of(r) for r in rows]
 
 
-@activity_router.get("/turns/{run_id}", response_model=TurnDetail, summary="One turn")
-async def turn(run_id: uuid.UUID, pool: PoolDep) -> TurnDetail:
+@activity_router.get(
+    "/turns/{run_id}",
+    response_model=TurnDetail,
+    summary="One turn",
+    responses=contract.problems(404),
+)
+async def get_activity_turn(run_id: uuid.UUID, pool: PoolDep) -> TurnDetail:
     async with pool.connection() as conn:
         repo = ActivityRepository(conn)
         rows = await repo.one_turn(run_id)
@@ -247,7 +253,7 @@ async def turn(run_id: uuid.UUID, pool: PoolDep) -> TurnDetail:
 
 
 @activity_router.get("/sessions", response_model=list[SessionRow], summary="Chats in range")
-async def sessions(
+async def list_activity_sessions(
     pool: PoolDep,
     range_: RangeQ = "7d",
     agent: AgentQ = None,

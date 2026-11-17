@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from agent_runtime import logs
+from agent_runtime.api import contract
 
 log = logging.getLogger("ui")
 
@@ -63,8 +64,12 @@ def _bucket(request: Request) -> TokenBucket:
     return bucket
 
 
-@client_errors_router.post("", status_code=202, summary="Log an error from the browser")
-async def client_error(body: ClientError, bucket: Annotated[TokenBucket, Depends(_bucket)]) -> None:
+@client_errors_router.post(
+    "", status_code=202, summary="Log an error from the browser", responses=contract.problems(429)
+)
+async def report_client_error(
+    body: ClientError, bucket: Annotated[TokenBucket, Depends(_bucket)]
+) -> None:
     if not bucket.take():
         raise HTTPException(429, "too many errors reported; try again in a minute")
     logs.event(

@@ -423,7 +423,7 @@ class RunExecutor:
         if ended.status is not RunStatus.RUNNING:
             # Its sandbox goes with this execution (R13.2): a resume or a reclaim gets a
             # fresh one; sandboxd sweeps any a crash left behind.
-            await sandbox_tools.release(str(run.id))
+            await sandbox_tools.release(str(run.id), fence.epoch)
         if ended.status.is_terminal and ended.finished_at is not None:
             metrics.run_ended(run.kind, str(ended.status),
                               (ended.finished_at - ended.created_at).total_seconds())  # fmt: skip

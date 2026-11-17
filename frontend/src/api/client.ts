@@ -1,9 +1,10 @@
 /**
  * The API client: types generated from the backend's OpenAPI spec (`make ui-api`),
- * a typed `fetch` (openapi-fetch), and one error type for problem+json responses.
+ * a typed `fetch` (openapi-fetch, vendored: see vendor/README.md), and one error type for
+ * problem+json responses.
  * Pattern: Adapter. Components never build URLs or parse errors themselves.
  */
-import createClient from "openapi-fetch";
+import createClient from "./vendor/openapi-fetch/index.js";
 
 import type { components, paths } from "./schema";
 
@@ -24,13 +25,9 @@ export const api = createClient<paths>({
   fetch: (request: Request) => globalThis.fetch(request),
 });
 
-/** RFC 9457 problem details, as the API returns them. */
-interface Problem {
-  type?: string;
-  title?: string;
-  detail?: string;
-  status?: number;
-}
+/** RFC 9457 problem details, as the spec publishes them (`Problem`, CR-007 R19.1). Partial:
+ * a proxy's error page or a dropped connection isn't one, so every field is optional here. */
+type Problem = Partial<Schemas["Problem"]>;
 
 export class ApiError extends Error {
   readonly status: number;

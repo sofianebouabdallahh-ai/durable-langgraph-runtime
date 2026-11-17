@@ -4,6 +4,36 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### S1 — The API contract
+The API's OpenAPI spec now says what the API really does, so client SDKs can be generated
+from it, and CI keeps it that way ([CR-007](docs/requirements/CR-007-client-sdks.md),
+[ADR-0009](docs/adr/0009-client-sdks.md)).
+#### Added
+- **The streams are described.** Both SSE endpoints publish their events as schemas: the
+  envelope, the session stream's six events with their payloads, and `reconnect`'s data. A
+  client generated from the spec gets named, typed events instead of `unknown`, and the web
+  app's stream types now come from it.
+- **Every error is described.** Each operation declares the errors a client branches on
+  (404, 409, 429, 503) as RFC 9457 problem details, and every other error as
+  `default: Problem`.
+- **The server is held to the spec.** Every event and every error the tests see is checked
+  against it: a field or a status the spec doesn't declare fails the test that saw it.
+- **Breaking changes fail CI.** `oasdiff` compares each pull request's spec with its base's
+  (`make api-breaking`).
+#### Fixed
+- **The spec's 422s described a shape the API never sent** (FastAPI's `HTTPValidationError`).
+  They now describe the problem details the API returns, with `errors` when the request's
+  fields didn't validate.
+- **A route's own "not found" or "conflict" came back as `{"detail": ...}`** instead of
+  problem details like every other error. Starlette's 404 and 405 too. The `detail` field
+  is unchanged.
+#### Changed
+- **Operation ids are the routes' names** (`send_message`, not
+  `send_message_sessions__session_id__messages_post`); a few route functions were renamed so
+  each says what it acts on.
+- **The web app no longer installs `openapi-fetch`,** whose maintainers stopped updating it:
+  a verified copy is vendored, with its licence (`frontend/src/api/vendor/`).
+
 ### Fixes found by a newcomer's walkthrough (2026-11-16)
 A fresh clone, `./setup.sh` answered as a person would, then the app, the terminal and
 the doctor used with a real model (Ollama).

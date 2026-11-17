@@ -9,6 +9,7 @@
 #   ./setup.sh --chat               chat in this terminal
 #   ./setup.sh --observability      also traces, logs and metrics, in Grafana
 #   ./setup.sh --no-sandbox         without the code tools (Run Python, terminal, files)
+#   ./setup.sh --gvisor             code under gVisor, required from then on (Linux: installs it)
 #   ./setup.sh --kubernetes         on a local Kubernetes cluster (kind) instead of Compose
 #   ./setup.sh --update [--to v0.2.0]   back up, then move to the newest (or that) release
 #   ./setup.sh --restore backups/….sql.gz   put a backup back (replaces today's data)
@@ -33,10 +34,10 @@ ROLLBACK=""  # set during an update: how to go back, printed with any failure
 die()  { printf '%s\n' "  ${R}✗ $1${N}" >&2; [ $# -gt 1 ] && printf '    %s\n' "${@:2}" >&2
          [ -n "$ROLLBACK" ] && printf '    %s\n' "To go back to the version you had:" "$ROLLBACK" >&2; exit 1; }
 
-usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
 # ------------------------------------------------------------------ options
-ACTION=start; MODEL=""; INTERACTIVE=1; BUILD=0; OBSERVABILITY=""; SANDBOX=""; TO=""; RESTORE=""; PREVIOUS=""; BACKUP=""
+ACTION=start; MODEL=""; INTERACTIVE=1; BUILD=0; OBSERVABILITY=""; SANDBOX=""; GVISOR=""; TO=""; RESTORE=""; PREVIOUS=""; BACKUP=""
 API_KEY="${SETUP_API_KEY:-}"; BASE_URL=""; MODEL_NAME=""; WANT_PORT=""; OPEN_BROWSER=1
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -59,6 +60,7 @@ while [ $# -gt 0 ]; do
     --observability) OBSERVABILITY=on ;;
     --sandbox) SANDBOX=on ;;
     --no-sandbox) SANDBOX=off ;;
+    --gvisor) GVISOR=on ;;
     --no-observability) OBSERVABILITY=off ;;
     --kubernetes) ACTION=kubernetes ;;
     -h|--help) usage ;;
@@ -321,6 +323,35 @@ configure_sandbox() {  # --sandbox / --no-sandbox; on by default; remembered in 
   fi
   env_set COMPOSE_PROFILES "${profiles:-app},sandbox"; env_set SANDBOX_ENABLED true
   env_set SANDBOXD_URL http://sandboxd:8070
+  configure_isolation
+}
+
+has_gvisor() { "$DOCKER" info --format '{{json .Runtimes}}' 2>/dev/null | grep -q '"runsc"'; }
+configure_isolation() {  # how strongly code is isolated (H9): auto unless --gvisor; in .env
+  if [ "$GVISOR" != on ]; then
+    [ -n "$(env_get SANDBOX_ISOLATION)" ] || env_set SANDBOX_ISOLATION auto
+    case "$(env_get SANDBOX_ISOLATION)" in
+      gvisor) ok "code runs under gVisor (required: without it, no code runs)" ;;
+      container) ok "code runs in a locked-down container (it shares this computer's kernel)" ;;
+      *) if has_gvisor; then ok "code runs under gVisor"
+         else ok "code runs in a locked-down container (for gVisor: ./setup.sh --gvisor, Linux)"; fi ;;
+    esac
+    return
+  fi
+  if ! has_gvisor; then
+    if [ "$(uname -s)" != Linux ] || "$DOCKER" info --format '{{.OperatingSystem}}' 2>/dev/null | grep -q "Docker Desktop"; then
+      die "setup can't add gVisor to Docker Desktop: Docker has no supported way to add a runtime there." \
+          "docs/security.md (Code isolation) says what you can do. Without --gvisor, code runs in a locked-down container."
+    fi
+    say "Installing gVisor into Docker (with sudo; Docker restarts, and Nuria's containers come back)…"
+    if [ "$INTERACTIVE" = 1 ]; then
+      ask "Install gVisor $(sed -n 's/^RELEASE=\([^ ]*\).*/\1/p' infra/gvisor/gvisor.sh) and restart Docker? [y/N]" "n"
+      case "$REPLY" in y|Y|yes) ;; *) die "gVisor not installed." "Run ./setup.sh --gvisor again when you're ready." ;; esac
+    fi
+    infra/gvisor/gvisor.sh docker || die "gVisor couldn't be installed." "Nothing else changed: run ./setup.sh without --gvisor to keep the container sandbox."
+  fi
+  env_set SANDBOX_ISOLATION gvisor
+  ok "code runs under gVisor (required from now on: without it, no code runs)"
 }
 
 remove_sandboxes() {  # code sandboxes aren't Compose's: sandboxd starts them, one per turn

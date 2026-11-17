@@ -14,17 +14,20 @@ from __future__ import annotations
 
 import base64
 import posixpath
+import re
 from typing import Annotated, Any, Literal
 
 import httpx
 from pydantic import Field
 
 from agent_runtime.config import get_settings
+from agent_runtime.fencing import Fence, FencedError
 from agent_runtime.tools.spec import ToolArgs, ToolContext, ToolRegistry
 
 SANDBOX_TOOLS = ("run_python", "run_shell", "workspace_files")
 MAX_FILE_BYTES = 100_000
 WORKSPACE = "/workspace"
+NEWER_EPOCH = re.compile(r"epoch (\d+)")  # in sandboxd's 409: "... a newer worker (epoch N)"
 
 
 class SandboxError(Exception):
@@ -75,12 +78,26 @@ async def _exec(ctx: ToolContext, argv: list[str], timeout_s: float) -> dict[str
             )
     except httpx.HTTPError as exc:
         raise SandboxError("The sandbox isn't reachable right now.") from exc
+    if response.status_code == 409:
+        # The sandbox follows the newest epoch (sandboxd): this worker lost the run. The
+        # executor stops it, as for any fenced write; the model never reads this.
+        raise FencedError(Fence(ctx.run_id, ctx.epoch), _newer_epoch(response))
     if response.status_code != 200:
         raise SandboxError(f"The sandbox refused the call ({response.status_code}).")
     result: dict[str, Any] = response.json()
     if result.get("timed_out"):
         result["note"] = f"Stopped after {timeout_s:g} s."
     return result
+
+
+def _newer_epoch(response: httpx.Response) -> int | None:
+    """The epoch sandboxd named in its 409, when it did (the message is for people)."""
+    try:
+        detail = str(response.json().get("detail", ""))
+    except (ValueError, AttributeError):
+        return None
+    found = NEWER_EPOCH.search(detail)
+    return int(found.group(1)) if found else None
 
 
 def _path(path: str) -> str:
@@ -204,8 +221,10 @@ def register(registry: ToolRegistry) -> ToolRegistry:
     return registry
 
 
-async def release(run_id: str) -> None:
-    """The run left `running`: its sandbox goes (best effort; sandboxd sweeps the rest)."""
+async def release(run_id: str, epoch: int) -> None:
+    """The run left `running` under this worker's `epoch`: its sandbox goes (best effort;
+    sandboxd sweeps the rest). The epoch goes with the goodbye, so a worker that lost the
+    run meanwhile can't take down the sandbox of the one that has it now."""
     settings = get_settings()
     if not settings.sandboxd_url:
         return
@@ -214,6 +233,7 @@ async def release(run_id: str) -> None:
         async with httpx.AsyncClient(timeout=10, trust_env=False) as client:
             await client.delete(
                 f"{settings.sandboxd_url.rstrip('/')}/sandboxes/{run_id}",
+                params={"epoch": epoch},
                 headers={"Authorization": f"Bearer {token}"},
             )
     except httpx.HTTPError:

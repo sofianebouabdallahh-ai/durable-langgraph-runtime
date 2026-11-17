@@ -88,12 +88,12 @@ def _view(request: Request, config: ToolConfig) -> ToolSettingsView:
 
 
 @tools_router.get("/settings", response_model=ToolSettingsView, summary="Tool settings")
-async def get_settings(request: Request, service: ServiceDep) -> ToolSettingsView:
+async def get_tool_settings(request: Request, service: ServiceDep) -> ToolSettingsView:
     return _view(request, await service.current())
 
 
 @tools_router.put("/settings", response_model=ToolSettingsView, summary="Change tool settings")
-async def put_settings(
+async def put_tool_settings(
     body: ToolSettingsUpdate, request: Request, service: ServiceDep
 ) -> ToolSettingsView:
     return _view(

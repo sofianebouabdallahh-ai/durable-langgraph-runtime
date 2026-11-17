@@ -23,6 +23,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from agent_runtime.api import contract
 from agent_runtime.skills.service import Saved, SkillService
 from agent_runtime.skills.spec import MAX_BYTES, SkillRejected, estimate_tokens
 from agent_runtime.skills.store import Skill, SkillVersion
@@ -156,7 +157,7 @@ async def _body(request: Request) -> bytes:
 
 
 @skills_router.get("", response_model=list[SkillView], summary="The skill library")
-async def library(service: ServiceDep) -> list[SkillView]:
+async def list_skills(service: ServiceDep) -> list[SkillView]:
     used = await service.used_by()
     return [SkillView.of(s, v, used.get(s.name, [])) for s, v in await service.all()]
 
@@ -166,8 +167,9 @@ async def library(service: ServiceDep) -> list[SkillView]:
     status_code=status.HTTP_201_CREATED,
     response_model=SavedView,
     summary="Create a skill from the form",
+    responses=contract.problems(409),
 )
-async def create(body: NewSkill, service: ServiceDep) -> SavedView:
+async def create_skill(body: NewSkill, service: ServiceDep) -> SavedView:
     saved = await service.create(
         name=body.name,
         description=body.description,
@@ -182,8 +184,9 @@ async def create(body: NewSkill, service: ServiceDep) -> SavedView:
     status_code=status.HTTP_201_CREATED,
     response_model=SavedView,
     summary="Upload a skill (a zip of its folder, or a SKILL.md) as the body",
+    responses=contract.problems(409),
 )
-async def upload(
+async def upload_skill(
     request: Request,
     service: ServiceDep,
     filename: Annotated[str, Query(min_length=1, max_length=200)],
@@ -191,16 +194,21 @@ async def upload(
     return SavedView.of(await service.upload(filename, await _body(request)), [])
 
 
-@skills_router.get("/{skill_id}", response_model=SkillDetail, summary="One skill")
-async def get(skill_id: uuid.UUID, service: ServiceDep) -> SkillDetail:
+@skills_router.get(
+    "/{skill_id}", response_model=SkillDetail, summary="One skill", responses=contract.problems(404)
+)
+async def get_skill(skill_id: uuid.UUID, service: ServiceDep) -> SkillDetail:
     skill, version = await service.get(skill_id)
     return SkillDetail.detail(skill, version, (await service.used_by()).get(skill.name, []))
 
 
 @skills_router.patch(
-    "/{skill_id}", response_model=SavedView, summary="Edit (saves a new version; the name stays)"
+    "/{skill_id}",
+    response_model=SavedView,
+    summary="Edit (saves a new version; the name stays)",
+    responses=contract.problems(404, 409),
 )
-async def edit(skill_id: uuid.UUID, body: EditSkill, service: ServiceDep) -> SavedView:
+async def update_skill(skill_id: uuid.UUID, body: EditSkill, service: ServiceDep) -> SavedView:
     saved = await service.edit(
         skill_id,
         description=body.description,
@@ -214,8 +222,9 @@ async def edit(skill_id: uuid.UUID, body: EditSkill, service: ServiceDep) -> Sav
     "/{skill_id}/upload",
     response_model=SavedView,
     summary="A new version of this skill from an upload (same name)",
+    responses=contract.problems(404, 409),
 )
-async def replace(
+async def replace_skill(
     skill_id: uuid.UUID,
     request: Request,
     service: ServiceDep,
@@ -229,8 +238,9 @@ async def replace(
     "/{skill_id}/approve",
     response_model=SkillDetail,
     summary="I've read this version: it may be plain text in prompts (idempotent)",
+    responses=contract.problems(404),
 )
-async def approve(skill_id: uuid.UUID, service: ServiceDep) -> SkillDetail:
+async def approve_skill(skill_id: uuid.UUID, service: ServiceDep) -> SkillDetail:
     skill, version = await service.approve(skill_id)
     return SkillDetail.detail(skill, version, (await service.used_by()).get(skill.name, []))
 
@@ -239,8 +249,9 @@ async def approve(skill_id: uuid.UUID, service: ServiceDep) -> SkillDetail:
     "/{skill_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Archive (published agents keep the version they use)",
+    responses=contract.problems(404, 409),
 )
-async def archive(skill_id: uuid.UUID, service: ServiceDep) -> Response:
+async def archive_skill(skill_id: uuid.UUID, service: ServiceDep) -> Response:
     await service.archive(skill_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -248,9 +259,9 @@ async def archive(skill_id: uuid.UUID, service: ServiceDep) -> Response:
 @skills_router.get(
     "/{skill_id}/export",
     summary="Download the skill's folder (zip)",
-    responses={200: {"content": {"application/zip": {}}}},
+    responses={200: {"content": {"application/zip": {}}}} | contract.problems(404),
 )
-async def export(skill_id: uuid.UUID, service: ServiceDep) -> Response:
+async def export_skill(skill_id: uuid.UUID, service: ServiceDep) -> Response:
     filename, data = await service.export(skill_id)
     return Response(
         data,
@@ -262,9 +273,9 @@ async def export(skill_id: uuid.UUID, service: ServiceDep) -> Response:
 @skills_router.get(
     "/{skill_id}/files/{path:path}",
     summary="Download one of its files",
-    responses={200: {"content": {"application/octet-stream": {}}}},
+    responses={200: {"content": {"application/octet-stream": {}}}} | contract.problems(404),
 )
-async def file(skill_id: uuid.UUID, path: str, service: ServiceDep) -> Response:
+async def get_skill_file(skill_id: uuid.UUID, path: str, service: ServiceDep) -> Response:
     entry, data = await service.file(skill_id, path)
     name = entry["path"].rsplit("/", 1)[-1].replace('"', "")
     # Always a download, never rendered: an uploaded .html or .svg must not run here.

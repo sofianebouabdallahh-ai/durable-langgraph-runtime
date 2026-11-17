@@ -264,6 +264,6 @@ async def test_the_sandbox_through_sandboxd(
         sandbox_tools.CodeArgs(code="import time; time.sleep(30)", timeout_s=1), ctx
     )
     assert slow["timed_out"] and "Stopped after 1 s" in slow["note"]
-    await sandbox_tools.release(str(ctx.run_id))
+    await sandbox_tools.release(str(ctx.run_id), ctx.epoch)
     assert any(box.startswith(str(ctx.run_id)) for box in backend.removed)
     assert not await backend.sandboxes(str(ctx.run_id))

@@ -3,18 +3,24 @@
 Every error response has the same machine-readable shape:
 `{type, title, status, detail, ...extensions}`. Clients branch on `type`, never
 on human-readable text, and internal details of 500s never leak.
+
+`Problem` and `ValidationProblem` publish that shape in the spec (CR-007 R19.1); a raw
+`HTTPException` (a route's own 404, Starlette's 404 and 405) is rendered the same way.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 import uuid
+from http import HTTPStatus
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from agent_runtime.agents.document import ImportRejected
 from agent_runtime.agents.resolver import AgentUnavailable
@@ -61,9 +67,39 @@ MEDIA_TYPE = "application/problem+json"
 TYPE_BASE = "https://agent-runtime.dev/problems/"  # documentation namespace, not fetched
 
 
+class Problem(BaseModel):
+    """An error, as RFC 9457 problem details. Branch on `type`; a problem may carry more
+    fields of its own (`run_id`, `limit`, `agent`, ...)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    type: str = Field(description="A URI naming the kind of problem: the field to branch on")
+    title: str = Field(description="A short summary of the kind of problem")
+    status: int = Field(description="The HTTP status code")
+    detail: str = Field(description="This occurrence, in words for a person")
+
+
+class ValidationIssue(BaseModel):
+    loc: list[str] = Field(description="Where: `body`, `query` or `path`, then the field")
+    msg: str
+    type: str
+
+
+class ValidationProblem(Problem):
+    """A 422. When the request's own fields didn't validate, `errors` says where and why;
+    other 422s say why in fields of their own (a limit's `field` and `maximum`, a skill's
+    `issues`)."""
+
+    errors: list[ValidationIssue] | None = None
+
+
 def problem(status: int, slug: str, title: str, detail: str, **extensions: Any) -> JSONResponse:
     body = {"type": TYPE_BASE + slug, "title": title, "status": status, "detail": detail}
     return JSONResponse(body | extensions, status_code=status, media_type=MEDIA_TYPE)
+
+
+def _slug(status: int) -> str:
+    return re.sub(r"[^a-z]+", "-", HTTPStatus(status).phrase.lower()).strip("-")
 
 
 def _errors(exc: ValidationError | RequestValidationError) -> list[dict[str, Any]]:
@@ -286,6 +322,16 @@ def install(app: FastAPI) -> None:
             422, "invalid-input", "Invalid run input or options", f"{exc.title} is invalid.",
             errors=_errors(exc),
         )  # fmt: skip
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _http(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+        """A route's own `HTTPException`, or Starlette's 404 / 405: problem details too."""
+        response = problem(
+            exc.status_code, _slug(exc.status_code), HTTPStatus(exc.status_code).phrase,
+            str(exc.detail),
+        )  # fmt: skip
+        response.headers.update(exc.headers or {})
+        return response
 
     @app.exception_handler(Exception)
     async def _unexpected(request: Request, exc: Exception) -> JSONResponse:
