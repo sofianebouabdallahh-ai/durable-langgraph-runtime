@@ -53,7 +53,8 @@ def test_under_gvisor_the_process_limit_is_set_inside() -> None:
     argv = killed_after(["python", "-c", "x"], 30, processes=64)
     assert argv[:5] == ["bash", "-c", 'ulimit -u "$1" && shift && exec "$@"', "bash", "64"]
     assert argv[5:] == killed_after(["python", "-c", "x"], 30)
-    ran = subprocess.run([*argv[:5], "sh", "-c", "ulimit -u"], capture_output=True, text=True)
+    # read back with bash: Debian's and Ubuntu's sh is dash, whose ulimit has no -u
+    ran = subprocess.run([*argv[:5], "bash", "-c", "ulimit -u"], capture_output=True, text=True)
     assert ran.stdout.strip() == "64"
 
 
