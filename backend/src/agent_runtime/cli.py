@@ -160,9 +160,15 @@ def _run(args: argparse.Namespace) -> int:
 
 
 def _chat(args: argparse.Namespace) -> int:
-    """Chat with an agent in this terminal: a session, one in-process run per turn, the
-    model's tokens printed as they stream (CR-001). `--message` (repeatable) makes it
+    """Chat with an agent in this terminal, the model's tokens printed as they stream
+    (CR-001). With `--api`, a client of that running Nuria (chat_client.py: what
+    `./setup.sh --chat` runs); without it, a session with one in-process run per turn (the
+    developer loop, as the database's owner). `--message` (repeatable) makes it
     non-interactive; otherwise it reads lines until EOF or `/quit`."""
+    if args.api:
+        from agent_runtime.chat_client import chat
+
+        return asyncio.run(chat(args.api, args.agent, args.message))
     settings = get_settings()
     logging.basicConfig(level=logging.WARNING)
     return asyncio.run(_chat_session(settings, args.agent, args.message))
@@ -232,19 +238,9 @@ async def _chat_session(settings: Settings, agent: str, messages: list[str] | No
 
 
 def _print_live(type_: str, payload: dict[str, Any]) -> None:
-    if type_ == "token":
-        print(payload["text"], end="", flush=True)
-    elif type_ == "message.created":
-        kind, content = payload["type"], payload["content"]
-        if kind == "tool_call":
-            print(f"\n  ⚙ {content['tool']}({json.dumps(content['args'])[:120]})", flush=True)
-        elif kind == "tool_result":
-            body = content.get("result", content.get("error"))
-            print(f"  ↳ {json.dumps(body, default=str)[:160]}", flush=True)
-    elif type_.startswith("subagent."):
-        agent = payload.get("agent", "")
-        detail = payload.get("message") or payload.get("status") or ""
-        print(f"\n  ◇ {type_.removeprefix('subagent.')} {agent} {detail}", flush=True)
+    from agent_runtime.chat_client import print_live
+
+    print_live(type_, payload)  # one printer for both chats
 
 
 def _fake_model(args: argparse.Namespace) -> int:
@@ -612,6 +608,9 @@ def build_parser() -> argparse.ArgumentParser:
     chat = commands.add_parser("chat", help="chat with an agent in this terminal")
     chat.add_argument("--agent", default="chat")
     chat.add_argument("--message", action="append", help="send this (repeatable); no prompt")
+    chat.add_argument(
+        "--api", help="chat through this running Nuria's API, e.g. http://ui:8080/api"
+    )
     chat.set_defaults(handler=_chat)
 
     execute = commands.add_parser(

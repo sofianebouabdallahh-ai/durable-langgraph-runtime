@@ -308,7 +308,7 @@ function Test-Smoke {
 }
 
 # ------------------------------------------------------------------ actions
-if ($Chat) { Test-Docker; Invoke-Compose run --rm --no-deps api chat; exit 0 }
+if ($Chat) { Test-Docker; Invoke-Compose run --rm --no-deps api chat --api http://ui:8080/api; exit 0 }  # a client of the stack, as setup.sh
 if ($Stop) { Test-Docker; Invoke-Compose stop; Remove-Sandboxes; Ok "stopped (your data is kept)"; exit 0 }
 if ($Doctor) {
   Test-Docker; $out = "diagnostics-$(Get-Date -Format yyyyMMdd-HHmmss)"; New-Item -ItemType Directory $out | Out-Null
