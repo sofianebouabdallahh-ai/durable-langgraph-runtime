@@ -281,6 +281,17 @@ def _sandboxd(args: argparse.Namespace) -> int:
     return 0
 
 
+def _sandbox_gate(args: argparse.Namespace) -> int:
+    """sandbox-gate (sandbox/gate.py): the Docker socket, narrowed to what sandboxes need."""
+    import uvicorn
+
+    from agent_runtime.sandbox.gate import create_app, listen
+
+    server = listen(args.socket, args.owner)
+    uvicorn.run(create_app(), fd=server.fileno(), log_level="warning")
+    return 0
+
+
 def _openapi(args: argparse.Namespace) -> int:
     """The published contract, for the UI's generated client and its drift check."""
     from pydantic import SecretStr
@@ -604,6 +615,11 @@ def build_parser() -> argparse.ArgumentParser:
     sandboxd.add_argument("--host", default="127.0.0.1")
     sandboxd.add_argument("--port", type=int, default=8070)
     sandboxd.set_defaults(handler=_sandboxd)
+
+    gate = commands.add_parser("sandbox-gate", help="the one service with the Docker socket")
+    gate.add_argument("--socket", default="/run/sandbox-gate/docker.sock")
+    gate.add_argument("--owner", type=int, default=10001, help="sandboxd's user id")
+    gate.set_defaults(handler=_sandbox_gate)
 
     openapi = commands.add_parser("openapi", help="print the API's OpenAPI spec (JSON)")
     openapi.add_argument("--out", help="write it to this file instead")

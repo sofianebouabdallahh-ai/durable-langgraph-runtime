@@ -4,6 +4,10 @@ The same locked-down sandbox either way (R13.3): the sandbox image, a non-root u
 read-only root, `/workspace` and `/tmp` in memory, no network, no capabilities, CPU and
 memory limits, every command under `timeout -s KILL`. Docker on one machine (Compose);
 Pods in their own namespace on Kubernetes.
+
+Two isolation levels (phase H9): `container` shares the host's kernel (runc); `gvisor`
+puts gVisor's own kernel, in user space, between the code and the host's. sandboxd
+decides which one this installation runs (`SANDBOX_ISOLATION`) and proves it (isolation.py).
 """
 
 from __future__ import annotations
@@ -13,10 +17,17 @@ from typing import Any, Literal, Protocol
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+Isolation = Literal["gvisor", "container"]
+
 LABEL = "nuria.sandbox"
 MAX_OUTPUT = 20_000
 USER_ID = 10002  # the sandbox image's `sandbox` user
 ENV = {"HOME": "/workspace", "PYTHONUNBUFFERED": "1", "MPLCONFIGDIR": "/tmp"}
+# Under gVisor every process inside needs a helper process on the host, so a host limit
+# that a fork bomb reaches stops gVisor itself, and the sandbox with it. The host limit
+# only bounds gVisor; the code's own limit is RLIMIT_NPROC, which gVisor's kernel counts
+# inside the sandbox (never under runc: there it counts the user across the whole host).
+GVISOR_HOST_PIDS = 512
 
 
 class Limits(BaseSettings):
@@ -44,14 +55,24 @@ class Backend(Protocol):
 
     async def sandboxes(self, run: str | None = None) -> list[Sandbox]: ...
 
-    async def create(self, run: str, epoch: int, image: str, limits: Limits) -> str:
+    async def supports(self, isolation: Isolation) -> bool:
+        """Whether this Docker (or cluster) can start sandboxes at that level at all."""
+        ...
+
+    async def create(
+        self, run: str, epoch: int, image: str, limits: Limits, isolation: Isolation
+    ) -> str:
         """The run's sandbox for this epoch, running. Safe to call twice (the second
         call gets the first's) where the adapter can tell; sandboxd also locks per run."""
         ...
 
     async def remove(self, sandbox: str) -> None: ...
 
-    async def exec(self, sandbox: str, argv: list[str], timeout_s: float) -> dict[str, Any]: ...
+    async def exec(
+        self, sandbox: str, argv: list[str], timeout_s: float, *, processes: int | None = None
+    ) -> dict[str, Any]:
+        """`processes`: the code's own process limit (gVisor only, see GVISOR_HOST_PIDS)."""
+        ...
 
     async def close(self) -> None: ...
 
@@ -65,9 +86,14 @@ def labels(run: str, epoch: int, created: int) -> dict[str, str]:
     }
 
 
-def killed_after(argv: list[str], timeout_s: float) -> list[str]:
-    """Killed outright at the time limit: nothing it starts can outlive it."""
-    return ["timeout", "-s", "KILL", f"{timeout_s:g}s", *argv]
+def killed_after(argv: list[str], timeout_s: float, processes: int | None = None) -> list[str]:
+    """Killed outright at the time limit: nothing it starts can outlive it. With
+    `processes`, it and what it starts can't run more than that many at once."""
+    timed = ["timeout", "-s", "KILL", f"{timeout_s:g}s", *argv]
+    if processes is None:
+        return timed
+    # $1 is the limit; the rest is the command (bash: its `ulimit -u` is RLIMIT_NPROC).
+    return ["bash", "-c", 'ulimit -u "$1" && shift && exec "$@"', "bash", str(processes), *timed]
 
 
 class Output:

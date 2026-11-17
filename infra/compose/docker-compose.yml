@@ -8,7 +8,8 @@
 #                         With them: SearXNG (web search, no key) and the page reader
 #                         (`fetcher`), the web tools' only way out (L6a).
 #   profile `sandbox`:    sandboxd, which runs code and shell commands in a locked-down
-#                         container per run (L6b). On by default; `./setup.sh --no-sandbox`
+#                         container per run (L6b), and sandbox-gate, the one service with
+#                         the Docker socket (H9). On by default; `./setup.sh --no-sandbox`
 #                         turns it off.
 #   profile `llm`:        Ollama in Docker (CPU-only on macOS: prefer the native app).
 #   profile `test`:       a fake OpenAI-compatible model (browser tests, CI).
@@ -186,27 +187,57 @@ services:
       retries: 20
     networks: [reader] # a page can't send it to Postgres, Redis, the API or sandboxd
 
-  # Code and shell (L6b): the only service that can start containers (it holds the Docker
-  # socket, so it runs as root, alone). Each run gets one locked-down sandbox: no network,
-  # read-only root, small tmpfs workspace, CPU/memory/process limits (CR-002 §13).
+  # Code and shell (L6b). Each run gets one locked-down sandbox: no network, read-only
+  # root, small tmpfs workspace, CPU/memory/process limits (CR-002 §13), under gVisor
+  # where Docker has it (SANDBOX_ISOLATION, H9). sandboxd answers the workers; it holds
+  # nothing root-equivalent and runs as the runtime's user.
   sandboxd:
     <<: *runtime
     profiles: ["sandbox"]
     command: ["sandboxd", "--host", "0.0.0.0", "--port", "8070"]
-    user: "0"
     env_file: [] # no database, no model keys
     environment:
       SANDBOXD_TOKEN: ${SANDBOXD_TOKEN:?set in .env (setup generates it)}
       SANDBOX_IMAGE: ${SANDBOX_IMAGE:-nuria-sandbox:${NURIA_VERSION:-latest}}
+      SANDBOX_ISOLATION: ${SANDBOX_ISOLATION:-auto}
+      SANDBOX_DOCKER_SOCKET: /run/sandbox-gate/docker.sock
       LOG_FORMAT: ${LOG_FORMAT:-json}
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - sandbox-gate:/run/sandbox-gate
+    depends_on:
+      sandbox-gate:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8070/healthz', timeout=3).status == 200 else 1)"]
       interval: 3s
       timeout: 5s
       retries: 20
-    networks: [app] # the workers ask it; Docker it reaches through the socket, not the network
+    networks: [app] # the workers ask it; Docker it reaches through sandbox-gate's socket, not the network
+
+  # The only service with the Docker socket (H9, CR-002 R13.4): it passes on to Docker
+  # only what a sandbox needs, and checks every container it's asked to create, field by
+  # field (sandbox/gate.py). No network at all: sandboxd reaches it on a Unix socket in a
+  # volume the two of them share.
+  sandbox-gate:
+    <<: *runtime
+    profiles: ["sandbox"]
+    command: ["sandbox-gate", "--socket", "/run/sandbox-gate/docker.sock", "--owner", "10001"]
+    user: "0" # the Docker socket is root's
+    network_mode: none
+    extra_hosts: []
+    env_file: []
+    environment:
+      SANDBOX_IMAGE: ${SANDBOX_IMAGE:-nuria-sandbox:${NURIA_VERSION:-latest}}
+      SANDBOX_ISOLATION: ${SANDBOX_ISOLATION:-auto}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - sandbox-gate:/run/sandbox-gate
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect('/run/sandbox-gate/docker.sock'); s.sendall(b'GET /_ping HTTP/1.0\\r\\n\\r\\n'); sys.exit(0 if b' 200 ' in s.recv(64) else 1)"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
 
   ui:
     image: ${UI_IMAGE:-ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/ui:${NURIA_VERSION:-latest}}
@@ -389,6 +420,8 @@ services:
     networks: [app]
 
 volumes:
+  sandbox-gate: # the gate's socket, in memory: nothing else is in it
+    driver_opts: { type: tmpfs, device: tmpfs, o: "mode=0711" }
   postgres-data:
   redis-data:
   ollama-models:
