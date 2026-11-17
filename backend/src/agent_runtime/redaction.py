@@ -34,7 +34,9 @@ SECRET_PATTERNS = [
     re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}"),  # GitHub tokens
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"),
     re.compile(r"(?i)\bbearer\s+[A-Za-z0-9_\-.=]{16,}"),
-    re.compile(r"(?<=://)[^/\s:@]+:[^/\s@]+(?=@)"),  # user:password in URLs
+    # user:password in URLs, and a password with no user: Redis's `redis://:pw@redis`, the
+    # form Compose writes since H10, once printed whole by `./setup.sh --doctor`
+    re.compile(r"(?<=://)[^/\s:@]*:[^/\s@]+(?=@)"),
     # H10, after gitleaks' defaults. Brave Search keys have no documented shape (checked
     # 2026-11-12): the one Nuria holds is covered by `known_secrets`.
     re.compile(r"\bAIza[\w-]{35}\b"),  # Google API keys

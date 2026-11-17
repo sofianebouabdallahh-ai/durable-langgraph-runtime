@@ -51,6 +51,7 @@ NEAR_MISSES = [
     "https://hooks.slack.com/services/short",
     "mod 1Q~ in the margin",
     "export AKIAROUND=1",
+    "the API at http://api:8000/runs, http://:8080/ and mail to a@b.com",
 ]
 
 
@@ -133,6 +134,33 @@ def test_the_settings_secrets_are_known_to_redaction() -> None:
     Settings(postgres_password="pw", sandboxd_token=SecretStr(token))  # type: ignore[arg-type]
     assert token in known_secrets and "pw" not in known_secrets  # too short to register
     assert redact(f"Authorization: {token}") == f"Authorization: {REDACTED}"
+
+
+# Values no test registers as known: only the URL pattern can mask them.
+URL_ONLY = "url-only-" + "9" * 12
+
+
+@pytest.mark.parametrize(
+    ("url", "shown"),
+    [
+        (f"postgresql://agent:{URL_ONLY}@db:5432/x", f"postgresql://{REDACTED}@db:5432/x"),
+        # Redis's password has no user: the form Compose writes since H10
+        (f"redis://:{URL_ONLY}@redis:6379/0", f"redis://{REDACTED}@redis:6379/0"),
+    ],
+)
+def test_a_password_in_a_url_is_masked_with_or_without_a_user(url: str, shown: str) -> None:
+    assert URL_ONLY not in known_secrets
+    assert redact(url) == shown
+    assert redact(shown) == shown  # idempotent
+
+
+def test_a_password_inside_a_url_setting_is_known_to_redaction() -> None:
+    from agent_runtime.config import Settings
+
+    password = "redis-password-" + "7" * 16
+    Settings(postgres_password="pw", redis_url=f"redis://:{password}@redis:6379/0")  # type: ignore[arg-type]
+    assert password in known_secrets
+    assert redact(f"NOAUTH for {password}") == f"NOAUTH for {REDACTED}"  # in a log line, too
 
 
 def test_an_opened_secret_is_known_to_redaction() -> None:

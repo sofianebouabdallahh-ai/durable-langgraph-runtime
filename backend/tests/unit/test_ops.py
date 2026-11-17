@@ -31,6 +31,17 @@ def test_the_effective_configuration_is_redacted() -> None:
     assert shown["model_provider"] == "scripted"
 
 
+def test_the_redis_password_compose_puts_in_redis_url_is_redacted() -> None:
+    # Compose writes REDIS_URL with a password and no user (H10); `./setup.sh --doctor`
+    # printed it whole into the report a person attaches to an issue.
+    secret = "compose-redis-" + "5" * 12
+    settings = Settings(
+        postgres_password=SecretStr(PASSWORD), redis_url=f"redis://:{secret}@redis:6379/0"
+    )
+    assert secret not in json.dumps(redacted_settings(settings))
+    assert redacted_settings(settings)["redis_url"] == "redis://[REDACTED]@redis:6379/0"
+
+
 async def test_the_ui_check_wants_the_page_and_its_csp() -> None:
     import httpx
     import pytest

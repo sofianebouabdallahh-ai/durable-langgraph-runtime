@@ -12,6 +12,7 @@ to exist. LLM provider settings arrive with ModelProvider (phase 6).
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -23,6 +24,16 @@ _ENV_ONLY = SettingsConfigDict(
     case_sensitive=False,
     extra="ignore",
 )
+
+
+def _url_password(value: str) -> str | None:
+    """The password inside a URL (`redis://:pw@redis:6379/0`), if the value is one with it."""
+    if "://" not in value or "@" not in value:
+        return None
+    try:
+        return urlsplit(value).password
+    except ValueError:  # not a URL after all (a bad port, say)
+        return None
 
 
 class ModelPrice(BaseModel):
@@ -233,12 +244,11 @@ class Settings(AgentSettings):
     def _known_to_redaction(self) -> Self:
         # H10: every secret these settings hold (the sandboxd token, the webhook secret, a
         # provider key, the master key, the database password) is masked wherever
-        # `redact()` runs, whatever it looks like.
-        known_secrets.add(*(
-            value.get_secret_value()
-            for value in (getattr(self, name) for name in type(self).model_fields)
-            if isinstance(value, SecretStr)
-        ))  # fmt: skip
+        # `redact()` runs, whatever it looks like. So is a password inside a URL setting
+        # (REDIS_URL carries Redis's): a plain string, but a secret all the same.
+        values = [getattr(self, name) for name in type(self).model_fields]
+        known_secrets.add(*(v.get_secret_value() for v in values if isinstance(v, SecretStr)))
+        known_secrets.add(*(_url_password(v) for v in values if isinstance(v, str)))
         return self
 
     @model_validator(mode="after")
