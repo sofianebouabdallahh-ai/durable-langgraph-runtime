@@ -12,7 +12,7 @@ export interface paths {
             cookie?: never;
         };
         /** Version and model, for the UI */
-        get: operations["about_about_get"];
+        get: operations["get_about"];
         put?: never;
         post?: never;
         delete?: never;
@@ -29,7 +29,7 @@ export interface paths {
             cookie?: never;
         };
         /** What all agents have been doing */
-        get: operations["activity_activity_get"];
+        get: operations["get_activity"];
         put?: never;
         post?: never;
         delete?: never;
@@ -46,7 +46,7 @@ export interface paths {
             cookie?: never;
         };
         /** Chats in range */
-        get: operations["sessions_activity_sessions_get"];
+        get: operations["list_activity_sessions"];
         put?: never;
         post?: never;
         delete?: never;
@@ -63,7 +63,7 @@ export interface paths {
             cookie?: never;
         };
         /** Turns, newest first */
-        get: operations["turns_activity_turns_get"];
+        get: operations["list_activity_turns"];
         put?: never;
         post?: never;
         delete?: never;
@@ -80,7 +80,7 @@ export interface paths {
             cookie?: never;
         };
         /** One turn */
-        get: operations["turn_activity_turns__run_id__get"];
+        get: operations["get_activity_turn"];
         put?: never;
         post?: never;
         delete?: never;
@@ -99,7 +99,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Cooperatively cancel every non-terminal run */
-        post: operations["admin_cancel_all_admin_cancel_all_post"];
+        post: operations["admin_cancel_all"];
         delete?: never;
         options?: never;
         head?: never;
@@ -116,7 +116,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Stop admission and claiming (R14.18) */
-        post: operations["admin_pause_admin_pause_post"];
+        post: operations["admin_pause"];
         delete?: never;
         options?: never;
         head?: never;
@@ -133,7 +133,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Resume admission and claiming */
-        post: operations["admin_resume_admin_resume_post"];
+        post: operations["admin_resume"];
         delete?: never;
         options?: never;
         head?: never;
@@ -148,7 +148,7 @@ export interface paths {
             cookie?: never;
         };
         /** Kill-switch state and queue depth */
-        get: operations["admin_state_admin_state_get"];
+        get: operations["admin_state"];
         put?: never;
         post?: never;
         delete?: never;
@@ -168,7 +168,7 @@ export interface paths {
          * The agents you can chat with
          * @description Built-in agents (files) and published Studio agents.
          */
-        get: operations["list_agents_agents_get"];
+        get: operations["list_agents"];
         put?: never;
         post?: never;
         delete?: never;
@@ -185,7 +185,7 @@ export interface paths {
             cookie?: never;
         };
         /** One agent, with its prompt */
-        get: operations["get_agent_agents__name__get"];
+        get: operations["get_agent"];
         put?: never;
         post?: never;
         delete?: never;
@@ -202,11 +202,11 @@ export interface paths {
             cookie?: never;
         };
         /** What the agent remembers */
-        get: operations["list_memory_agents__name__memory_get"];
+        get: operations["list_memory"];
         put?: never;
         post?: never;
         /** Forget everything, for good */
-        delete: operations["clear_memory_agents__name__memory_delete"];
+        delete: operations["clear_memory"];
         options?: never;
         head?: never;
         patch?: never;
@@ -223,7 +223,7 @@ export interface paths {
         put?: never;
         post?: never;
         /** Delete a note for good */
-        delete: operations["delete_note_agents__name__memory__note_id__delete"];
+        delete: operations["delete_note"];
         options?: never;
         head?: never;
         patch?: never;
@@ -239,7 +239,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Bring back a forgotten note */
-        post: operations["restore_note_agents__name__memory__note_id__restore_post"];
+        post: operations["restore_note"];
         delete?: never;
         options?: never;
         head?: never;
@@ -254,7 +254,7 @@ export interface paths {
             cookie?: never;
         };
         /** Who changed what */
-        get: operations["audit_audit_get"];
+        get: operations["list_audit"];
         put?: never;
         post?: never;
         delete?: never;
@@ -271,7 +271,7 @@ export interface paths {
             cookie?: never;
         };
         /** The trail as a CSV file */
-        get: operations["audit_csv_audit_csv_get"];
+        get: operations["export_audit_csv"];
         put?: never;
         post?: never;
         delete?: never;
@@ -290,7 +290,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Log an error from the browser */
-        post: operations["client_error_client_errors_post"];
+        post: operations["report_client_error"];
         delete?: never;
         options?: never;
         head?: never;
@@ -305,7 +305,7 @@ export interface paths {
             cookie?: never;
         };
         /** List graphs */
-        get: operations["list_graphs_graphs_get"];
+        get: operations["list_graphs"];
         put?: never;
         post?: never;
         delete?: never;
@@ -322,7 +322,7 @@ export interface paths {
             cookie?: never;
         };
         /** Describe a graph */
-        get: operations["get_graph_graphs__name__get"];
+        get: operations["get_graph"];
         put?: never;
         post?: never;
         delete?: never;
@@ -339,7 +339,7 @@ export interface paths {
             cookie?: never;
         };
         /** Liveness: the process is up */
-        get: operations["healthz_healthz_get"];
+        get: operations["healthz"];
         put?: never;
         post?: never;
         delete?: never;
@@ -356,7 +356,7 @@ export interface paths {
             cookie?: never;
         };
         /** What is switched off */
-        get: operations["state_kill_switch_get"];
+        get: operations["get_kill_switch"];
         put?: never;
         post?: never;
         delete?: never;
@@ -375,7 +375,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Switch back on */
-        post: operations["resume_kill_switch_resume_post"];
+        post: operations["resume_all_agents"];
         delete?: never;
         options?: never;
         head?: never;
@@ -392,7 +392,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Stop an agent, or all, now */
-        post: operations["stop_kill_switch_stop_post"];
+        post: operations["stop_all_agents"];
         delete?: never;
         options?: never;
         head?: never;
@@ -407,10 +407,10 @@ export interface paths {
             cookie?: never;
         };
         /** MCP servers */
-        get: operations["servers_mcp_servers_get"];
+        get: operations["list_mcp_servers"];
         put?: never;
         /** Add an MCP server (it's tested at once) */
-        post: operations["add_mcp_servers_post"];
+        post: operations["add_mcp_server"];
         delete?: never;
         options?: never;
         head?: never;
@@ -428,11 +428,11 @@ export interface paths {
         put?: never;
         post?: never;
         /** Remove (its tools stop working for every agent) */
-        delete: operations["remove_mcp_servers__server_id__delete"];
+        delete: operations["remove_mcp_server"];
         options?: never;
         head?: never;
         /** Change */
-        patch: operations["change_mcp_servers__server_id__patch"];
+        patch: operations["update_mcp_server"];
         trace?: never;
     };
     "/mcp/servers/{server_id}/test": {
@@ -445,7 +445,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Ask the server for its tools */
-        post: operations["test_mcp_servers__server_id__test_post"];
+        post: operations["test_mcp_server"];
         delete?: never;
         options?: never;
         head?: never;
@@ -461,7 +461,7 @@ export interface paths {
         };
         get?: never;
         /** Switch a tool on or off */
-        put: operations["set_tool_mcp_servers__server_id__tools__tool__put"];
+        put: operations["set_mcp_tool"];
         post?: never;
         delete?: never;
         options?: never;
@@ -479,7 +479,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Approve a tool the server changed */
-        post: operations["approve_mcp_servers__server_id__tools__tool__approve_post"];
+        post: operations["approve_mcp_tool"];
         delete?: never;
         options?: never;
         head?: never;
@@ -494,10 +494,10 @@ export interface paths {
             cookie?: never;
         };
         /** Your models */
-        get: operations["list_connections_models_connections_get"];
+        get: operations["list_connections"];
         put?: never;
         /** Add a model connection */
-        post: operations["add_models_connections_post"];
+        post: operations["add_connection"];
         delete?: never;
         options?: never;
         head?: never;
@@ -515,11 +515,11 @@ export interface paths {
         put?: never;
         post?: never;
         /** Remove (agents using it need another model) */
-        delete: operations["remove_models_connections__connection_id__delete"];
+        delete: operations["remove_connection"];
         options?: never;
         head?: never;
         /** Edit (a new key replaces the old one) */
-        patch: operations["edit_models_connections__connection_id__patch"];
+        patch: operations["update_connection"];
         trace?: never;
     };
     "/models/connections/{connection_id}/models": {
@@ -530,7 +530,7 @@ export interface paths {
             cookie?: never;
         };
         /** The models the service says it has */
-        get: operations["remote_models_models_connections__connection_id__models_get"];
+        get: operations["list_connection_models"];
         put?: never;
         post?: never;
         delete?: never;
@@ -549,7 +549,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Check it answers and uses tools */
-        post: operations["test_models_connections__connection_id__test_post"];
+        post: operations["test_connection"];
         delete?: never;
         options?: never;
         head?: never;
@@ -564,9 +564,9 @@ export interface paths {
             cookie?: never;
         };
         /** The default model */
-        get: operations["get_default_models_default_get"];
+        get: operations["get_default_model"];
         /** Set the default model */
-        put: operations["set_default_models_default_put"];
+        put: operations["set_default_model"];
         post?: never;
         delete?: never;
         options?: never;
@@ -582,7 +582,7 @@ export interface paths {
             cookie?: never;
         };
         /** Find Ollama */
-        get: operations["ollama_models_ollama_get"];
+        get: operations["list_ollama_models"];
         put?: never;
         post?: never;
         delete?: never;
@@ -599,7 +599,7 @@ export interface paths {
             cookie?: never;
         };
         /** The latest notifications and their delivery */
-        get: operations["list_notifications_notifications_get"];
+        get: operations["list_notifications"];
         put?: never;
         post?: never;
         delete?: never;
@@ -616,9 +616,9 @@ export interface paths {
             cookie?: never;
         };
         /** Where the guide stands */
-        get: operations["get_onboarding_onboarding_get"];
+        get: operations["get_onboarding"];
         /** The guide's choices */
-        put: operations["put_onboarding_onboarding_put"];
+        put: operations["put_onboarding"];
         post?: never;
         delete?: never;
         options?: never;
@@ -634,7 +634,7 @@ export interface paths {
             cookie?: never;
         };
         /** Readiness: dependencies reachable */
-        get: operations["readyz_readyz_get"];
+        get: operations["readyz"];
         put?: never;
         post?: never;
         delete?: never;
@@ -656,7 +656,7 @@ export interface paths {
          * Create a run
          * @description Validates the graph, input and options, then creates a `queued` run. 202 Accepted: the run executes asynchronously; poll `Location`.
          */
-        post: operations["create_run_runs_post"];
+        post: operations["create_run"];
         delete?: never;
         options?: never;
         head?: never;
@@ -671,7 +671,7 @@ export interface paths {
             cookie?: never;
         };
         /** Run status */
-        get: operations["get_run_runs__run_id__get"];
+        get: operations["get_run"];
         put?: never;
         post?: never;
         delete?: never;
@@ -693,7 +693,7 @@ export interface paths {
          * Approve or reject a paused run (human-in-the-loop)
          * @description R1.4. Decides one pending approval (`approval_id`). `approve`: once none is left, the run is re-queued and each approved call runs, with its edited arguments if given; `reject` cancels the run with reason `rejected`. Works with no worker alive. 409 unless the run is `waiting_approval`, or if the approval isn't pending.
          */
-        post: operations["approve_run_runs__run_id__approve_post"];
+        post: operations["approve_run"];
         delete?: never;
         options?: never;
         head?: never;
@@ -713,7 +713,7 @@ export interface paths {
          * Cancel a run (cooperative)
          * @description A queued or waiting run is cancelled now; a running run stops before its next node (R1.6). 409 if the run has already ended.
          */
-        post: operations["cancel_run_runs__run_id__cancel_post"];
+        post: operations["cancel_run"];
         delete?: never;
         options?: never;
         head?: never;
@@ -728,7 +728,7 @@ export interface paths {
             cookie?: never;
         };
         /** Replay persisted events */
-        get: operations["list_events_runs__run_id__events_get"];
+        get: operations["list_events"];
         put?: never;
         post?: never;
         delete?: never;
@@ -745,12 +745,12 @@ export interface paths {
             cookie?: never;
         };
         /** A reply's rating */
-        get: operations["get_feedback_runs__run_id__feedback_get"];
+        get: operations["get_feedback"];
         /** Rate a reply */
-        put: operations["put_feedback_runs__run_id__feedback_put"];
+        put: operations["put_feedback"];
         post?: never;
         /** Take a rating back */
-        delete: operations["delete_feedback_runs__run_id__feedback_delete"];
+        delete: operations["delete_feedback"];
         options?: never;
         head?: never;
         patch?: never;
@@ -766,7 +766,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Make a test from a reply: its message, the 👎 reason */
-        post: operations["make_test_runs__run_id__make_test_post"];
+        post: operations["make_test"];
         delete?: never;
         options?: never;
         head?: never;
@@ -786,7 +786,7 @@ export interface paths {
          * Try a failed run again (from its last checkpoint)
          * @description H4. `failed` → `queued`: it resumes from its last saved step, and tool calls already done aren't run again. For failures that might not happen again (`error`, `infrastructure`, `max_reclaims`, `timeout`) of a top-level run; a chat turn only if it is the chat's latest. The budgets already used still count. 409 otherwise.
          */
-        post: operations["redrive_run_runs__run_id__redrive_post"];
+        post: operations["redrive_run"];
         delete?: never;
         options?: never;
         head?: never;
@@ -804,7 +804,7 @@ export interface paths {
          * A zip to attach to a bug report (phase L5)
          * @description README, the timeline (structural fields only unless `include_chat`), the agent's definition when it's one you made, and the chat only if `include_chat`. Nothing is uploaded anywhere: the person downloads it.
          */
-        get: operations["run_report_runs__run_id__report_get"];
+        get: operations["get_run_report"];
         put?: never;
         post?: never;
         delete?: never;
@@ -821,7 +821,7 @@ export interface paths {
             cookie?: never;
         };
         /** Final output */
-        get: operations["get_result_runs__run_id__result_get"];
+        get: operations["get_result"];
         put?: never;
         post?: never;
         delete?: never;
@@ -843,7 +843,7 @@ export interface paths {
          * Resume a run (idempotent)
          * @description Re-sends work for a queued run or one whose worker died; does nothing for a run a live worker is executing (R1.3). 409 if the run has already ended.
          */
-        post: operations["resume_run_runs__run_id__resume_post"];
+        post: operations["resume_run"];
         delete?: never;
         options?: never;
         head?: never;
@@ -861,7 +861,7 @@ export interface paths {
          * Live event stream (SSE)
          * @description Replays persisted events after `Last-Event-ID` (or `after_seq`), then streams live ones from any replica (R2.5). Persisted events carry `id: <seq>`. A `: ping` comment is sent when idle; the stream closes after the run's terminal event; on replica shutdown an `event: reconnect` tells the client to reconnect with its Last-Event-ID.
          */
-        get: operations["stream_run_runs__run_id__stream_get"];
+        get: operations["stream_run"];
         put?: never;
         post?: never;
         delete?: never;
@@ -878,10 +878,10 @@ export interface paths {
             cookie?: never;
         };
         /** List sessions, newest activity first */
-        get: operations["list_sessions_sessions_get"];
+        get: operations["list_sessions"];
         put?: never;
         /** Create a chat session with an agent */
-        post: operations["create_session_sessions_post"];
+        post: operations["create_session"];
         delete?: never;
         options?: never;
         head?: never;
@@ -896,14 +896,14 @@ export interface paths {
             cookie?: never;
         };
         /** Session detail */
-        get: operations["get_session_sessions__session_id__get"];
+        get: operations["get_session"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
         /** Rename or archive */
-        patch: operations["update_session_sessions__session_id__patch"];
+        patch: operations["update_session"];
         trace?: never;
     };
     "/sessions/{session_id}/approve": {
@@ -916,7 +916,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Approve or reject one of the active turn's approvals (R12.6) */
-        post: operations["approve_turn_sessions__session_id__approve_post"];
+        post: operations["approve_turn"];
         delete?: never;
         options?: never;
         head?: never;
@@ -933,7 +933,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Cancel the active turn (R12.7) */
-        post: operations["cancel_turn_sessions__session_id__cancel_post"];
+        post: operations["cancel_turn"];
         delete?: never;
         options?: never;
         head?: never;
@@ -948,7 +948,7 @@ export interface paths {
             cookie?: never;
         };
         /** The chat as Markdown (to keep, or to attach to a report) */
-        get: operations["export_session_sessions__session_id__export_get"];
+        get: operations["export_session"];
         put?: never;
         post?: never;
         delete?: never;
@@ -965,10 +965,10 @@ export interface paths {
             cookie?: never;
         };
         /** Transcript page */
-        get: operations["list_messages_sessions__session_id__messages_get"];
+        get: operations["list_messages"];
         put?: never;
         /** Send a message: starts a turn */
-        post: operations["send_message_sessions__session_id__messages_post"];
+        post: operations["send_message"];
         delete?: never;
         options?: never;
         head?: never;
@@ -986,7 +986,7 @@ export interface paths {
          * The session's live stream (SSE, R12.5)
          * @description Replays transcript messages after `Last-Event-ID` (or `after_seq`), then streams new ones from any replica, plus transient events of the active turn (no `id`).
          */
-        get: operations["stream_session_sessions__session_id__stream_get"];
+        get: operations["stream_session"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1003,10 +1003,10 @@ export interface paths {
             cookie?: never;
         };
         /** The skill library */
-        get: operations["library_skills_get"];
+        get: operations["list_skills"];
         put?: never;
         /** Create a skill from the form */
-        post: operations["create_skills_post"];
+        post: operations["create_skill"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1023,7 +1023,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Upload a skill (a zip of its folder, or a SKILL.md) as the body */
-        post: operations["upload_skills_upload_post"];
+        post: operations["upload_skill"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1038,15 +1038,15 @@ export interface paths {
             cookie?: never;
         };
         /** One skill */
-        get: operations["get_skills__skill_id__get"];
+        get: operations["get_skill"];
         put?: never;
         post?: never;
         /** Archive (published agents keep the version they use) */
-        delete: operations["archive_skills__skill_id__delete"];
+        delete: operations["archive_skill"];
         options?: never;
         head?: never;
         /** Edit (saves a new version; the name stays) */
-        patch: operations["edit_skills__skill_id__patch"];
+        patch: operations["update_skill"];
         trace?: never;
     };
     "/skills/{skill_id}/approve": {
@@ -1059,7 +1059,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** I've read this version: it may be plain text in prompts (idempotent) */
-        post: operations["approve_skills__skill_id__approve_post"];
+        post: operations["approve_skill"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1074,7 +1074,7 @@ export interface paths {
             cookie?: never;
         };
         /** Download the skill's folder (zip) */
-        get: operations["export_skills__skill_id__export_get"];
+        get: operations["export_skill"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1091,7 +1091,7 @@ export interface paths {
             cookie?: never;
         };
         /** Download one of its files */
-        get: operations["file_skills__skill_id__files__path__get"];
+        get: operations["get_skill_file"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1110,7 +1110,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** A new version of this skill from an upload (same name) */
-        post: operations["replace_skills__skill_id__upload_post"];
+        post: operations["replace_skill"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1125,10 +1125,10 @@ export interface paths {
             cookie?: never;
         };
         /** Your agents */
-        get: operations["list_agents_studio_agents_get"];
+        get: operations["list_studio_agents"];
         put?: never;
         /** A new agent (blank, or a copy) with a draft */
-        post: operations["create_agent_studio_agents_post"];
+        post: operations["create_studio_agent"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1145,7 +1145,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** A new agent from a proposal */
-        post: operations["from_proposal_studio_agents_from_proposal_post"];
+        post: operations["create_from_proposal"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1160,7 +1160,7 @@ export interface paths {
             cookie?: never;
         };
         /** One agent */
-        get: operations["get_agent_studio_agents__agent_id__get"];
+        get: operations["get_studio_agent"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1179,7 +1179,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Archive: no new chats; old ones stay readable */
-        post: operations["archive_studio_agents__agent_id__archive_post"];
+        post: operations["archive_studio_agent"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1195,10 +1195,10 @@ export interface paths {
         };
         get?: never;
         /** Save the draft (autosave); returns its issues */
-        put: operations["save_draft_studio_agents__agent_id__draft_put"];
+        put: operations["save_draft"];
         post?: never;
         /** Throw away the draft (back to the published version) */
-        delete: operations["discard_studio_agents__agent_id__draft_delete"];
+        delete: operations["discard_draft"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1214,7 +1214,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Start editing: a draft from the published version */
-        post: operations["edit_studio_agents__agent_id__edit_post"];
+        post: operations["edit_studio_agent"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1229,7 +1229,7 @@ export interface paths {
             cookie?: never;
         };
         /** Download as agent.md (or a zipped folder) */
-        get: operations["export_studio_agents__agent_id__export_get"];
+        get: operations["export_studio_agent"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1248,7 +1248,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Suggest clearer instructions */
-        post: operations["improve_studio_agents__agent_id__improve_post"];
+        post: operations["improve_instructions"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1265,7 +1265,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Publish the draft as an immutable version (needs a test) */
-        post: operations["publish_studio_agents__agent_id__publish_post"];
+        post: operations["publish_agent"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1280,10 +1280,10 @@ export interface paths {
             cookie?: never;
         };
         /** The latest test chat still open, if any */
-        get: operations["last_test_chat_studio_agents__agent_id__test_chat_get"];
+        get: operations["get_test_chat"];
         put?: never;
         /** A test chat with the draft */
-        post: operations["test_chat_studio_agents__agent_id__test_chat_post"];
+        post: operations["start_test_chat"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1298,10 +1298,10 @@ export interface paths {
             cookie?: never;
         };
         /** Its tests, each with its latest result */
-        get: operations["list_tests_studio_agents__agent_id__tests_get"];
+        get: operations["list_tests"];
         put?: never;
         /** Add a test */
-        post: operations["add_test_studio_agents__agent_id__tests_post"];
+        post: operations["add_test"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1318,7 +1318,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Run every test on the draft, each in its own test chat */
-        post: operations["run_tests_studio_agents__agent_id__tests_run_post"];
+        post: operations["run_tests"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1334,10 +1334,10 @@ export interface paths {
         };
         get?: never;
         /** Change a test (its earlier results no longer count) */
-        put: operations["change_test_studio_agents__agent_id__tests__case_id__put"];
+        put: operations["change_test"];
         post?: never;
         /** Remove a test */
-        delete: operations["remove_test_studio_agents__agent_id__tests__case_id__delete"];
+        delete: operations["remove_test"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1353,7 +1353,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Make an earlier version the draft */
-        post: operations["restore_studio_agents__agent_id__versions__number__restore_post"];
+        post: operations["restore_version"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1368,7 +1368,7 @@ export interface paths {
             cookie?: never;
         };
         /** A builder's proposal */
-        get: operations["assist_studio_assist__run_id__get"];
+        get: operations["get_assist"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1385,7 +1385,7 @@ export interface paths {
             cookie?: never;
         };
         /** What the form offers */
-        get: operations["catalog_studio_catalog_get"];
+        get: operations["get_catalog"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1404,7 +1404,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Draft an agent from a description (the builder agent) */
-        post: operations["describe_studio_describe_post"];
+        post: operations["describe_agent"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1421,7 +1421,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Import an agent.md or a zipped folder (the file is the body) */
-        post: operations["import_agent_studio_import_post"];
+        post: operations["import_agent"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1436,9 +1436,9 @@ export interface paths {
             cookie?: never;
         };
         /** Usage counts and the switch */
-        get: operations["get_telemetry_telemetry_get"];
+        get: operations["get_telemetry"];
         /** Turn sharing usage counts on or off */
-        put: operations["set_telemetry_telemetry_put"];
+        put: operations["set_telemetry"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1456,7 +1456,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Try the search */
-        post: operations["test_search_tools_search_test_post"];
+        post: operations["test_search"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1471,9 +1471,9 @@ export interface paths {
             cookie?: never;
         };
         /** Tool settings */
-        get: operations["get_settings_tools_settings_get"];
+        get: operations["get_tool_settings"];
         /** Change tool settings */
-        put: operations["put_settings_tools_settings_put"];
+        put: operations["put_tool_settings"];
         post?: never;
         delete?: never;
         options?: never;
@@ -2442,15 +2442,59 @@ export interface components {
             /** Name */
             name: string;
         };
-        /** HTTPValidationError */
-        HTTPValidationError: {
-            /** Detail */
-            detail?: components["schemas"]["ValidationError"][];
-        };
         /** Health */
         Health: {
             /** Status */
             status: string;
+        };
+        /** HelperCompletedEvent */
+        HelperCompletedEvent: {
+            /**
+             * After Seq
+             * @description Transient events: the persisted seq they follow. Persisted: null
+             */
+            after_seq: number | null;
+            /**
+             * Epoch
+             * @description The lease epoch of the worker that wrote it
+             */
+            epoch: number;
+            payload: components["schemas"]["HelperCompletedPayload"];
+            /**
+             * Run Id
+             * Format: uuid
+             * @description The run (turn) the event belongs to
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Persisted events: the stream's sequence number, also sent as the SSE `id` and accepted back as `Last-Event-ID`. Transient events: null
+             */
+            seq: number | null;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "subagent.completed";
+        };
+        /** HelperCompletedPayload */
+        HelperCompletedPayload: {
+            /** Agent */
+            agent: string;
+            /**
+             * Handle
+             * Format: uuid
+             */
+            handle: string;
+            /** Reason */
+            reason: string | null;
+            result_status: components["schemas"]["HelperResultStatus"] | null;
+            status: components["schemas"]["HelperStatus"];
         };
         /** HelperDocument */
         HelperDocument: {
@@ -2498,6 +2542,53 @@ export interface components {
             /** Tools */
             tools?: components["schemas"]["ToolChoice"][];
         };
+        /** HelperProgressEvent */
+        HelperProgressEvent: {
+            /**
+             * After Seq
+             * @description Transient events: the persisted seq they follow. Persisted: null
+             */
+            after_seq: number | null;
+            /**
+             * Epoch
+             * @description The lease epoch of the worker that wrote it
+             */
+            epoch: number;
+            payload: components["schemas"]["HelperProgressPayload"];
+            /**
+             * Run Id
+             * Format: uuid
+             * @description The run (turn) the event belongs to
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Persisted events: the stream's sequence number, also sent as the SSE `id` and accepted back as `Last-Event-ID`. Transient events: null
+             */
+            seq: number | null;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "subagent.progress";
+        };
+        /** HelperProgressPayload */
+        HelperProgressPayload: {
+            /**
+             * Handle
+             * Format: uuid
+             */
+            handle: string;
+            /** Message */
+            message: string;
+            /** Percent */
+            percent: number | null;
+        };
         /** HelperProposal */
         HelperProposal: {
             /**
@@ -2521,6 +2612,70 @@ export interface components {
              */
             tools?: string[];
         };
+        /**
+         * HelperResultStatus
+         * @description What a finished helper said of its own result (`return_result`).
+         * @enum {string}
+         */
+        HelperResultStatus: "success" | "partial" | "failed";
+        /** HelperSpawnedEvent */
+        HelperSpawnedEvent: {
+            /**
+             * After Seq
+             * @description Transient events: the persisted seq they follow. Persisted: null
+             */
+            after_seq: number | null;
+            /**
+             * Epoch
+             * @description The lease epoch of the worker that wrote it
+             */
+            epoch: number;
+            payload: components["schemas"]["HelperSpawnedPayload"];
+            /**
+             * Run Id
+             * Format: uuid
+             * @description The run (turn) the event belongs to
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Persisted events: the stream's sequence number, also sent as the SSE `id` and accepted back as `Last-Event-ID`. Transient events: null
+             */
+            seq: number | null;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "subagent.spawned";
+        };
+        /** HelperSpawnedPayload */
+        HelperSpawnedPayload: {
+            /** Agent */
+            agent: string;
+            /**
+             * Handle
+             * Format: uuid
+             */
+            handle: string;
+            /** Task */
+            task: string;
+            /**
+             * Worker
+             * @description The worker the helper runs in (the main run's)
+             */
+            worker: string;
+        };
+        /**
+         * HelperStatus
+         * @description A helper's state (`subagents/store.py` Status).
+         * @enum {string}
+         */
+        HelperStatus: "running" | "completed" | "failed" | "cancelled" | "timed_out";
         /**
          * HelperView
          * @description A sub-agent (CR-005), as the UI shows it under its main agent.
@@ -2666,6 +2821,44 @@ export interface components {
         MemoryView: {
             /** Notes */
             notes: components["schemas"]["NoteView"][];
+        };
+        /**
+         * MessageCreatedEvent
+         * @description A transcript message (persisted: it has a seq and is replayed).
+         */
+        MessageCreatedEvent: {
+            /**
+             * After Seq
+             * @description Transient events: the persisted seq they follow. Persisted: null
+             */
+            after_seq: number | null;
+            /**
+             * Epoch
+             * @description The lease epoch of the worker that wrote it
+             */
+            epoch: number;
+            payload: components["schemas"]["MessageView"];
+            /**
+             * Run Id
+             * Format: uuid
+             * @description The run (turn) the event belongs to
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Persisted events: the stream's sequence number, also sent as the SSE `id` and accepted back as `Last-Event-ID`. Transient events: null
+             */
+            seq: number | null;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "message.created";
         };
         /** MessageView */
         MessageView: {
@@ -2935,6 +3128,35 @@ export interface components {
              */
             source: "connection" | "settings" | "built-in" | "local" | "estimate";
         };
+        /**
+         * Problem
+         * @description An error, as RFC 9457 problem details. Branch on `type`; a problem may carry more
+         *     fields of its own (`run_id`, `limit`, `agent`, ...).
+         */
+        Problem: {
+            /**
+             * Detail
+             * @description This occurrence, in words for a person
+             */
+            detail: string;
+            /**
+             * Status
+             * @description The HTTP status code
+             */
+            status: number;
+            /**
+             * Title
+             * @description A short summary of the kind of problem
+             */
+            title: string;
+            /**
+             * Type
+             * @description A URI naming the kind of problem: the field to branch on
+             */
+            type: string;
+        } & {
+            [key: string]: unknown;
+        };
         /** ProtectionOption */
         ProtectionOption: {
             /** Default */
@@ -2957,6 +3179,15 @@ export interface components {
         PublishRequest: {
             /** Changelog */
             changelog?: string | null;
+        };
+        /**
+         * ReconnectData
+         * @description `event: reconnect`: this replica is shutting down. Reconnect now (any replica),
+         *     resuming after `after_seq`.
+         */
+        ReconnectData: {
+            /** After Seq */
+            after_seq: number;
         };
         /** ResumeRequest */
         ResumeRequest: {
@@ -2981,6 +3212,48 @@ export interface components {
          * @enum {string}
          */
         RunStatus: "queued" | "running" | "waiting_approval" | "waiting_children" | "completed" | "failed" | "cancelled";
+        /**
+         * RunStreamEvent
+         * @description One event of `GET /runs/{run_id}/stream`. The stream closes after `run.completed`,
+         *     `run.failed` or `run.cancelled`.
+         */
+        RunStreamEvent: {
+            /**
+             * After Seq
+             * @description Transient events: the persisted seq they follow. Persisted: null
+             */
+            after_seq: number | null;
+            /**
+             * Epoch
+             * @description The lease epoch of the worker that wrote it
+             */
+            epoch: number;
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /**
+             * Run Id
+             * Format: uuid
+             * @description The run (turn) the event belongs to
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Persisted events: the stream's sequence number, also sent as the SSE `id` and accepted back as `Last-Event-ID`. Transient events: null
+             */
+            seq: number | null;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "run.created" | "run.started" | "run.completed" | "run.failed" | "run.cancelled" | "run.reclaimed" | "run.released" | "run.redriven" | "context.trimmed" | "context.compacted" | "node.started" | "node.completed" | "node.failed" | "tool.called" | "tool.completed" | "tool.args_changed" | "interrupt.raised" | "approval.decided" | "run.resumed" | "policy.decision" | "hook.decision" | "child.started" | "child.completed" | "children.spawned" | "children.completed" | "subagent.spawned" | "subagent.progress" | "subagent.completed" | "token";
+        };
         /** RunView */
         RunView: {
             /** Cancel Requested */
@@ -3212,6 +3485,7 @@ export interface components {
              */
             turns: number;
         };
+        SessionStreamEvent: components["schemas"]["MessageCreatedEvent"] | components["schemas"]["TokenEvent"] | components["schemas"]["TurnStatusEvent"] | components["schemas"]["HelperSpawnedEvent"] | components["schemas"]["HelperProgressEvent"] | components["schemas"]["HelperCompletedEvent"];
         /** SessionView */
         SessionView: {
             /** Active Run Id */
@@ -3583,6 +3857,53 @@ export interface components {
              */
             passing: number;
         };
+        /**
+         * TokenEvent
+         * @description Transient: part of the active turn's reply. The complete reply arrives later as a
+         *     `message.created`.
+         */
+        TokenEvent: {
+            /**
+             * After Seq
+             * @description Transient events: the persisted seq they follow. Persisted: null
+             */
+            after_seq: number | null;
+            /**
+             * Epoch
+             * @description The lease epoch of the worker that wrote it
+             */
+            epoch: number;
+            payload: components["schemas"]["TokenPayload"];
+            /**
+             * Run Id
+             * Format: uuid
+             * @description The run (turn) the event belongs to
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Persisted events: the stream's sequence number, also sent as the SSE `id` and accepted back as `Last-Event-ID`. Transient events: null
+             */
+            seq: number | null;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "token";
+        };
+        /** TokenPayload */
+        TokenPayload: {
+            /**
+             * Text
+             * @description The next piece of the reply, as the model wrote it
+             */
+            text: string;
+        };
         /** ToolChoice */
         ToolChoice: {
             /** Max Calls */
@@ -3824,6 +4145,71 @@ export interface components {
             /** Tool Calls */
             tool_calls: number;
         };
+        /**
+         * TurnStatus
+         * @description A chat turn's lifecycle on the session stream (`streaming/bus.py` TURN_STATUS_OF).
+         * @enum {string}
+         */
+        TurnStatus: "queued" | "running" | "waiting_approval" | "completed" | "failed" | "cancelled";
+        /**
+         * TurnStatusEvent
+         * @description Transient: the active turn changed state. Never replayed: a client that reconnects
+         *     reads the turn's status from `GET /runs/{run_id}`.
+         */
+        TurnStatusEvent: {
+            /**
+             * After Seq
+             * @description Transient events: the persisted seq they follow. Persisted: null
+             */
+            after_seq: number | null;
+            /**
+             * Epoch
+             * @description The lease epoch of the worker that wrote it
+             */
+            epoch: number;
+            payload: components["schemas"]["TurnStatusPayload"];
+            /**
+             * Run Id
+             * Format: uuid
+             * @description The run (turn) the event belongs to
+             */
+            run_id: string;
+            /**
+             * Seq
+             * @description Persisted events: the stream's sequence number, also sent as the SSE `id` and accepted back as `Last-Event-ID`. Transient events: null
+             */
+            seq: number | null;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "turn.status";
+        };
+        /** TurnStatusPayload */
+        TurnStatusPayload: {
+            /**
+             * Event
+             * @description The run event this status comes from
+             * @enum {string}
+             */
+            event: "run.created" | "run.started" | "run.completed" | "run.failed" | "run.cancelled" | "run.reclaimed" | "run.released" | "run.redriven" | "context.trimmed" | "context.compacted" | "node.started" | "node.completed" | "node.failed" | "tool.called" | "tool.completed" | "tool.args_changed" | "interrupt.raised" | "approval.decided" | "run.resumed" | "policy.decision" | "hook.decision" | "child.started" | "child.completed" | "children.spawned" | "children.completed" | "subagent.spawned" | "subagent.progress" | "subagent.completed" | "token";
+            /**
+             * Reason
+             * @description Why it failed or was cancelled, when it did
+             */
+            reason: string | null;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            status: components["schemas"]["TurnStatus"];
+        };
         /** UpdateSessionRequest */
         UpdateSessionRequest: {
             /**
@@ -3834,18 +4220,52 @@ export interface components {
             /** Title */
             title?: string | null;
         };
-        /** ValidationError */
-        ValidationError: {
-            /** Context */
-            ctx?: Record<string, never>;
-            /** Input */
-            input?: unknown;
-            /** Location */
-            loc: (string | number)[];
-            /** Message */
+        /** ValidationIssue */
+        ValidationIssue: {
+            /**
+             * Loc
+             * @description Where: `body`, `query` or `path`, then the field
+             */
+            loc: string[];
+            /** Msg */
             msg: string;
-            /** Error Type */
+            /** Type */
             type: string;
+        };
+        /**
+         * ValidationProblem
+         * @description A 422. When the request's own fields didn't validate, `errors` says where and why;
+         *     other 422s say why in fields of their own (a limit's `field` and `maximum`, a skill's
+         *     `issues`).
+         */
+        ValidationProblem: {
+            /**
+             * Detail
+             * @description This occurrence, in words for a person
+             */
+            detail: string;
+            /**
+             * Errors
+             * @default null
+             */
+            errors: components["schemas"]["ValidationIssue"][] | null;
+            /**
+             * Status
+             * @description The HTTP status code
+             */
+            status: number;
+            /**
+             * Title
+             * @description A short summary of the kind of problem
+             */
+            title: string;
+            /**
+             * Type
+             * @description A URI naming the kind of problem: the field to branch on
+             */
+            type: string;
+        } & {
+            [key: string]: unknown;
         };
         /** VersionView */
         VersionView: {
@@ -3944,7 +4364,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    about_about_get: {
+    get_about: {
         parameters: {
             query?: never;
             header?: never;
@@ -3962,9 +4382,18 @@ export interface operations {
                     "application/json": components["schemas"]["AboutView"];
                 };
             };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
-    activity_activity_get: {
+    get_activity: {
         parameters: {
             query?: {
                 /** @description 24h, 7d or 30d */
@@ -3989,18 +4418,27 @@ export interface operations {
                     "application/json": components["schemas"]["ActivityView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    sessions_activity_sessions_get: {
+    list_activity_sessions: {
         parameters: {
             query?: {
                 /** @description 24h, 7d or 30d */
@@ -4026,18 +4464,27 @@ export interface operations {
                     "application/json": components["schemas"]["SessionRow"][];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    turns_activity_turns_get: {
+    list_activity_turns: {
         parameters: {
             query?: {
                 /** @description 24h, 7d or 30d */
@@ -4070,18 +4517,27 @@ export interface operations {
                     "application/json": components["schemas"]["TurnRow"][];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    turn_activity_turns__run_id__get: {
+    get_activity_turn: {
         parameters: {
             query?: never;
             header?: never;
@@ -4101,18 +4557,36 @@ export interface operations {
                     "application/json": components["schemas"]["TurnDetail"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    admin_cancel_all_admin_cancel_all_post: {
+    admin_cancel_all: {
         parameters: {
             query?: never;
             header?: never;
@@ -4132,9 +4606,18 @@ export interface operations {
                     };
                 };
             };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
-    admin_pause_admin_pause_post: {
+    admin_pause: {
         parameters: {
             query?: never;
             header?: never;
@@ -4156,18 +4639,27 @@ export interface operations {
                     "application/json": components["schemas"]["AdminState"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    admin_resume_admin_resume_post: {
+    admin_resume: {
         parameters: {
             query?: never;
             header?: never;
@@ -4185,9 +4677,18 @@ export interface operations {
                     "application/json": components["schemas"]["AdminState"];
                 };
             };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
-    admin_state_admin_state_get: {
+    admin_state: {
         parameters: {
             query?: never;
             header?: never;
@@ -4205,9 +4706,18 @@ export interface operations {
                     "application/json": components["schemas"]["AdminStatus"];
                 };
             };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
-    list_agents_agents_get: {
+    list_agents: {
         parameters: {
             query?: never;
             header?: never;
@@ -4225,9 +4735,18 @@ export interface operations {
                     "application/json": components["schemas"]["AgentView"][];
                 };
             };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
-    get_agent_agents__name__get: {
+    get_agent: {
         parameters: {
             query?: never;
             header?: never;
@@ -4247,18 +4766,36 @@ export interface operations {
                     "application/json": components["schemas"]["AgentView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    list_memory_agents__name__memory_get: {
+    list_memory: {
         parameters: {
             query?: never;
             header?: never;
@@ -4278,18 +4815,27 @@ export interface operations {
                     "application/json": components["schemas"]["MemoryView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    clear_memory_agents__name__memory_delete: {
+    clear_memory: {
         parameters: {
             query?: never;
             header?: never;
@@ -4309,18 +4855,27 @@ export interface operations {
                     "application/json": components["schemas"]["Cleared"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    delete_note_agents__name__memory__note_id__delete: {
+    delete_note: {
         parameters: {
             query?: never;
             header?: never;
@@ -4339,18 +4894,36 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    restore_note_agents__name__memory__note_id__restore_post: {
+    restore_note: {
         parameters: {
             query?: never;
             header?: never;
@@ -4371,18 +4944,36 @@ export interface operations {
                     "application/json": components["schemas"]["NoteView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    audit_audit_get: {
+    list_audit: {
         parameters: {
             query?: {
                 /** @description e.g. agent.published */
@@ -4409,18 +5000,27 @@ export interface operations {
                     "application/json": components["schemas"]["AuditRow"][];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    audit_csv_audit_csv_get: {
+    export_audit_csv: {
         parameters: {
             query?: {
                 /** @description e.g. agent.published */
@@ -4442,18 +5042,27 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    client_error_client_errors_post: {
+    report_client_error: {
         parameters: {
             query?: never;
             header?: never;
@@ -4475,18 +5084,36 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many requests: retry after `Retry-After` seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    list_graphs_graphs_get: {
+    list_graphs: {
         parameters: {
             query?: never;
             header?: never;
@@ -4504,9 +5131,18 @@ export interface operations {
                     "application/json": components["schemas"]["GraphView"][];
                 };
             };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
-    get_graph_graphs__name__get: {
+    get_graph: {
         parameters: {
             query?: never;
             header?: never;
@@ -4526,18 +5162,36 @@ export interface operations {
                     "application/json": components["schemas"]["GraphView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    healthz_healthz_get: {
+    healthz: {
         parameters: {
             query?: never;
             header?: never;
@@ -4555,9 +5209,18 @@ export interface operations {
                     "application/json": components["schemas"]["Health"];
                 };
             };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
-    state_kill_switch_get: {
+    get_kill_switch: {
         parameters: {
             query?: never;
             header?: never;
@@ -4575,9 +5238,18 @@ export interface operations {
                     "application/json": components["schemas"]["KillSwitchView"];
                 };
             };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
-    resume_kill_switch_resume_post: {
+    resume_all_agents: {
         parameters: {
             query?: never;
             header?: never;
@@ -4599,18 +5271,27 @@ export interface operations {
                     "application/json": components["schemas"]["KillSwitchView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    stop_kill_switch_stop_post: {
+    stop_all_agents: {
         parameters: {
             query?: never;
             header?: never;
@@ -4632,18 +5313,27 @@ export interface operations {
                     "application/json": components["schemas"]["StopResult"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    servers_mcp_servers_get: {
+    list_mcp_servers: {
         parameters: {
             query?: never;
             header?: never;
@@ -4661,9 +5351,18 @@ export interface operations {
                     "application/json": components["schemas"]["McpServerView"][];
                 };
             };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
-    add_mcp_servers_post: {
+    add_mcp_server: {
         parameters: {
             query?: never;
             header?: never;
@@ -4685,18 +5384,36 @@ export interface operations {
                     "application/json": components["schemas"]["McpServerView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Unavailable for now: retry after `Retry-After` seconds (draining or paused) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    remove_mcp_servers__server_id__delete: {
+    remove_mcp_server: {
         parameters: {
             query?: never;
             header?: never;
@@ -4714,18 +5431,36 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    change_mcp_servers__server_id__patch: {
+    update_mcp_server: {
         parameters: {
             query?: never;
             header?: never;
@@ -4749,18 +5484,45 @@ export interface operations {
                     "application/json": components["schemas"]["McpServerView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Unavailable for now: retry after `Retry-After` seconds (draining or paused) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    test_mcp_servers__server_id__test_post: {
+    test_mcp_server: {
         parameters: {
             query?: never;
             header?: never;
@@ -4780,18 +5542,36 @@ export interface operations {
                     "application/json": components["schemas"]["McpServerView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    set_tool_mcp_servers__server_id__tools__tool__put: {
+    set_mcp_tool: {
         parameters: {
             query?: never;
             header?: never;
@@ -4816,18 +5596,36 @@ export interface operations {
                     "application/json": components["schemas"]["McpServerView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    approve_mcp_servers__server_id__tools__tool__approve_post: {
+    approve_mcp_tool: {
         parameters: {
             query?: never;
             header?: never;
@@ -4848,18 +5646,36 @@ export interface operations {
                     "application/json": components["schemas"]["McpServerView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    list_connections_models_connections_get: {
+    list_connections: {
         parameters: {
             query?: never;
             header?: never;
@@ -4877,9 +5693,18 @@ export interface operations {
                     "application/json": components["schemas"]["ConnectionView"][];
                 };
             };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
-    add_models_connections_post: {
+    add_connection: {
         parameters: {
             query?: never;
             header?: never;
@@ -4901,18 +5726,36 @@ export interface operations {
                     "application/json": components["schemas"]["ConnectionView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Unavailable for now: retry after `Retry-After` seconds (draining or paused) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    remove_models_connections__connection_id__delete: {
+    remove_connection: {
         parameters: {
             query?: never;
             header?: never;
@@ -4930,18 +5773,36 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    edit_models_connections__connection_id__patch: {
+    update_connection: {
         parameters: {
             query?: never;
             header?: never;
@@ -4965,18 +5826,45 @@ export interface operations {
                     "application/json": components["schemas"]["ConnectionView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Unavailable for now: retry after `Retry-After` seconds (draining or paused) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    remote_models_models_connections__connection_id__models_get: {
+    list_connection_models: {
         parameters: {
             query?: never;
             header?: never;
@@ -4996,18 +5884,36 @@ export interface operations {
                     "application/json": string[];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    test_models_connections__connection_id__test_post: {
+    test_connection: {
         parameters: {
             query?: never;
             header?: never;
@@ -5031,18 +5937,36 @@ export interface operations {
                     "application/json": components["schemas"]["TestView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    get_default_models_default_get: {
+    get_default_model: {
         parameters: {
             query?: never;
             header?: never;
@@ -5060,9 +5984,18 @@ export interface operations {
                     "application/json": components["schemas"]["DefaultView"];
                 };
             };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
-    set_default_models_default_put: {
+    set_default_model: {
         parameters: {
             query?: never;
             header?: never;
@@ -5084,18 +6017,36 @@ export interface operations {
                     "application/json": components["schemas"]["DefaultView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    ollama_models_ollama_get: {
+    list_ollama_models: {
         parameters: {
             query?: never;
             header?: never;
@@ -5113,9 +6064,18 @@ export interface operations {
                     "application/json": components["schemas"]["OllamaView"][];
                 };
             };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
-    list_notifications_notifications_get: {
+    list_notifications: {
         parameters: {
             query?: {
                 limit?: number;
@@ -5135,18 +6095,27 @@ export interface operations {
                     "application/json": components["schemas"]["NotificationsView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    get_onboarding_onboarding_get: {
+    get_onboarding: {
         parameters: {
             query?: never;
             header?: never;
@@ -5164,9 +6133,18 @@ export interface operations {
                     "application/json": components["schemas"]["OnboardingView"];
                 };
             };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
-    put_onboarding_onboarding_put: {
+    put_onboarding: {
         parameters: {
             query?: never;
             header?: never;
@@ -5188,18 +6166,27 @@ export interface operations {
                     "application/json": components["schemas"]["OnboardingView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    readyz_readyz_get: {
+    readyz: {
         parameters: {
             query?: never;
             header?: never;
@@ -5217,16 +6204,27 @@ export interface operations {
                     "application/json": components["schemas"]["Health"];
                 };
             };
-            /** @description Not ready */
+            /** @description Not ready (probes read the same body) */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Health"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
             };
         };
     };
-    create_run_runs_post: {
+    create_run: {
         parameters: {
             query?: never;
             header?: never;
@@ -5248,18 +6246,63 @@ export interface operations {
                     "application/json": components["schemas"]["CreateRunResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many requests: retry after `Retry-After` seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unavailable for now: retry after `Retry-After` seconds (draining or paused) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    get_run_runs__run_id__get: {
+    get_run: {
         parameters: {
             query?: never;
             header?: never;
@@ -5279,18 +6322,36 @@ export interface operations {
                     "application/json": components["schemas"]["RunView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    approve_run_runs__run_id__approve_post: {
+    approve_run: {
         parameters: {
             query?: never;
             header?: never;
@@ -5314,18 +6375,45 @@ export interface operations {
                     "application/json": components["schemas"]["RunView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    cancel_run_runs__run_id__cancel_post: {
+    cancel_run: {
         parameters: {
             query?: never;
             header?: never;
@@ -5345,18 +6433,45 @@ export interface operations {
                     "application/json": components["schemas"]["RunView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    list_events_runs__run_id__events_get: {
+    list_events: {
         parameters: {
             query?: {
                 after_seq?: number;
@@ -5379,18 +6494,36 @@ export interface operations {
                     "application/json": components["schemas"]["EventsPage"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    get_feedback_runs__run_id__feedback_get: {
+    get_feedback: {
         parameters: {
             query?: never;
             header?: never;
@@ -5410,18 +6543,27 @@ export interface operations {
                     "application/json": components["schemas"]["FeedbackView"] | null;
                 };
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    put_feedback_runs__run_id__feedback_put: {
+    put_feedback: {
         parameters: {
             query?: never;
             header?: never;
@@ -5445,18 +6587,45 @@ export interface operations {
                     "application/json": components["schemas"]["FeedbackView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    delete_feedback_runs__run_id__feedback_delete: {
+    delete_feedback: {
         parameters: {
             query?: never;
             header?: never;
@@ -5474,18 +6643,27 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    make_test_runs__run_id__make_test_post: {
+    make_test: {
         parameters: {
             query?: never;
             header?: never;
@@ -5505,18 +6683,45 @@ export interface operations {
                     "application/json": components["schemas"]["CaseView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    redrive_run_runs__run_id__redrive_post: {
+    redrive_run: {
         parameters: {
             query?: never;
             header?: never;
@@ -5536,18 +6741,63 @@ export interface operations {
                     "application/json": components["schemas"]["RunView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many requests: retry after `Retry-After` seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unavailable for now: retry after `Retry-After` seconds (draining or paused) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    run_report_runs__run_id__report_get: {
+    get_run_report: {
         parameters: {
             query?: {
                 include_chat?: boolean;
@@ -5569,18 +6819,36 @@ export interface operations {
                     "application/zip": unknown;
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    get_result_runs__run_id__result_get: {
+    get_result: {
         parameters: {
             query?: never;
             header?: never;
@@ -5600,18 +6868,36 @@ export interface operations {
                     "application/json": components["schemas"]["agent_runtime__api__schemas__ResultView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    resume_run_runs__run_id__resume_post: {
+    resume_run: {
         parameters: {
             query?: never;
             header?: never;
@@ -5631,18 +6917,45 @@ export interface operations {
                     "application/json": components["schemas"]["RunView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    stream_run_runs__run_id__stream_get: {
+    stream_run: {
         parameters: {
             query?: {
                 after_seq?: number | null;
@@ -5657,7 +6970,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Successful Response */
+            /** @description Server-sent events */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5666,25 +6979,45 @@ export interface operations {
                     "text/event-stream": unknown;
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
                 };
             };
-            /** @description Draining */
+            /** @description Unavailable for now: retry after `Retry-After` seconds (draining or paused) */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
             };
         };
     };
-    list_sessions_sessions_get: {
+    list_sessions: {
         parameters: {
             query?: {
                 status?: ("active" | "archived") | null;
@@ -5707,18 +7040,27 @@ export interface operations {
                     "application/json": components["schemas"]["SessionView"][];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    create_session_sessions_post: {
+    create_session: {
         parameters: {
             query?: never;
             header?: never;
@@ -5740,18 +7082,36 @@ export interface operations {
                     "application/json": components["schemas"]["SessionView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    get_session_sessions__session_id__get: {
+    get_session: {
         parameters: {
             query?: never;
             header?: never;
@@ -5771,18 +7131,36 @@ export interface operations {
                     "application/json": components["schemas"]["SessionView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    update_session_sessions__session_id__patch: {
+    update_session: {
         parameters: {
             query?: never;
             header?: never;
@@ -5806,18 +7184,36 @@ export interface operations {
                     "application/json": components["schemas"]["SessionView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    approve_turn_sessions__session_id__approve_post: {
+    approve_turn: {
         parameters: {
             query?: never;
             header?: never;
@@ -5841,18 +7237,45 @@ export interface operations {
                     "application/json": components["schemas"]["RunView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    cancel_turn_sessions__session_id__cancel_post: {
+    cancel_turn: {
         parameters: {
             query?: never;
             header?: never;
@@ -5872,18 +7295,45 @@ export interface operations {
                     "application/json": components["schemas"]["RunView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    export_session_sessions__session_id__export_get: {
+    export_session: {
         parameters: {
             query?: never;
             header?: never;
@@ -5903,18 +7353,36 @@ export interface operations {
                     "text/markdown": unknown;
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    list_messages_sessions__session_id__messages_get: {
+    list_messages: {
         parameters: {
             query?: {
                 after_seq?: number;
@@ -5937,18 +7405,36 @@ export interface operations {
                     "application/json": components["schemas"]["MessagesPage"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    send_message_sessions__session_id__messages_post: {
+    send_message: {
         parameters: {
             query?: never;
             header?: {
@@ -5975,18 +7461,63 @@ export interface operations {
                     "application/json": components["schemas"]["TurnAccepted"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many requests: retry after `Retry-After` seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unavailable for now: retry after `Retry-After` seconds (draining or paused) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    stream_session_sessions__session_id__stream_get: {
+    stream_session: {
         parameters: {
             query?: {
                 after_seq?: number | null;
@@ -6001,7 +7532,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Successful Response */
+            /** @description Server-sent events */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -6010,25 +7541,45 @@ export interface operations {
                     "text/event-stream": unknown;
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
                 };
             };
-            /** @description Draining */
+            /** @description Unavailable for now: retry after `Retry-After` seconds (draining or paused) */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
             };
         };
     };
-    library_skills_get: {
+    list_skills: {
         parameters: {
             query?: never;
             header?: never;
@@ -6046,9 +7597,18 @@ export interface operations {
                     "application/json": components["schemas"]["SkillView"][];
                 };
             };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
-    create_skills_post: {
+    create_skill: {
         parameters: {
             query?: never;
             header?: never;
@@ -6070,18 +7630,36 @@ export interface operations {
                     "application/json": components["schemas"]["SavedView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    upload_skills_upload_post: {
+    upload_skill: {
         parameters: {
             query: {
                 filename: string;
@@ -6101,18 +7679,36 @@ export interface operations {
                     "application/json": components["schemas"]["SavedView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    get_skills__skill_id__get: {
+    get_skill: {
         parameters: {
             query?: never;
             header?: never;
@@ -6132,18 +7728,36 @@ export interface operations {
                     "application/json": components["schemas"]["SkillDetail"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    archive_skills__skill_id__delete: {
+    archive_skill: {
         parameters: {
             query?: never;
             header?: never;
@@ -6161,18 +7775,45 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    edit_skills__skill_id__patch: {
+    update_skill: {
         parameters: {
             query?: never;
             header?: never;
@@ -6196,18 +7837,45 @@ export interface operations {
                     "application/json": components["schemas"]["SavedView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    approve_skills__skill_id__approve_post: {
+    approve_skill: {
         parameters: {
             query?: never;
             header?: never;
@@ -6227,18 +7895,36 @@ export interface operations {
                     "application/json": components["schemas"]["SkillDetail"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    export_skills__skill_id__export_get: {
+    export_skill: {
         parameters: {
             query?: never;
             header?: never;
@@ -6259,18 +7945,36 @@ export interface operations {
                     "application/zip": unknown;
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    file_skills__skill_id__files__path__get: {
+    get_skill_file: {
         parameters: {
             query?: never;
             header?: never;
@@ -6292,18 +7996,36 @@ export interface operations {
                     "application/octet-stream": unknown;
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    replace_skills__skill_id__upload_post: {
+    replace_skill: {
         parameters: {
             query: {
                 filename: string;
@@ -6325,18 +8047,45 @@ export interface operations {
                     "application/json": components["schemas"]["SavedView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    list_agents_studio_agents_get: {
+    list_studio_agents: {
         parameters: {
             query?: never;
             header?: never;
@@ -6354,9 +8103,18 @@ export interface operations {
                     "application/json": components["schemas"]["StudioAgentView"][];
                 };
             };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
-    create_agent_studio_agents_post: {
+    create_studio_agent: {
         parameters: {
             query?: {
                 /** @description Built in Getting started: the guide's agent */
@@ -6381,18 +8139,45 @@ export interface operations {
                     "application/json": components["schemas"]["StudioAgentView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    from_proposal_studio_agents_from_proposal_post: {
+    create_from_proposal: {
         parameters: {
             query?: {
                 /** @description Built in Getting started: the guide's agent */
@@ -6417,18 +8202,36 @@ export interface operations {
                     "application/json": components["schemas"]["StudioAgentView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    get_agent_studio_agents__agent_id__get: {
+    get_studio_agent: {
         parameters: {
             query?: never;
             header?: never;
@@ -6448,18 +8251,36 @@ export interface operations {
                     "application/json": components["schemas"]["StudioAgentView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    archive_studio_agents__agent_id__archive_post: {
+    archive_studio_agent: {
         parameters: {
             query?: never;
             header?: never;
@@ -6479,18 +8300,36 @@ export interface operations {
                     "application/json": components["schemas"]["StudioAgentView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    save_draft_studio_agents__agent_id__draft_put: {
+    save_draft: {
         parameters: {
             query?: never;
             header?: never;
@@ -6514,18 +8353,36 @@ export interface operations {
                     "application/json": components["schemas"]["StudioAgentView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    discard_studio_agents__agent_id__draft_delete: {
+    discard_draft: {
         parameters: {
             query?: never;
             header?: never;
@@ -6545,18 +8402,45 @@ export interface operations {
                     "application/json": components["schemas"]["StudioAgentView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    edit_studio_agents__agent_id__edit_post: {
+    edit_studio_agent: {
         parameters: {
             query?: never;
             header?: never;
@@ -6576,18 +8460,36 @@ export interface operations {
                     "application/json": components["schemas"]["StudioAgentView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    export_studio_agents__agent_id__export_get: {
+    export_studio_agent: {
         parameters: {
             query?: {
                 /** @description Default: the draft, else current */
@@ -6612,18 +8514,45 @@ export interface operations {
                     "text/markdown": unknown;
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    improve_studio_agents__agent_id__improve_post: {
+    improve_instructions: {
         parameters: {
             query?: never;
             header?: never;
@@ -6643,18 +8572,63 @@ export interface operations {
                     "application/json": components["schemas"]["AssistStarted"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many requests: retry after `Retry-After` seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unavailable for now: retry after `Retry-After` seconds (draining or paused) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    publish_studio_agents__agent_id__publish_post: {
+    publish_agent: {
         parameters: {
             query?: never;
             header?: never;
@@ -6678,18 +8652,45 @@ export interface operations {
                     "application/json": components["schemas"]["StudioAgentView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    last_test_chat_studio_agents__agent_id__test_chat_get: {
+    get_test_chat: {
         parameters: {
             query?: never;
             header?: never;
@@ -6709,18 +8710,36 @@ export interface operations {
                     "application/json": components["schemas"]["SessionView"] | null;
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    test_chat_studio_agents__agent_id__test_chat_post: {
+    start_test_chat: {
         parameters: {
             query?: never;
             header?: never;
@@ -6740,18 +8759,36 @@ export interface operations {
                     "application/json": components["schemas"]["SessionView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    list_tests_studio_agents__agent_id__tests_get: {
+    list_tests: {
         parameters: {
             query?: never;
             header?: never;
@@ -6771,18 +8808,36 @@ export interface operations {
                     "application/json": components["schemas"]["TestsView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    add_test_studio_agents__agent_id__tests_post: {
+    add_test: {
         parameters: {
             query?: never;
             header?: never;
@@ -6806,18 +8861,45 @@ export interface operations {
                     "application/json": components["schemas"]["CaseView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    run_tests_studio_agents__agent_id__tests_run_post: {
+    run_tests: {
         parameters: {
             query?: never;
             header?: never;
@@ -6837,18 +8919,63 @@ export interface operations {
                     "application/json": components["schemas"]["RunStarted"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many requests: retry after `Retry-After` seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unavailable for now: retry after `Retry-After` seconds (draining or paused) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    change_test_studio_agents__agent_id__tests__case_id__put: {
+    change_test: {
         parameters: {
             query?: never;
             header?: never;
@@ -6873,18 +9000,36 @@ export interface operations {
                     "application/json": components["schemas"]["CaseView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    remove_test_studio_agents__agent_id__tests__case_id__delete: {
+    remove_test: {
         parameters: {
             query?: never;
             header?: never;
@@ -6903,18 +9048,36 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    restore_studio_agents__agent_id__versions__number__restore_post: {
+    restore_version: {
         parameters: {
             query?: never;
             header?: never;
@@ -6935,18 +9098,36 @@ export interface operations {
                     "application/json": components["schemas"]["StudioAgentView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    assist_studio_assist__run_id__get: {
+    get_assist: {
         parameters: {
             query?: never;
             header?: never;
@@ -6966,18 +9147,36 @@ export interface operations {
                     "application/json": components["schemas"]["AssistView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    catalog_studio_catalog_get: {
+    get_catalog: {
         parameters: {
             query?: never;
             header?: never;
@@ -6995,9 +9194,18 @@ export interface operations {
                     "application/json": components["schemas"]["StudioCatalog"];
                 };
             };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
-    describe_studio_describe_post: {
+    describe_agent: {
         parameters: {
             query?: never;
             header?: never;
@@ -7019,18 +9227,54 @@ export interface operations {
                     "application/json": components["schemas"]["AssistStarted"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many requests: retry after `Retry-After` seconds */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unavailable for now: retry after `Retry-After` seconds (draining or paused) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    import_agent_studio_import_post: {
+    import_agent: {
         parameters: {
             query: {
                 filename: string;
@@ -7050,18 +9294,36 @@ export interface operations {
                     "application/json": components["schemas"]["StudioAgentView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The resource's current state doesn't allow this */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    get_telemetry_telemetry_get: {
+    get_telemetry: {
         parameters: {
             query?: never;
             header?: never;
@@ -7079,9 +9341,18 @@ export interface operations {
                     "application/json": components["schemas"]["TelemetryView"];
                 };
             };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
-    set_telemetry_telemetry_put: {
+    set_telemetry: {
         parameters: {
             query?: never;
             header?: never;
@@ -7103,18 +9374,27 @@ export interface operations {
                     "application/json": components["schemas"]["TelemetryView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    test_search_tools_search_test_post: {
+    test_search: {
         parameters: {
             query?: never;
             header?: never;
@@ -7136,18 +9416,27 @@ export interface operations {
                     "application/json": components["schemas"]["SearchTestView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    get_settings_tools_settings_get: {
+    get_tool_settings: {
         parameters: {
             query?: never;
             header?: never;
@@ -7165,9 +9454,18 @@ export interface operations {
                     "application/json": components["schemas"]["ToolSettingsView"];
                 };
             };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
-    put_settings_tools_settings_put: {
+    put_tool_settings: {
         parameters: {
             query?: never;
             header?: never;
@@ -7189,13 +9487,22 @@ export interface operations {
                     "application/json": components["schemas"]["ToolSettingsView"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request didn't validate */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Any other error, as problem details */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };

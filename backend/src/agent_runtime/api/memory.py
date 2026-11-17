@@ -20,6 +20,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Path, Request, Response, status
 from pydantic import BaseModel, Field
 
+from agent_runtime.api import contract
 from agent_runtime.audit import AuditLog
 from agent_runtime.db import Pool
 from agent_runtime.memory.store import Memory, Note, NoteNotFound
@@ -68,7 +69,8 @@ async def list_memory(name: AgentName, pool: PoolDep) -> MemoryView:
 
 
 @memory_router.delete("/{note_id}", status_code=status.HTTP_204_NO_CONTENT,
-                      summary="Delete a note for good")  # fmt: skip
+                      summary="Delete a note for good",
+                      responses=contract.problems(404))  # fmt: skip
 async def delete_note(name: AgentName, note_id: NoteId, pool: PoolDep) -> Response:
     async with pool.connection() as conn, conn.transaction():
         found = await Memory(conn).delete(name, note_id)
@@ -79,7 +81,8 @@ async def delete_note(name: AgentName, note_id: NoteId, pool: PoolDep) -> Respon
 
 
 @memory_router.post("/{note_id}/restore", response_model=NoteView,
-                    summary="Bring back a forgotten note")  # fmt: skip
+                    summary="Bring back a forgotten note",
+                    responses=contract.problems(404))  # fmt: skip
 async def restore_note(name: AgentName, note_id: NoteId, pool: PoolDep) -> NoteView:
     async with pool.connection() as conn, conn.transaction():
         memory = Memory(conn)

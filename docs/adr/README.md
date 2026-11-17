@@ -12,5 +12,6 @@ Short records of significant decisions: the context, what we chose, the alternat
 | [0006](0006-memory-across-chats.md) | Memory across chats: the runtime puts it in the prompt, scoped by the run | Accepted |
 | 0007 | Reserved for phase H9 (a stronger sandbox), written on its branch | Pending |
 | [0008](0008-provenance-and-skill-approval.md) | Provenance comes from fields a trusted party wrote; a skill's text needs a reader | Accepted |
+| [0009](0009-client-sdks.md) | Client SDKs: generated calls under a hand-written Facade; the spec is the product | Accepted |
 
 Requirement changes (what the system must do) are change requests in [../requirements/](../requirements/); ADRs record *how* we build it.

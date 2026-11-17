@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 
 from agent_runtime.agents.schema import AgentDefinition
 from agent_runtime.agents.studio import StudioService
+from agent_runtime.api import contract
 from agent_runtime.api.schemas import (
     AgentView,
     ApprovalRequest,
@@ -45,7 +46,8 @@ sessions = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
 @sessions.post("", status_code=status.HTTP_201_CREATED, response_model=SessionView,
-               summary="Create a chat session with an agent")  # fmt: skip
+               summary="Create a chat session with an agent",
+               responses=contract.problems(404))  # fmt: skip
 async def create_session(body: CreateSessionRequest, service: SessionsDep) -> SessionView:
     return SessionView.of(await service.create(body.agent, body.title))
 
@@ -61,12 +63,22 @@ async def list_sessions(
                                                           before=before)]  # fmt: skip
 
 
-@sessions.get("/{session_id}", response_model=SessionView, summary="Session detail")
+@sessions.get(
+    "/{session_id}",
+    response_model=SessionView,
+    summary="Session detail",
+    responses=contract.problems(404),
+)
 async def get_session(session_id: uuid.UUID, service: SessionsDep) -> SessionView:
     return SessionView.of(await service.get(session_id))
 
 
-@sessions.patch("/{session_id}", response_model=SessionView, summary="Rename or archive")
+@sessions.patch(
+    "/{session_id}",
+    response_model=SessionView,
+    summary="Rename or archive",
+    responses=contract.problems(404),
+)
 async def update_session(
     session_id: uuid.UUID, body: UpdateSessionRequest, service: SessionsDep
 ) -> SessionView:
@@ -74,7 +86,12 @@ async def update_session(
     return SessionView.of(updated)
 
 
-@sessions.get("/{session_id}/messages", response_model=MessagesPage, summary="Transcript page")
+@sessions.get(
+    "/{session_id}/messages",
+    response_model=MessagesPage,
+    summary="Transcript page",
+    responses=contract.problems(404),
+)
 async def list_messages(
     session_id: uuid.UUID,
     service: SessionsDep,
@@ -92,7 +109,7 @@ async def list_messages(
     "/{session_id}/export",
     summary="The chat as Markdown (to keep, or to attach to a report)",
     response_class=Response,
-    responses={200: {"content": {"text/markdown": {}}}},
+    responses={200: {"content": {"text/markdown": {}}}} | contract.problems(404),
 )
 async def export_session(session_id: uuid.UUID, request: Request, service: SessionsDep) -> Response:
     session = await service.get(session_id)
@@ -122,7 +139,8 @@ async def export_session(session_id: uuid.UUID, request: Request, service: Sessi
 
 
 @sessions.post("/{session_id}/messages", status_code=status.HTTP_202_ACCEPTED,
-               response_model=TurnAccepted, summary="Send a message: starts a turn")  # fmt: skip
+               response_model=TurnAccepted, summary="Send a message: starts a turn",
+               responses=contract.problems(404, 409, 429, 503))  # fmt: skip
 async def send_message(
     session_id: uuid.UUID,
     body: SendMessageRequest,
@@ -155,6 +173,7 @@ async def send_message(
     status_code=status.HTTP_202_ACCEPTED,
     response_model=RunView,
     summary="Approve or reject one of the active turn's approvals (R12.6)",
+    responses=contract.problems(404, 409),
 )
 async def approve_turn(
     session_id: uuid.UUID, body: ApprovalRequest, service: SessionsDep
@@ -168,7 +187,8 @@ async def approve_turn(
 
 
 @sessions.post("/{session_id}/cancel", status_code=status.HTTP_202_ACCEPTED,
-               response_model=RunView, summary="Cancel the active turn (R12.7)")  # fmt: skip
+               response_model=RunView, summary="Cancel the active turn (R12.7)",
+               responses=contract.problems(404, 409))  # fmt: skip
 async def cancel_turn(session_id: uuid.UUID, service: SessionsDep) -> RunView:
     return RunView.of(await service.cancel(session_id))
 
@@ -179,7 +199,7 @@ async def cancel_turn(session_id: uuid.UUID, service: SessionsDep) -> RunView:
     description="Replays transcript messages after `Last-Event-ID` (or `after_seq`), then "
     "streams new ones from any replica, plus transient events of the active turn (no `id`).",
     response_class=StreamingResponse,
-    responses={200: {"content": {"text/event-stream": {}}}, 503: {"description": "Draining"}},
+    responses=contract.sse("SessionStreamEvent", 404, 503),
 )
 async def stream_session(
     session_id: uuid.UUID,
@@ -260,7 +280,12 @@ async def list_agents(studio: StudioDep) -> list[AgentView]:
     return out
 
 
-@agents.get("/{name}", response_model=AgentView, summary="One agent, with its prompt")
+@agents.get(
+    "/{name}",
+    response_model=AgentView,
+    summary="One agent, with its prompt",
+    responses=contract.problems(404),
+)
 async def get_agent(name: str, studio: StudioDep) -> AgentView:
     if (builtin := studio.builtin(name)) is not None:
         return agent_view(builtin, prompt=True)

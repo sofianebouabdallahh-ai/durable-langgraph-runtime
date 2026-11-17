@@ -21,6 +21,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
+from agent_runtime.api import contract
 from agent_runtime.audit import AuditEvent, AuditLog
 from agent_runtime.db import Pool
 from agent_runtime.feedback import FeedbackRepository, NotRatable, Rating
@@ -71,7 +72,7 @@ async def _events(
 
 
 @audit_router.get("/audit", response_model=list[AuditRow], summary="Who changed what")
-async def audit(
+async def list_audit(
     pool: PoolDep,
     action: ActionQ = None,
     target_type: TargetQ = None,
@@ -84,7 +85,7 @@ async def audit(
 
 
 @audit_router.get("/audit.csv", summary="The trail as a CSV file", response_class=Response)
-async def audit_csv(
+async def export_audit_csv(
     pool: PoolDep,
     action: ActionQ = None,
     target_type: TargetQ = None,
@@ -138,7 +139,12 @@ async def get_feedback(run_id: uuid.UUID, pool: PoolDep) -> FeedbackView | None:
     return _view(f) if f else None
 
 
-@audit_router.put("/runs/{run_id}/feedback", response_model=FeedbackView, summary="Rate a reply")
+@audit_router.put(
+    "/runs/{run_id}/feedback",
+    response_model=FeedbackView,
+    summary="Rate a reply",
+    responses=contract.problems(404, 409),
+)
 async def put_feedback(run_id: uuid.UUID, body: FeedbackIn, pool: PoolDep) -> FeedbackView:
     async with pool.connection() as conn:
         try:
