@@ -430,7 +430,9 @@ case "$ACTION" in
     PATH="$(dirname "$DOCKER"):$PATH" infra/kind/cluster.sh all
     echo "    Stop it (deletes the cluster): infra/kind/cluster.sh down   ·   Demos: make k8s-demo-podkill (drain, scale, upgrade)"
     ;;
-  chat)  check_docker; compose run --rm --no-deps api chat ;;
+  # The terminal chat is a client of the running stack, as the web app is: the turn runs
+  # on the workers, and the one-off container needs no database grant (chat_client.py).
+  chat)  check_docker; compose run --rm --no-deps api chat --api http://ui:8080/api ;;
   stop)  check_docker; compose stop; remove_sandboxes; ok "stopped (your data is kept)" ;;
   doctor)
     check_docker

@@ -52,6 +52,23 @@ from it, and CI keeps it that way ([CR-007](docs/requirements/CR-007-client-sdks
 - **The web app no longer installs `openapi-fetch`,** whose maintainers stopped updating it:
   a verified copy is vendored, with its licence (`frontend/src/api/vendor/`).
 
+### Fixes found by a newcomer's walkthrough (2026-11-16)
+A fresh clone, `./setup.sh` answered as a person would, then the app, the terminal and
+the doctor used with a real model (Ollama).
+#### Fixed
+- **`./setup.sh --chat` works.** It ran the turn inside its one-off `api` container, as
+  the API's least-privilege login, which may not touch LangGraph's checkpoints: every turn
+  failed with `permission denied for table checkpoints`, since L1. The terminal chat is now
+  a client of the running stack (`runtime chat --api`), as the web app is: the turn runs on
+  the workers, through drains and dropped connections, and no login gains a grant.
+  `setup.ps1` does the same.
+- **`./setup.sh --doctor` no longer reveals Redis's password.** Since H10, `REDIS_URL`
+  carries it with no user (`redis://:…@redis`), a form the URL redaction didn't know, so
+  the report meant for a GitHub issue printed it whole. Both forms are masked now, and a
+  password inside any URL setting is a known secret, masked wherever redaction runs.
+- The container suite checks both on a real stack: `terminal` (a worker ran the turn) and
+  `doctor` (no secret value of `.env` in the report or the logs).
+
 ### H10 — The external review's findings
 On 2026-11-12 an external reviewer read the code at `ef7dfad` and replayed what he found
 against a real Postgres; every finding is fixed and measured here, or recorded with its

@@ -16,6 +16,9 @@ under their least-privilege database logins.
     tiers      the networks hold: from SearXNG and the page reader, Postgres, Redis, the
                API and sandboxd are unreachable; Redis refuses a command without its
                password; Postgres and Redis have no way out (H10)
+    terminal   `./setup.sh --chat` completes a turn, which a worker runs (it failed on
+               every turn before: permission denied for table checkpoints)
+    doctor     `./setup.sh --doctor`'s report holds no secret of .env (it held Redis's)
 
 Usage (the stack must be up):
     COMPOSE_PROJECT_NAME=agent-runtime UI_PORT=3000 \\
@@ -562,6 +565,63 @@ def tiers() -> bool:
     return not c.failed
 
 
+def terminal() -> bool:
+    """`./setup.sh --chat`: the terminal chat is a client of the stack's API. It used to
+    run the turn in its one-off `api` container, as the API's login, which may not touch
+    LangGraph's checkpoints: every turn failed there."""
+    c = Check("the terminal chat (./setup.sh --chat) completes a turn on a worker")
+    out = compose("run", "--rm", "--no-deps", "-T", "api", "chat", "--api", "http://ui:8080/api",
+                  "--message", "What is 6 times 7?", check=False)  # fmt: skip
+    c("it opens a chat through the API", "through http://ui:8080/api" in out, out[:160])
+    c("the turn completes", "[completed" in out, out[-300:])
+    sid = out.split("session ", 1)[-1].split(" ", 1)[0] if "session " in out else ""
+    if not sid:
+        return not c.failed
+    with httpx.Client(base_url=API, timeout=10) as client:
+        messages = client.get(f"/sessions/{sid}/messages").json()["messages"]
+    run_id = next((m["run_id"] for m in messages if m["run_id"]), "")
+    owner = sql(f"select payload->>'owner' from run_events where run_id = '{run_id}' "
+                "and type = 'run.started' limit 1")  # fmt: skip
+    workers = {cid[:12] for cid in compose("ps", "-q", "worker").split()}
+    c("a worker container ran it, not the chat's", owner.split(":")[0] in workers, owner)
+    assistant = [m for m in messages if m["type"] == "assistant"]
+    replies = [str(m["content"].get("text", "")).strip() for m in assistant]
+    final = next((text for text in reversed(replies) if text), "")
+    c("the stored reply is shown, once", bool(final) and out.count(final) == 1, final[:80])
+    return not c.failed
+
+
+def _env_secrets() -> dict[str, str]:
+    """The stack's secret values (.env keys named like a secret, long enough to search)."""
+    secrets: dict[str, str] = {}
+    with open(f"{ROOT}/.env") as env:
+        for line in env:
+            key, _, value = line.strip().partition("=")
+            value = value.strip().strip("'\"")
+            secret = any(word in key for word in ("PASSWORD", "SECRET", "TOKEN", "_KEY"))
+            if secret and len(value) >= 8:
+                secrets[key] = value
+    return secrets
+
+
+def doctor() -> bool:
+    """`./setup.sh --doctor` writes a report a person attaches to an issue: no secret of
+    .env may be in it. Until this check, REDIS_URL carried Redis's password into it."""
+    c = Check("the doctor's report holds no secret (./setup.sh --doctor)")
+    report = compose("run", "--rm", "--no-deps", "-T", "api", "doctor", "--api",
+                     "http://ui:8080/api", check=False)  # fmt: skip
+    logs = compose("logs", "--no-color", "--tail", "300", check=False)
+    secrets = _env_secrets()
+    c("control: Redis has a password to leak", len(secrets.get("REDIS_PASSWORD", "")) >= 8)
+    c("control: the report shows REDIS_URL, masked",
+      '"redis_url": "redis://[REDACTED]@redis:6379/0"' in report, report[:160])  # fmt: skip
+    # The names of what leaked, never a value.
+    leaked = sorted(key for key, value in secrets.items() if value in report or value in logs)
+    c(f"none of the {len(secrets)} secret values of .env is in the report or the logs",
+      not leaked, ", ".join(leaked))  # fmt: skip
+    return not c.failed
+
+
 SCENARIOS = {
     "crash": crash,
     "graceful": graceful,
@@ -572,6 +632,8 @@ SCENARIOS = {
     "outage": outage,
     "notify": notify,
     "tiers": tiers,
+    "terminal": terminal,
+    "doctor": doctor,
 }
 
 
