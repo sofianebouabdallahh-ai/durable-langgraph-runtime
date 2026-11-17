@@ -5,6 +5,21 @@
 # Code and shell (L6b on Compose, L6c here; CR-002 §13). sandboxd is the only pod that
 # can start sandboxes: one Pod per run, in the sandboxes' namespace, created and run
 # through the Kubernetes API with its own ServiceAccount. No Docker socket anywhere.
+{{- if not (has .Values.sandbox.isolation (list "auto" "gvisor" "container")) }}
+{{- fail "sandbox.isolation must be auto, gvisor or container" }}
+{{- end }}
+{{- if .Values.sandbox.createRuntimeClass }}
+# gVisor (H9): sandbox Pods at the `gvisor` level ask for this. Only for a cluster whose
+# nodes already have runsc as a containerd runtime (kind from cluster.sh does).
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: {{ .Values.sandbox.runtimeClassName }}
+  labels:
+    {{- include "nuria.labels" . | nindent 4 }}
+handler: runsc
+---
+{{- end }}
 {{- if .Values.sandbox.createNamespace }}
 apiVersion: v1
 kind: Namespace
@@ -108,6 +123,7 @@ spec:
             - { name: SANDBOX_NAMESPACE, value: {{ $ns | quote }} }
             - { name: SANDBOX_IMAGE, value: {{ include "nuria.sandboxImage" . | quote }} }
             - { name: SANDBOX_IMAGE_PULL_POLICY, value: {{ .Values.image.pullPolicy | quote }} }
+            - { name: SANDBOX_ISOLATION, value: {{ .Values.sandbox.isolation | quote }} }
             - { name: SANDBOX_RUNTIME_CLASS, value: {{ .Values.sandbox.runtimeClassName | quote }} }
             - { name: SANDBOX_USER_NAMESPACES, value: {{ .Values.sandbox.userNamespaces | toString | quote }} }
             - { name: SANDBOX_MEMORY_MB, value: {{ .Values.sandbox.limits.memoryMb | quote }} }

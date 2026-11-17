@@ -58,7 +58,7 @@ from pydantic import ValidationError
 
 from agent_runtime import genai, logs, telemetry
 from agent_runtime.db import Conn, Pool
-from agent_runtime.fencing import Fence
+from agent_runtime.fencing import Fence, FencedError
 from agent_runtime.redaction import redact, redact_counted
 from agent_runtime.runs import approvals
 from agent_runtime.runs.events import EventType
@@ -519,6 +519,8 @@ class ToolPipeline:
             return "done", json.loads(json.dumps(result, default=str))
         except TimeoutError:
             return "failed", {"error": f"tool timed out after {timeout:g}s"}
+        except FencedError:
+            raise  # the run moved to another worker (the sandbox said so): no result to keep
         except Exception as exc:
             return "failed", {"error": f"{type(exc).__name__}: {exc}"[:2000]}
 

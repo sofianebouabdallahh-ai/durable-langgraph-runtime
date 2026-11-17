@@ -121,10 +121,16 @@ sandbox:
   image: { repository: ghcr.io/sofianebouabdallahh-ai/durable-langgraph-runtime/sandbox, tag: latest }
   namespace: nuria-sandboxes # where the sandbox Pods run; sandboxd may touch Pods only there
   createNamespace: true
-  # Stronger isolation where the cluster has it: a RuntimeClass such as gVisor or
-  # Kata, and user namespaces (root in a sandbox isn't root on the node).
-  runtimeClassName: ""
-  userNamespaces: false
+  # How strongly code is isolated (H9): `gvisor` (required: without it no code runs),
+  # `container` (runc, sharing the node's kernel), or `auto` (gVisor where the cluster
+  # has it). sandboxd proves the level by reading the kernel inside a sandbox.
+  isolation: auto
+  # gVisor's RuntimeClass, as this cluster names it (GKE Sandbox: gvisor).
+  runtimeClassName: gvisor
+  # Create that RuntimeClass (handler runsc): only for a cluster whose nodes have runsc
+  # but no RuntimeClass yet, like kind from cluster.sh. Managed clusters bring their own.
+  createRuntimeClass: false
+  userNamespaces: false # root in a sandbox isn't root on the node
   limits: { memoryMb: 256, cpus: 0.5, workspaceMb: 64 } # each sandbox
   # Processes per sandbox: the kubelet's podPidsLimit (a node setting; kind: 4096).
   quota: { pods: 20 } # at most this many sandboxes at once, cluster-wide

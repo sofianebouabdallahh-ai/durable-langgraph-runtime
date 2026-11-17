@@ -14,11 +14,12 @@
 #   infra/kind/cluster.sh down       delete the cluster (and everything in it)
 #
 # Settings (environment): K8S_PORT (8090: Nuria at http://localhost:8090), TAG (dev),
-# NAMESPACE (nuria). The tools (kind, helm, kubectl) are pinned: infra/kind/tools.sh.
+# NAMESPACE (nuria), CLUSTER (nuria: a second cluster beside it needs another name and
+# K8S_PORT). The tools (kind, helm, kubectl) are pinned: infra/kind/tools.sh.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-CLUSTER=nuria
+CLUSTER=${CLUSTER:-nuria}
 NAMESPACE=${NAMESPACE:-nuria}
 RELEASE=nuria
 K8S_PORT=${K8S_PORT:-8090}
@@ -45,6 +46,10 @@ export KUBECONFIG="$PWD/.tools/kubeconfig"
 KUBECTL=(kubectl --context "kind-$CLUSTER")
 HELM=(helm --kube-context "kind-$CLUSTER")
 
+# A cluster created before H9 has no runsc in its nodes: no RuntimeClass then, and the
+# sandboxes run in containers (`down`, then `up`, for gVisor).
+nodes_have_gvisor() { docker exec "$CLUSTER-control-plane" test -x /usr/local/bin/runsc 2>/dev/null; }
+
 env_get() { [ -f "$ENV_FILE" ] && awk -F= -v k="$1" '$1==k { sub(/^[^=]*=/, ""); v=$0 } END { print v }' "$ENV_FILE" || true; }
 
 up() {
@@ -53,7 +58,11 @@ up() {
     ok "cluster $CLUSTER exists"
   else
     say "Creating the cluster (1 control plane + 2 workers; a few minutes the first time)…"
-    sed "s/\${K8S_PORT}/$K8S_PORT/" infra/kind/kind.yaml | kind create cluster --config - --wait 120s
+    # gVisor for the nodes' CPU (Docker's, which kind's nodes share), pinned and verified.
+    local gvisor
+    gvisor=$(infra/gvisor/gvisor.sh fetch "$(docker info --format '{{.Architecture}}')")
+    sed -e "s/\${K8S_PORT}/$K8S_PORT/" -e "s|\${GVISOR_DIR}|$gvisor|g" infra/kind/kind.yaml \
+      | kind create cluster --name "$CLUSTER" --config - --wait 120s
   fi
   say "Installing the add-ons: Traefik, metrics-server, KEDA…"
   "${HELM[@]}" upgrade --install traefik traefik --repo https://traefik.github.io/charts \
@@ -134,9 +143,14 @@ deploy() {
   for key in MODEL_PROVIDER MODEL_CHAT MODEL_RESEARCHER OPENAI_BASE_URL; do
     [ -n "$(env_get "$key")" ] && model+=(--set-string "config.$key=$(env_get "$key")")
   done
+  local gvisor=false
+  if nodes_have_gvisor; then gvisor=true; else
+    printf '  ! %s\n' "this cluster has no gVisor (made before H9): code runs in containers. For gVisor: down, then up."
+  fi
   "${HELM[@]}" upgrade --install "$RELEASE" "$CHART" --namespace "$NAMESPACE" \
     --values "$CHART/values-kind.yaml" \
     --set image.runtime.tag="$TAG" --set image.ui.tag="$TAG" --set sandbox.image.tag="$TAG" \
+    --set sandbox.createRuntimeClass="$gvisor" --set "ui.hostnames={$CLUSTER-control-plane}" \
     --set-string config.POSTGRES_DB="$(env_get POSTGRES_DB)" \
     --set-string config.POSTGRES_USER="$(env_get POSTGRES_USER)" \
     --set-string config.API_POSTGRES_USER="$(env_get API_POSTGRES_USER)" \

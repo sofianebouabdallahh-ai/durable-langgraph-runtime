@@ -20,7 +20,7 @@ from typing import Any
 
 import uvicorn
 
-from agent_runtime.sandbox.backend import Limits, Output, Sandbox, result
+from agent_runtime.sandbox.backend import Isolation, Limits, Output, Sandbox, result
 from agent_runtime.sandbox.sandboxd import create_app
 
 WORKSPACE = "/workspace"  # what the tools say; here, each sandbox's own folder
@@ -42,7 +42,12 @@ class LocalBackend:
             if run is None or box.startswith(f"{run}:")
         ]
 
-    async def create(self, run: str, epoch: int, image: str, limits: Limits) -> str:
+    async def supports(self, isolation: Isolation) -> bool:
+        return isolation == "container"  # local processes: no isolation at all, in fact
+
+    async def create(
+        self, run: str, epoch: int, image: str, limits: Limits, isolation: Isolation
+    ) -> str:
         box = f"{run}:{epoch}"
         self._boxes[box] = (Path(tempfile.mkdtemp(prefix="sbx-")), epoch, int(time.time()))
         return box
@@ -52,7 +57,9 @@ class LocalBackend:
             shutil.rmtree(found[0], ignore_errors=True)
             self.removed.append(sandbox)
 
-    async def exec(self, sandbox: str, argv: list[str], timeout_s: float) -> dict[str, Any]:
+    async def exec(
+        self, sandbox: str, argv: list[str], timeout_s: float, *, processes: int | None = None
+    ) -> dict[str, Any]:
         folder = self._boxes[sandbox][0]
         argv = [a.replace(WORKSPACE, str(folder)) for a in argv]
         proc = await asyncio.create_subprocess_exec(
