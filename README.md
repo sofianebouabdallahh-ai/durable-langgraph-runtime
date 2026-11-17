@@ -446,6 +446,7 @@ Details and rules: [ADR-0002](docs/adr/0002-configuration-and-secrets.md).
 | Understand the design | [docs/design.md](docs/design.md) (every pattern, where and why), [ADRs](docs/adr/) |
 | See what was required | The [base spec](docs/requirements/Project_4_Detailed_Requirements_K8s.pdf) and [change requests](docs/requirements/) |
 | See how it was built | The [roadmap](docs/roadmap.md), each phase's [plan](docs/plans/) and [summary](docs/progress/) (what was built, the test results, the bugs found, the decisions) |
+| Use Nuria from code | The Python SDK: [sdk/python](sdk/python/README.md) |
 | Know what changed | [CHANGELOG.md](CHANGELOG.md) |
 | Check its security | [docs/security.md](docs/security.md), [SECURITY.md](SECURITY.md) |
 

@@ -1,0 +1,35 @@
+from enum import StrEnum
+
+class TurnStatusPayloadEvent(StrEnum):
+    APPROVAL_DECIDED = "approval.decided"
+    CHILDREN_COMPLETED = "children.completed"
+    CHILDREN_SPAWNED = "children.spawned"
+    CHILD_COMPLETED = "child.completed"
+    CHILD_STARTED = "child.started"
+    CONTEXT_COMPACTED = "context.compacted"
+    CONTEXT_TRIMMED = "context.trimmed"
+    HOOK_DECISION = "hook.decision"
+    INTERRUPT_RAISED = "interrupt.raised"
+    NODE_COMPLETED = "node.completed"
+    NODE_FAILED = "node.failed"
+    NODE_STARTED = "node.started"
+    POLICY_DECISION = "policy.decision"
+    RUN_CANCELLED = "run.cancelled"
+    RUN_COMPLETED = "run.completed"
+    RUN_CREATED = "run.created"
+    RUN_FAILED = "run.failed"
+    RUN_RECLAIMED = "run.reclaimed"
+    RUN_REDRIVEN = "run.redriven"
+    RUN_RELEASED = "run.released"
+    RUN_RESUMED = "run.resumed"
+    RUN_STARTED = "run.started"
+    SUBAGENT_COMPLETED = "subagent.completed"
+    SUBAGENT_PROGRESS = "subagent.progress"
+    SUBAGENT_SPAWNED = "subagent.spawned"
+    TOKEN = "token"
+    TOOL_ARGS_CHANGED = "tool.args_changed"
+    TOOL_CALLED = "tool.called"
+    TOOL_COMPLETED = "tool.completed"
+
+    def __str__(self) -> str:
+        return str(self.value)

@@ -50,7 +50,7 @@ class CheckView(BaseModel):
     error: bool = False
 
 
-class ResultView(BaseModel):
+class TestResultView(BaseModel):
     status: Literal["running", "passed", "failed", "error"]
     current: bool = Field(description="On this draft, and the case as it is now")
     checks: list[CheckView]
@@ -60,7 +60,7 @@ class ResultView(BaseModel):
     finished_at: datetime | None
 
     @classmethod
-    def of(cls, r: Result, case: StoredCase, digest: str | None) -> ResultView:
+    def of(cls, r: Result, case: StoredCase, digest: str | None) -> TestResultView:
         current = r.bundle_hash == digest and r.case_hash == case.case.digest()
         return cls(status=r.status, current=current, checks=[CheckView(**c) for c in r.checks],  # type: ignore[arg-type]
                    run_id=r.run_id, session_id=r.session_id, created_at=r.created_at,
@@ -71,7 +71,7 @@ class CaseView(BaseModel):
     id: uuid.UUID
     case: Case
     from_run: uuid.UUID | None
-    result: ResultView | None = Field(description="Its latest result, current or not")
+    result: TestResultView | None = Field(description="Its latest result, current or not")
     updated_at: datetime
 
 
@@ -89,7 +89,7 @@ class RunStarted(BaseModel):
 def _view(c: StoredCase, results: dict[str, Result], digest: str | None) -> CaseView:
     r = results.get(str(c.id))
     return CaseView(id=c.id, case=c.case, from_run=c.from_run, updated_at=c.updated_at,
-                    result=ResultView.of(r, c, digest) if r else None)  # fmt: skip
+                    result=TestResultView.of(r, c, digest) if r else None)  # fmt: skip
 
 
 async def _digest(studio: StudioService, agent_id: uuid.UUID) -> str | None:

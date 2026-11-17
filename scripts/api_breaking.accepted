@@ -96,3 +96,11 @@ POST /studio/import the `detail` response's property `type` changed from `array<
 PUT /telemetry the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
 POST /tools/search/test the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
 PUT /tools/settings the `detail` response's property `type` changed from `array<object>` to `string` for status `422`
+
+# S2 (2026-11-15): two models were named ResultView, so FastAPI published both under
+# module-qualified names, and the Python generator dropped four Tests endpoints. The
+# Tests one is TestResultView now: the same shape under a new name (checked equal).
+POST /runs/{run_id}/make-test added `#/components/schemas/TestResultView` to the `result` response property `anyOf` list for the response status `201`
+GET /studio/agents/{agent_id}/tests added `#/components/schemas/TestResultView` to the `cases/items/result` response property `anyOf` list for the response status `200`
+POST /studio/agents/{agent_id}/tests added `#/components/schemas/TestResultView` to the `result` response property `anyOf` list for the response status `201`
+PUT /studio/agents/{agent_id}/tests/{case_id} added `#/components/schemas/TestResultView` to the `result` response property `anyOf` list for the response status `200`

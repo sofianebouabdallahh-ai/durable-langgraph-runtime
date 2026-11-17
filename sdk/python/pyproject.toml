@@ -1,0 +1,68 @@
+[project]
+name = "nuria"
+version = "0.1.0"
+description = "Python client for Nuria: send a message, follow the reply, get a typed result, through drains, dropped connections and approvals"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.28,<1",
+    # what the generated client (nuria/_generated) needs
+    "attrs>=23.1",
+    "python-dateutil>=2.8",
+]
+
+[dependency-groups]
+dev = [
+    # The generator, pinned exactly: its 0.x releases break (CR-007 R19.9). 0.29.1 is the
+    # newest release past the cooldown when it was pinned (published 2026-08-30).
+    "openapi-python-client==0.29.1",
+    "pytest>=8.4",
+    "pytest-asyncio>=1.2",
+    "ruff>=0.13",
+    "mypy>=1.18",
+    "types-python-dateutil>=2.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nuria"]
+
+[tool.uv]
+# Supply-chain cooldown, as the backend's: no package uploaded after this date. Absolute,
+# so `uv lock` is reproducible; bump it deliberately, about two weeks behind the bump.
+exclude-newer = "2026-11-01T00:00:00Z"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["stack: needs a running Nuria (NURIA_URL); see tests/stack/"]
+addopts = "-ra --strict-markers -m 'not stack'"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["src/nuria/_generated"]  # the generator's output, never edited
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF", "ASYNC"]
+
+[tool.ruff.lint.per-file-ignores]
+# Written from _async.py by scripts/unasync.py: an async `for … yield` has no `yield from`.
+"src/nuria/_sync.py" = ["UP028"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+# The generator's output: used typed, but its own errors (0.29.1 mistypes `date` fields in
+# one model) are the generator's to fix, not ours to edit (R19.3).
+module = "nuria._generated.*"
+ignore_errors = true

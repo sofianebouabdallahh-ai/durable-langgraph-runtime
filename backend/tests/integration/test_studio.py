@@ -1,6 +1,7 @@
 """The Agent Studio through its API (phase L3a): build, test, publish, chat; versions
 are immutable and pinned (AC47); test chats are safe; copy, restore, import/export."""
 
+import asyncio
 import io
 import uuid
 import zipfile
@@ -285,3 +286,22 @@ async def test_a_retried_send_returns_the_same_turn(api: Server) -> None:
         f"/sessions/{session['id']}/messages", json=body, headers={"Idempotency-Key": "send-2"}
     )
     assert other.status_code == 409  # a different message while the turn runs
+
+
+async def test_attempts_of_one_send_at_once_make_one_turn_and_no_conflict(api: Server) -> None:
+    """Attempts of one send that overlap (a client retrying after a timeout while the first
+    is still committing): each gets the turn, or `duplicate-send` to retry, never
+    `turn-active`. Found by the Python SDK's stack suite (S2): the key was looked up only
+    before the session lock, so the second attempt saw its own turn as another one."""
+    c = api.client
+    session = (await c.post("/sessions", json={"agent": "chat"})).json()
+    body = {"content": "hi", "script": [{"content": "x"}]}
+    sends = [
+        c.post(f"/sessions/{session['id']}/messages", json=body, headers={"Idempotency-Key": "k"})
+        for _ in range(5)
+    ]
+    answers = await asyncio.gather(*sends)
+    kinds = [a.json().get("type", "").rsplit("/", 1)[-1] for a in answers if a.status_code != 202]
+    assert all(kind == "duplicate-send" for kind in kinds), kinds
+    turns = {a.json()["run_id"] for a in answers if a.status_code == 202}
+    assert len(turns) == 1, turns

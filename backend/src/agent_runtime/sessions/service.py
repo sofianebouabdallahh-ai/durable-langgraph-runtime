@@ -240,6 +240,13 @@ class SessionService:
             repo = SessionRepository(conn)
             async with conn.transaction():
                 locked = await repo.lock(session_id)
+                # Again, under the lock: an attempt of this same send that was still
+                # committing when we looked above is the active turn now, and it's ours,
+                # not a conflict (found by the Python SDK's retried sends, S2).
+                if idempotency_key and (
+                    done := await self._sent(session_id, idempotency_key, conn)
+                ):
+                    return done
                 if locked.status != "active":
                     raise SessionArchived(session_id)
                 await self._check_rate(repo, session_id)
@@ -267,20 +274,23 @@ class SessionService:
         await self._enqueue(run.id)
         return Turn(message, run)
 
-    async def _sent(self, session_id: uuid.UUID, key: str) -> Turn | None:
-        """The turn an earlier attempt of this send created, if any."""
-        async with self._pool.connection() as conn:
-            cur = await conn.execute(
-                "SELECT id FROM runs WHERE session_id = %s AND idempotency_key = %s",
-                (session_id, key),
-            )
-            row = await cur.fetchone()
-            if row is None:
-                return None
-            run = await RunRepository(conn).get(row["id"])
-            message = await SessionRepository(conn).message(
-                session_id, message_id(run.id, "user", 0, "user")
-            )
+    async def _sent(self, session_id: uuid.UUID, key: str, conn: Conn | None = None) -> Turn | None:
+        """The turn an earlier attempt of this send created, if any (on `conn`, inside its
+        transaction, when given)."""
+        if conn is None:
+            async with self._pool.connection() as own:
+                return await self._sent(session_id, key, own)
+        cur = await conn.execute(
+            "SELECT id FROM runs WHERE session_id = %s AND idempotency_key = %s",
+            (session_id, key),
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return None
+        run = await RunRepository(conn).get(row["id"])
+        message = await SessionRepository(conn).message(
+            session_id, message_id(run.id, "user", 0, "user")
+        )
         return Turn(message, run) if message else None
 
     @staticmethod

@@ -1,0 +1,6 @@
+# openapi-python-client's settings for nuria/_generated (make sdk-python). The output is
+# never edited: fix the spec (backend) and regenerate (CR-007 R19.3).
+field_prefix: field_
+# The generator's own formatting hooks would run ruff over the output; it's excluded from
+# our ruff config, and the pinned generator writes the same files every time.
+post_hooks: []

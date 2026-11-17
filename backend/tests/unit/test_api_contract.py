@@ -54,6 +54,14 @@ def test_every_error_is_problem_details(spec: dict[str, Any]) -> None:
             assert ref.endswith("/ValidationProblem"), f"{method} {path}"
 
 
+def test_schema_names_are_unique(spec: dict[str, Any]) -> None:
+    """Two models of one name make FastAPI qualify both with their module
+    (`agent_runtime__api__tests__ResultView`), and a generator then makes two classes of
+    one name and drops their endpoints (found by the Python SDK's generator, S2)."""
+    qualified = [name for name in spec["components"]["schemas"] if "__" in name]
+    assert not qualified, qualified
+
+
 def test_every_reference_resolves(spec: dict[str, Any]) -> None:
     names = set(spec["components"]["schemas"])
     refs = set(re.findall(r'"#/components/schemas/([^"]+)"', json.dumps(spec)))

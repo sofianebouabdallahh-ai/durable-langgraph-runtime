@@ -1892,7 +1892,7 @@ export interface components {
              */
             id: string;
             /** @description Its latest result, current or not */
-            result: components["schemas"]["agent_runtime__api__tests__ResultView"] | null;
+            result: components["schemas"]["TestResultView"] | null;
             /**
              * Updated At
              * Format: date-time
@@ -3189,6 +3189,20 @@ export interface components {
             /** After Seq */
             after_seq: number;
         };
+        /** ResultView */
+        ResultView: {
+            /** Output */
+            output: {
+                [key: string]: unknown;
+            };
+            /** Partial */
+            partial: boolean;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+        };
         /** ResumeRequest */
         ResumeRequest: {
             /**
@@ -3830,6 +3844,38 @@ export interface components {
             /** Model */
             model: string;
         };
+        /** TestResultView */
+        TestResultView: {
+            /** Checks */
+            checks: components["schemas"]["CheckView"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Current
+             * @description On this draft, and the case as it is now
+             */
+            current: boolean;
+            /** Finished At */
+            finished_at: string | null;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /**
+             * Session Id
+             * @description Its test chat, to see what happened
+             */
+            session_id: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "passed" | "failed" | "error";
+        };
         /** TestView */
         TestView: {
             connection: components["schemas"]["ConnectionView"];
@@ -4308,52 +4354,6 @@ export interface components {
             field: string;
             /** Message */
             message: string;
-        };
-        /** ResultView */
-        agent_runtime__api__schemas__ResultView: {
-            /** Output */
-            output: {
-                [key: string]: unknown;
-            };
-            /** Partial */
-            partial: boolean;
-            /**
-             * Run Id
-             * Format: uuid
-             */
-            run_id: string;
-        };
-        /** ResultView */
-        agent_runtime__api__tests__ResultView: {
-            /** Checks */
-            checks: components["schemas"]["CheckView"][];
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Current
-             * @description On this draft, and the case as it is now
-             */
-            current: boolean;
-            /** Finished At */
-            finished_at: string | null;
-            /**
-             * Run Id
-             * Format: uuid
-             */
-            run_id: string;
-            /**
-             * Session Id
-             * @description Its test chat, to see what happened
-             */
-            session_id: string | null;
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "running" | "passed" | "failed" | "error";
         };
     };
     responses: never;
@@ -6865,7 +6865,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["agent_runtime__api__schemas__ResultView"];
+                    "application/json": components["schemas"]["ResultView"];
                 };
             };
             /** @description Not found */

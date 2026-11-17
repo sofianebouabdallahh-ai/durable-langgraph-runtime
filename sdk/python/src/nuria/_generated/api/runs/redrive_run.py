@@ -1,0 +1,231 @@
+from http import HTTPStatus
+from typing import Any, cast
+from urllib.parse import quote
+
+import httpx
+
+from ...client import AuthenticatedClient, Client
+from ...types import Response, UNSET
+from ... import errors
+
+from ...models.problem import Problem
+from ...models.run_view import RunView
+from ...models.validation_problem import ValidationProblem
+from typing import cast
+from uuid import UUID
+
+
+
+def _get_kwargs(
+    run_id: UUID,
+
+) -> dict[str, Any]:
+    
+
+    
+
+    
+
+    _kwargs: dict[str, Any] = {
+        "method": "post",
+        "url": "/runs/{run_id}/redrive".format(run_id=quote(str(run_id), safe=""),),
+    }
+
+
+    return _kwargs
+
+
+
+def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Problem | RunView | ValidationProblem:
+    if response.status_code == 202:
+        response_202 = RunView.from_dict(response.json())
+
+
+
+        return response_202
+
+    if response.status_code == 404:
+        response_404 = Problem.from_dict(response.json())
+
+
+
+        return response_404
+
+    if response.status_code == 409:
+        response_409 = Problem.from_dict(response.json())
+
+
+
+        return response_409
+
+    if response.status_code == 422:
+        response_422 = ValidationProblem.from_dict(response.json())
+
+
+
+        return response_422
+
+    if response.status_code == 429:
+        response_429 = Problem.from_dict(response.json())
+
+
+
+        return response_429
+
+    if response.status_code == 503:
+        response_503 = Problem.from_dict(response.json())
+
+
+
+        return response_503
+
+    response_default = Problem.from_dict(response.json())
+
+
+
+    return response_default
+
+
+
+def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Response[Problem | RunView | ValidationProblem]:
+    return Response(
+        status_code=HTTPStatus(response.status_code),
+        content=response.content,
+        headers=response.headers,
+        parsed=_parse_response(client=client, response=response),
+    )
+
+
+def sync_detailed(
+    run_id: UUID,
+    *,
+    client: AuthenticatedClient | Client,
+
+) -> Response[Problem | RunView | ValidationProblem]:
+    """ Try a failed run again (from its last checkpoint)
+
+     H4. `failed` → `queued`: it resumes from its last saved step, and tool calls already done aren't run
+    again. For failures that might not happen again (`error`, `infrastructure`, `max_reclaims`,
+    `timeout`) of a top-level run; a chat turn only if it is the chat's latest. The budgets already used
+    still count. 409 otherwise.
+
+    Args:
+        run_id (UUID):
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        Response[Problem | RunView | ValidationProblem]
+     """
+
+
+    kwargs = _get_kwargs(
+        run_id=run_id,
+
+    )
+
+    response = client.get_httpx_client().request(
+        **kwargs,
+    )
+
+    return _build_response(client=client, response=response)
+
+def sync(
+    run_id: UUID,
+    *,
+    client: AuthenticatedClient | Client,
+
+) -> Problem | RunView | ValidationProblem | None:
+    """ Try a failed run again (from its last checkpoint)
+
+     H4. `failed` → `queued`: it resumes from its last saved step, and tool calls already done aren't run
+    again. For failures that might not happen again (`error`, `infrastructure`, `max_reclaims`,
+    `timeout`) of a top-level run; a chat turn only if it is the chat's latest. The budgets already used
+    still count. 409 otherwise.
+
+    Args:
+        run_id (UUID):
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        Problem | RunView | ValidationProblem
+     """
+
+
+    return sync_detailed(
+        run_id=run_id,
+client=client,
+
+    ).parsed
+
+async def asyncio_detailed(
+    run_id: UUID,
+    *,
+    client: AuthenticatedClient | Client,
+
+) -> Response[Problem | RunView | ValidationProblem]:
+    """ Try a failed run again (from its last checkpoint)
+
+     H4. `failed` → `queued`: it resumes from its last saved step, and tool calls already done aren't run
+    again. For failures that might not happen again (`error`, `infrastructure`, `max_reclaims`,
+    `timeout`) of a top-level run; a chat turn only if it is the chat's latest. The budgets already used
+    still count. 409 otherwise.
+
+    Args:
+        run_id (UUID):
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        Response[Problem | RunView | ValidationProblem]
+     """
+
+
+    kwargs = _get_kwargs(
+        run_id=run_id,
+
+    )
+
+    response = await client.get_async_httpx_client().request(
+        **kwargs
+    )
+
+    return _build_response(client=client, response=response)
+
+async def asyncio(
+    run_id: UUID,
+    *,
+    client: AuthenticatedClient | Client,
+
+) -> Problem | RunView | ValidationProblem | None:
+    """ Try a failed run again (from its last checkpoint)
+
+     H4. `failed` → `queued`: it resumes from its last saved step, and tool calls already done aren't run
+    again. For failures that might not happen again (`error`, `infrastructure`, `max_reclaims`,
+    `timeout`) of a top-level run; a chat turn only if it is the chat's latest. The budgets already used
+    still count. 409 otherwise.
+
+    Args:
+        run_id (UUID):
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        Problem | RunView | ValidationProblem
+     """
+
+
+    return (await asyncio_detailed(
+        run_id=run_id,
+client=client,
+
+    )).parsed
