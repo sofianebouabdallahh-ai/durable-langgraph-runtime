@@ -9,6 +9,8 @@ Nuria lets you chat with AI agents and build your own, on your own machine. It r
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 > **Status: v0.2.0, the first public release.** It runs on one machine for one person, with no login, using only Docker. A hosted, multi-user version comes after the testers' feedback ([roadmap](docs/roadmap.md)). Testing for us? See the [tester guide](docs/setup/testers.md); feedback is two clicks away in the app.
+>
+> **`main` is ahead of the release, and this page describes `main`.** Twelve phases have merged since v0.2.0: approvals bound to the exact call, budgets with real prices, long chats, tests for each agent, memory across chats, a gVisor sandbox behind a Docker-socket gate, an API contract and a Python SDK ([changelog](CHANGELOG.md)). They ship with the next release. Until then, [run `main`](#run-main-before-the-next-release) to get them.
 
 | Home | A chat waiting for your approval | An agent and its helpers |
 |---|---|---|
@@ -40,16 +42,21 @@ You describe **what** an agent should do. The platform takes care of running it 
 | **Bounded execution** | Every agent has a **maximum number of turns** (model calls), plus limits on tool calls (in total and **per tool**), tokens, cost in USD and wall-clock time. Every helper has its own turn limit | Checked in code before every model and tool call. One wrap-up turn at 80%, a hard stop at 100%; loops detected; limits can only be tightened ([details](#budgets-and-limits)) |
 | **Tools** | Web search, reading pages and PDFs, Python, a terminal and files, notes, notifications | Built in, nothing to configure; search runs locally (SearXNG) |
 | **MCP servers** | Any remote [MCP](https://modelcontextprotocol.io) server's tools, next to the built-in ones | Tested and scanned when added; tokens encrypted; each tool's definition pinned when you publish |
-| **Safe execution** | Model-written code can't reach your network, your files or your keys | A fresh sandbox per turn: no network, read-only, non-root, 256 MB, half a CPU, 64 processes, killed at its time limit |
-| **Human in the loop** | Anything that reaches the outside world waits for your **Approve**, for as long as you need | Durable pauses that hold no worker; approvals fail closed |
+| **Safe execution** | Model-written code can't reach your network, your files or your keys | A fresh sandbox per turn: no network, read-only, non-root, no capabilities, 256 MB, half a CPU, 64 processes, killed at its time limit. Under [gVisor](https://gvisor.dev), where Docker or the cluster has it, the code runs on gVisor's kernel, not your computer's ([details](#the-sandbox-two-walls)) |
+| **Human in the loop** | Anything that reaches the outside world waits for your **Approve**, for as long as you need | Durable pauses that hold no worker; each approval bound to the exact call you saw; approvals fail closed |
 | **Least privilege** | An agent can use only the tools you gave it; helpers can't ask for approval; nothing the model writes can change that | Deny-by-default grants, risk classes, strict argument schemas, one fixed tool pipeline ([details](#the-tool-pipeline)) |
 | **Only you drive it** | Only Nuria's own pages reach it: a web page you visit can't, even by rebinding its DNS to your computer. A saved key is only sent where you entered it for | Host allow-list (421), cross-site browser requests refused (Fetch Metadata), keys bound to their address, every outbound address resolved and checked |
 | **Prompt-injection resistance** | A web page or tool result saying "ignore your instructions" can't grant a tool or skip an approval, and can't make the agent read an address that would carry your chat out | Untrusted text marked as data, policy enforced outside the model, page addresses nobody gave the agent ask first |
+| **Helpers (sub-agents)** | The main agent hands focused tasks to helpers that work in parallel, each with its own instructions, tools, model and turn limit | Up to 4 at once, through the same pipeline; their usage counts toward the run's budget; fan-out capped in depth and in descendants ([details](#helpers-sub-agents)) |
+| **Long chats** | A chat can go on for hundreds of turns | Each call trimmed to fit the model's window; older turns folded into a summary; one checkpoint kept per finished turn ([details](#long-chats)) |
+| **Memory across chats** | An agent remembers what you ask it to, in every later chat with it, and forgets a note when you ask | Notes reach the prompt as data, within a token budget; their scope is set by the database from the run, never by the model; you see and remove them on the agent's page |
 | **Agents without code** | Agents and helpers built in a form, drafted from a sentence, tested, versioned, exported | The Agent Studio; agents are data, and a published version is frozen |
+| **Tests for each agent** | Give an agent tests: the tools it should use, the approvals it asks for, what its answer says. Publishing waits until every one passes | Each case runs as an ordinary durable turn, graded when it ends; the built-in agents' suites run in CI ([details](#tested-without-a-model)) |
 | **Any model** | Ollama, OpenAI, Azure AI Foundry, any OpenAI-compatible service; a different model per agent or helper | Model bindings pinned per turn; retries with backoff; a circuit breaker per connection |
-| **Skills** | Reusable know-how, loaded when needed or always used | The Agent Skills format; scanned for hidden instructions and leaked credentials |
+| **Skills** | Reusable know-how, loaded when needed or always used | The Agent Skills format; scanned for hidden instructions and leaked credentials; an uploaded or imported skill stays data until you read and approve it |
 | **Full visibility** | Every turn's steps, tools, tokens, cost and errors; who changed what; traces, logs and metrics | Activity, an append-only audit trail, OpenTelemetry + Grafana |
 | **Stop buttons** | Stop one reply, turn off one agent everywhere, or stop all agents | A kill switch kept in Postgres, so it holds across restarts |
+| **An API and a Python SDK** | Use Nuria from your own code: send a message, follow the reply as it streams, get a typed result | An OpenAPI contract that describes every stream event and error, held by CI; a client, async and sync, whose stream resumes without losing or repeating ([details](#drive-it-from-your-own-code)) |
 | **Runs anywhere** | Your laptop (Docker Compose) or Kubernetes, with the same images | Helm charts, autoscaling on the queue backlog, graceful drains |
 
 ## Try it (only Docker needed)
@@ -79,11 +86,24 @@ First time? **Get started** on Home walks you through choosing a model and build
 | `./setup.sh --chat` | Chat in the terminal instead of the browser |
 | `./setup.sh --observability` | Also start Grafana, Tempo, Loki and Prometheus: traces, logs and metrics for every turn |
 | `./setup.sh --kubernetes` | Run the same app on a local Kubernetes cluster (kind + Helm) instead of Compose |
+| `./setup.sh --gvisor` | On Linux: install gVisor into Docker and require it for every sandbox (on `main`) |
 | `./setup.sh --update` | Update to the latest release; backs up your data first |
 | `./setup.sh --doctor` | Write a diagnostics file with every password and key removed |
 | `./setup.sh --reset` | Delete everything (asks first) |
 
 Guides for each OS, models, tools and troubleshooting: [docs/setup/](docs/setup/).
+
+### Run `main` before the next release
+
+The command above installs v0.2.0. `main` has everything this page describes. To run it, clone without `--branch` and build the images on your machine (a few minutes the first time):
+
+```bash
+git clone https://github.com/sofianebouabdallahh-ai/durable-langgraph-runtime.git nuria
+cd nuria
+./setup.sh --build
+```
+
+Without `--build`, setup downloads the v0.2.0 images, which are older than `main`'s code.
 
 ## What you can do
 
@@ -100,14 +120,14 @@ Guides for each OS, models, tools and troubleshooting: [docs/setup/](docs/setup/
 - **Describe your agent.** Write a sentence ("an agent that plans trips and checks the weather"), and a builder agent drafts the whole thing: instructions, tools and helpers. **Improve** reviews the instructions you wrote.
 - **Test, then publish.** Try a draft in a test chat, and give it **tests**: the tools it should use, the approvals it asks for, what its answer says, or a rubric a model grades. With tests, publishing waits until each one passes on that exact draft; a 👎 on a reply can become a test. Publishing freezes a version, so later edits never change the agent people already use. Import and export agents as files.
 - **Bring your own model.** Ollama, OpenAI, Azure AI Foundry, or any OpenAI-compatible service. Keys are stored encrypted and never shown again. Each agent, or each helper, can use a different model ([models](docs/setup/models.md)).
-- **Skills.** Reusable know-how in the [Agent Skills](https://agentskills.io) format: written in a form, uploaded, or imported. Every skill is checked for hidden instructions and leaked credentials when it's saved. An agent loads a skill when it needs it, or always uses it ([skills](docs/setup/skills.md)).
+- **Skills.** Reusable know-how in the [Agent Skills](https://agentskills.io) format: written in a form, uploaded, or imported. Every skill is checked for hidden instructions and leaked credentials when it's saved, and one you uploaded or imported works as data until you open it and approve it. An agent loads a skill when it needs it, or always uses it ([skills](docs/setup/skills.md)).
 
 ### Give agents real tools
 | Tool | What it does |
 |---|---|
 | **Search the web** | A private search engine (SearXNG) runs with Nuria: no key, no account. Tavily or Brave if you have a key |
 | **Read web pages** | Pages and PDFs as text, so the agent can quote and cite them. Public websites only |
-| **Run Python / use a terminal / work with files** | In a **disposable sandbox** per turn: no network, no secrets, read-only, with CPU, memory, process and time limits |
+| **Run Python / use a terminal / work with files** | In a **disposable sandbox** per turn: no network, no secrets, read-only, with CPU, memory, process and time limits; under gVisor where Docker has it |
 | **Notes (memory)** | Things you ask the agent to remember. It sees them in every later chat with it, can forget one when you ask, and you see and remove them on its page. Never keys, passwords or card numbers |
 | **Notifications** | Sending a message to someone, to your webhook. Always asks you first ([notifications](docs/setup/tools.md#notifications)) |
 | **Tools from MCP servers** | Anything a [Model Context Protocol](https://modelcontextprotocol.io) server offers: docs search, issue trackers, databases, your own services |
@@ -119,6 +139,34 @@ Guides for each OS, models, tools and troubleshooting: [docs/setup/](docs/setup/
 - **Who changed what:** an append-only audit trail of every change to agents, skills, models, settings, approvals and the kill switch, with what each looked like before.
 - **Traces, logs and metrics** (`--observability`): one id finds every log line of a turn, across the API and the workers, linked to its trace in Grafana ([observability](docs/setup/observability.md)).
 - **Kill switch:** **Turn off** stops one agent everywhere; **Stop all agents** stops every agent, until you turn them back on.
+
+### Drive it from your own code
+
+The API has an OpenAPI contract, and a Python client, `nuria`, is built on it ([sdk/python](sdk/python/README.md)):
+
+```python
+import asyncio
+from nuria import AsyncNuria
+
+
+async def main() -> None:
+    async with AsyncNuria("http://localhost:3000/api") as nuria:
+        session = await nuria.sessions.create(agent="chat")
+        turn = await session.send("What is 6 × 7?")
+        async for text in turn.text():
+            print(text, end="", flush=True)
+        result = await turn.wait()  # Completed, Failed, Cancelled or AwaitingApproval
+
+
+asyncio.run(main())
+```
+
+`Nuria` is the same API without `await`.
+
+- **The contract is enforced.** The spec describes both event streams and every error, as RFC 9457 problem details. The tests check each event and error they see against it, and a pull request that breaks it fails CI ([S1](docs/progress/phase-S1.md)).
+- **The stream doesn't lose or repeat.** It resumes after the last event it saw, through a dropped connection or a replica that drains ([S2](docs/progress/phase-S2.md)).
+- **A send is safe to retry.** One idempotency key goes through every retry, so a retried send never makes a second turn.
+- **Approvals stay with a person.** The client shows a pending approval and has no way to decide one.
 
 ---
 
@@ -136,7 +184,7 @@ flowchart LR
     PS -->|"6 · wake the stream"| API
     W --> M["Model<br/>Ollama · OpenAI · Azure · …"]
     W --> T["Tools<br/>search · pages · MCP servers"]
-    W --> SD["sandboxd"] --> SB["Sandbox per turn<br/>no network"]
+    W --> SD["sandboxd"] --> SG["sandbox-gate<br/>the Docker socket"] --> SB["Sandbox per turn<br/>no network"]
 ```
 
 | Part | Role |
@@ -146,7 +194,8 @@ flowchart LR
 | **Workers** (2 processes, 4 runs each by default) | Pull work from the queue and execute LangGraph graphs under a lease |
 | **Postgres** | Everything that's kept: runs and their state, events, transcripts, LangGraph checkpoints, the tool ledger, agents, skills, keys (encrypted), the audit trail |
 | **Redis** | Transport only: a Stream delivers work to workers, and Pub/Sub wakes the API replica a client is connected to. It holds **nothing that can't be rebuilt** from Postgres |
-| **sandboxd** | The only part with the Docker socket (or, on Kubernetes, the right to create pods). Starts a disposable sandbox for each turn that runs code |
+| **sandboxd** | Starts a disposable sandbox for each turn that runs code, and removes it. It holds nothing root-equivalent: it reaches Docker through sandbox-gate (on Kubernetes, it has only the right to create sandbox pods) |
+| **sandbox-gate** | The only part with the Docker socket. It has no network, and passes on to Docker only what a sandbox needs: every container it's asked to create is checked field by field |
 | **SearXNG, the page reader** | Web search and page reading, behind an allow-list that refuses private and internal addresses |
 
 ### The life of one chat turn
@@ -344,12 +393,40 @@ Nuria assumes that **the model can be tricked**, and puts every safety decision 
 
 - **Text from tools is data, never instructions.** Tool results, web pages, MCP results and on-demand skills reach the model inside `<data>` delimiters that the text can't close. That's not the defense, though. A test suite of planted "ignore your instructions" cases assumes a *fully obedient* model, and checks that the pipeline still denies, asks or limits.
 - **Local only.** Everything listens on `127.0.0.1`. Containers run as non-root on read-only filesystems.
-- **Code never runs in Nuria's containers.** It runs in a sandbox with no network, no keys and none of your files, created for one turn and removed after it.
+- **Code never runs in Nuria's containers.** It runs in a sandbox with no network, no keys and none of your files, created for one turn and removed after it ([two walls](#the-sandbox-two-walls)).
 - **No SSRF.** The page reader and MCP client refuse private networks (where that's the rule), Nuria's own services and cloud metadata addresses. They check every redirect, and connect only to the address they checked.
 - **Secrets stay secret.** Model keys and MCP tokens use envelope encryption (AES-256-GCM), each bound to its row and purpose. Logs never hold message text, tool arguments or keys: a redaction filter runs at the source, and again in the collector.
 - **Nothing leaves without your click**, except your messages to the model you chose. With Ollama or the demo model, nothing leaves at all.
 
 Details, what runs where, and how to delete everything: [docs/security.md](docs/security.md). To report a vulnerability: [SECURITY.md](SECURITY.md).
+
+### The sandbox: two walls
+
+Code is the riskiest thing a model writes, so it runs behind two walls ([CR-002](docs/requirements/CR-002-run-sandboxes.md), [H9 plan](docs/plans/phase-H9.md)).
+
+- **The first wall: a locked-down container**, created for one turn and removed after it. No network, a read-only system, a non-root user, every Linux capability dropped, no new privileges, and limits on memory, CPU, processes and time.
+- **The second wall: [gVisor](https://gvisor.dev)**, where Docker or the cluster has it. gVisor puts its own kernel, in user space, between the code and your computer's kernel. The code's system calls go to gVisor, so a Linux kernel bug alone is no longer a way out.
+- **You know which wall you have.** `SANDBOX_ISOLATION` is `auto` (gVisor where it's installed, otherwise the container), `gvisor` or `container`, and setup says which one runs. With `gvisor`, an install without gVisor runs no code at all: it never quietly falls back. sandboxd doesn't trust a runtime's name either. It starts a sandbox and reads the kernel from inside it before it serves a run.
+- **The Docker socket is behind a gate.** sandboxd doesn't hold it. `sandbox-gate` does, with no network, and lets through only what a sandbox needs. It checks every container it's asked to create field by field, and refuses a field it doesn't know.
+- **On Kubernetes** a sandbox is a pod with no network and no service account token, under the same lockdown, with an optional `runtimeClassName` (gVisor, Kata) and user namespaces ([guide](docs/kubernetes.md)).
+
+`./setup.sh --gvisor` installs gVisor into Docker on Linux. Docker Desktop (macOS, Windows) has no supported way to add a runtime, so there code runs behind the first wall.
+
+### Mapped to the OWASP Top 10 for LLM applications
+
+The guardrails were designed against the [OWASP Top 10 for LLM applications](https://owasp.org/www-project-top-10-for-large-language-model-applications/) (2025 edition), starting from [CR-003](docs/requirements/CR-003-harness-guardrails.md).
+
+| Risk | What the platform does |
+|---|---|
+| **LLM01** Prompt injection | Text from tools, pages and skills is data; every rule is enforced in code, outside the model; a page address nobody gave the agent asks first |
+| **LLM02** Sensitive information disclosure | Keys are encrypted and sent only to the address they were entered for; the model never holds one; logs carry no message text, tool arguments or keys |
+| **LLM03** Supply chain | MCP tool definitions are pinned when you publish; an uploaded or imported skill is data until you approve it; dependencies wait out a cooldown; release images ship with an SBOM and provenance, and are scanned |
+| **LLM05** Improper output handling | Tool arguments are validated against strict schemas; code the model writes runs only in the sandbox; an agent can be set to hide secrets in its replies |
+| **LLM06** Excessive agency | Deny-by-default grants, risk classes, approvals bound to the exact call that fail closed, a database role per component |
+| **LLM07** System prompt leakage | Nothing is protected by a prompt staying secret: prompts hold no keys, and they explain limits that code enforces |
+| **LLM10** Unbounded consumption | Budgets on turns, tool calls, tokens, cost and time, with real prices; loop detection; a daily cost ceiling; a kill switch |
+
+The other three, LLM04 (data and model poisoning), LLM08 (vector and embedding weaknesses) and LLM09 (misinformation), are outside what these guardrails cover.
 
 ## Run it on Kubernetes
 
@@ -366,16 +443,17 @@ Details, what runs where, and how to delete everything: [docs/security.md](docs/
 
 | Suite | What it covers | Size |
 |---|---|---|
-| Backend unit + integration | Against real Postgres and Redis, never mocks of them: the state machine, fencing (including a control test proving an unfenced zombie *does* corrupt a run), the pipeline, the stream merger, migrations | 991 tests |
+| Backend unit + integration | Against real Postgres and Redis, never mocks of them: the state machine, fencing (including a control test proving an unfenced zombie *does* corrupt a run), the pipeline, the stream merger, migrations | 1,141 tests, 92% coverage |
 | Runtime e2e (`make demo-e2e`) | Real worker and API processes, killed, frozen and drained mid-run | 15 scenarios |
-| Container e2e | The Compose stack as testers run it: a worker killed mid-reply, mid-sandbox and mid-MCP-call; Postgres restarted mid-reply; a notification delivered to a webhook; least-privilege database logins; foreign hosts and cross-site requests refused | 8 scenarios |
-| UI unit | Components and the stream reducer | 85 tests |
-| Browser (Playwright) | The whole app in a real browser, against a scripted model | 62 tests |
+| Container e2e | The Compose stack as testers run it: a worker killed or stopped mid-reply, mid-sandbox and mid-MCP-call; Postgres restarted mid-reply; a notification delivered to a webhook; least-privilege database logins; foreign hosts and cross-site requests refused; the networks between services; the terminal chat; a diagnostics file with no secret in it | 11 scenarios |
+| UI unit | Components and the stream reducer | 86 tests |
+| Browser (Playwright) | The whole app in a real browser, against a scripted model | 64 tests |
+| Python SDK | The client's stream, resume and retry logic without a network, then the client against a running stack | 86 tests, and 3 against the stack |
 | Kubernetes e2e | The Helm install on kind, a drain mid-reply | |
 
 The tests use a deterministic **scripted model** and a **fake OpenAI-compatible server**, so CI needs no model and no key. Before a release, the whole flow also runs in a browser against a **real local model** (qwen2.5:7b on Ollama). Each phase's summary records what that run found, and how it was fixed ([L8](docs/progress/phase-L8.md)).
 
-CI runs lint, `mypy --strict`, every suite and an image scan (Trivy). A release builds multi-arch images (amd64, arm64) with an SBOM and provenance.
+CI runs a secret scan (gitleaks), lint, `mypy --strict`, every suite, the API contract check (a breaking change to the spec fails the build), an image scan (Trivy), and an update from the previous release followed by a restore. A release builds multi-arch images (amd64, arm64) with an SBOM and provenance.
 
 ---
 
@@ -405,7 +483,8 @@ make help      # every target
 | Backend | Python 3.12, FastAPI, psycopg 3 (async, pooled), Alembic, Pydantic settings; uv with a dependency cooldown |
 | Data | Postgres 16 (pgvector image), Redis 7 (Streams + Pub/Sub) |
 | Frontend | React 19, TypeScript, Vite, TanStack Query, Tailwind; types generated from the OpenAPI schema |
-| Tools | SearXNG, a hardened page reader, the MCP Python SDK, Docker or Kubernetes sandboxes |
+| Tools | SearXNG, a hardened page reader, the MCP Python SDK, Docker or Kubernetes sandboxes, gVisor where it's available |
+| Client | A Python SDK, `nuria`: calls generated from the OpenAPI spec (`openapi-python-client`) under a hand-written async and sync client |
 | Observability | OpenTelemetry → Collector → Tempo (traces), Loki (logs), Prometheus (metrics), Grafana |
 | Delivery | Docker Compose profiles, kind + Helm + KEDA, GitHub Actions, GHCR, Trivy |
 
@@ -420,6 +499,7 @@ A monorepo with one folder per deliverable ([ADR-0001](docs/adr/0001-repository-
 | [`backend/migrations/`](backend/migrations/) | Alembic migrations, expand/contract |
 | [`backend/tests/`](backend/tests/) | `unit/`, `integration/`, `contract/`, `e2e/` |
 | [`frontend/`](frontend/) | Nuria, the React + TypeScript UI |
+| [`sdk/python/`](sdk/python/) | `nuria`, the Python client: generated from the API's spec, plus the hand-written client |
 | [`sandbox/`](sandbox/) | The sandbox image |
 | [`infra/`](infra/) | Docker Compose, the observability stack, kind and the Helm charts |
 | [`docs/`](docs/) | Design, ADRs, requirements, plans, phase summaries, setup guides |
