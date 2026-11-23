@@ -4,6 +4,16 @@ All notable changes to this project. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### The UI image's nginx, patched (2026-11-22)
+#### Security
+- **nginx 1.30.7 in the UI image.** nginx 1.30.6 has six fixable vulnerabilities, four of
+  them critical (CVE-2026-113425, CVE-2026-121810, CVE-2026-123007, CVE-2026-123633,
+  CVE-2026-118899, CVE-2026-123634), and the image scan failed every pull request on them.
+  The base image has no 1.30.7 yet, and it installs nginx at an exact version, so
+  `apk upgrade` never moved it. The build now installs nginx.org's own 1.30.7 packages,
+  checked against the signing key the base ships, and stops when a newer base makes the
+  step redundant. The v0.2.0 image still has 1.30.6: the fix ships with the next release.
+
 ### S2 — The Python SDK
 Nuria from Python ([`sdk/python`](sdk/python/README.md), package `nuria`, CR-007).
 #### Added
